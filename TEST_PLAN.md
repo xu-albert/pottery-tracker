@@ -95,11 +95,20 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Long-press photo → bottom sheet with "Delete photo" option
 
 ### Photo Management
-- [ ] Add photo via camera icon in app bar → Camera / Photo Library picker
+- [ ] Add photo via camera icon in app bar → Camera / Photo Library / Select Multiple picker
 - [ ] New photo becomes cover automatically
 - [ ] Delete photo → confirmation dialog → photo removed
 - [ ] Deleting cover photo → next newest photo becomes cover
 - [ ] Deleting all photos → no gallery shown, just metadata form
+
+### Batch Photo Upload
+- [ ] "Select Multiple" option in add photo bottom sheet
+- [ ] Multi-picker allows selecting 2+ photos at once
+- [ ] Progress dialog shows "Processing X of Y..."
+- [ ] All selected photos added to piece gallery
+- [ ] Last photo in batch set as cover
+- [ ] Failed photos skipped; failure count shown in snackbar
+- [ ] Cancelling multi-picker returns with no changes
 
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
@@ -212,3 +221,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Editable "last updated" date: album rows show updatedAt, detail screen date is tappable with date/time picker |
 | 2026-02-12 | Haptic feedback: light on add photo, delete photo, archive; medium on delete piece; light on piece creation |
 | 2026-02-12 | Photo date labels: dateTaken shown below each photo in detail gallery |
+| 2026-02-12 | Batch photo upload: "Select Multiple" option, progress dialog, per-photo error handling |

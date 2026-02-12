@@ -32,12 +32,22 @@ class ImageService {
     final picked = await _picker.pickImage(source: source);
     if (picked == null) return null;
 
-    final photoId = _uuid.v4();
-
-    // Read the raw bytes from the picker (works reliably on all platforms)
     final Uint8List rawBytes = await picked.readAsBytes();
+    return processImage(bytes: rawBytes, pieceId: pieceId);
+  }
 
-    final dateTaken = _extractDateFromBytes(rawBytes);
+  Future<List<XFile>?> pickMultipleImages() async {
+    final picked = await _picker.pickMultiImage();
+    if (picked.isEmpty) return null;
+    return picked;
+  }
+
+  Future<ImageResult> processImage({
+    required Uint8List bytes,
+    required String pieceId,
+  }) async {
+    final photoId = _uuid.v4();
+    final dateTaken = _extractDateFromBytes(bytes);
 
     final appDir = await getApplicationDocumentsDirectory();
     final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
@@ -49,27 +59,27 @@ class ImageService {
     // Save main image: try compressing, fall back to raw bytes
     try {
       final compressed = await FlutterImageCompress.compressWithList(
-        rawBytes,
+        bytes,
         quality: 75,
         minWidth: 1500,
         minHeight: 1500,
       );
       await File(mainPath).writeAsBytes(compressed);
     } catch (_) {
-      await File(mainPath).writeAsBytes(rawBytes);
+      await File(mainPath).writeAsBytes(bytes);
     }
 
     // Save thumbnail: try compressing small, fall back to main
     try {
       final thumb = await FlutterImageCompress.compressWithList(
-        rawBytes,
+        bytes,
         quality: 60,
         minWidth: 300,
         minHeight: 300,
       );
       await File(thumbPath).writeAsBytes(thumb);
     } catch (_) {
-      await File(thumbPath).writeAsBytes(rawBytes);
+      await File(thumbPath).writeAsBytes(bytes);
     }
 
     return ImageResult(

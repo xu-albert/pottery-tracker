@@ -126,5 +126,20 @@
     }
   },
   "editDate": "Edit Date",
-  "@editDate": { "description": "Edit date tooltip" }
+  "@editDate": { "description": "Edit date tooltip" },
+  "processingPhotos": "Processing {current} of {total}...",
+  "@processingPhotos": {
+    "description": "Batch photo processing progress",
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "batchPhotoFailures": "{count} photo(s) could not be added",
+  "@batchPhotoFailures": {
+    "description": "Batch photo failure count",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
 }

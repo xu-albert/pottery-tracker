@@ -177,4 +177,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get editDate => 'Edit Date';
+
+  @override
+  String processingPhotos(int current, int total) {
+    return 'Processing $current of $total...';
+  }
+
+  @override
+  String batchPhotoFailures(int count) {
+    return '$count photo(s) could not be added';
+  }
 }

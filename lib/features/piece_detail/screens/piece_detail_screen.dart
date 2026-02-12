@@ -242,6 +242,87 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     _loadPiece();
   }
 
+  Future<void> _addMultiplePhotos() async {
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final imageService = ref.read(imageServiceProvider);
+      final picked = await imageService.pickMultipleImages();
+      if (picked == null || !mounted) return;
+
+      // Show progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _BatchProgressDialog(total: picked.length),
+      );
+
+      final photosDao = ref.read(photosDaoProvider);
+      final piecesDao = ref.read(piecesDaoProvider);
+      var sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
+      String? lastPhotoId;
+      var failures = 0;
+
+      for (var i = 0; i < picked.length; i++) {
+        // Update progress
+        if (mounted) {
+          _BatchProgressDialog._updateProgress(i + 1);
+        }
+
+        try {
+          final bytes = await picked[i].readAsBytes();
+          final result = await imageService.processImage(
+            bytes: bytes,
+            pieceId: widget.pieceId,
+          );
+
+          await photosDao.insertPhoto(PhotosCompanion(
+            id: Value(result.photoId),
+            pieceId: Value(widget.pieceId),
+            localPath: Value(result.localPath),
+            thumbnailPath: Value(result.thumbnailPath),
+            dateTaken: Value(result.dateTaken),
+            createdAt: Value(DateTime.now()),
+            sortOrder: Value(sortOrder),
+          ));
+
+          lastPhotoId = result.photoId;
+          sortOrder++;
+        } catch (_) {
+          failures++;
+        }
+      }
+
+      // Dismiss progress dialog
+      if (mounted) Navigator.of(context).pop();
+
+      // Set last photo as cover
+      if (lastPhotoId != null) {
+        await piecesDao.updatePiece(PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(lastPhotoId),
+          updatedAt: Value(DateTime.now()),
+        ));
+      }
+
+      HapticFeedback.lightImpact();
+      _loadPiece();
+
+      if (failures > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.batchPhotoFailures(failures))),
+        );
+      }
+    } catch (e) {
+      // Dismiss progress dialog if open
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not add photos: $e')),
+        );
+      }
+    }
+  }
+
   void _showAddPhotoSheet() {
     final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
@@ -262,7 +343,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
               title: Text(l10n.photoLibrary),
               onTap: () {
                 Navigator.pop(ctx);
-                _addPhoto(ImageSource.gallery);
+                _addMultiplePhotos();
               },
             ),
           ],
@@ -365,6 +446,54 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BatchProgressDialog extends StatefulWidget {
+  final int total;
+
+  const _BatchProgressDialog({required this.total});
+
+  static void Function(int)? _onProgress;
+
+  static void _updateProgress(int current) {
+    _onProgress?.call(current);
+  }
+
+  @override
+  State<_BatchProgressDialog> createState() => _BatchProgressDialogState();
+}
+
+class _BatchProgressDialogState extends State<_BatchProgressDialog> {
+  int _current = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _BatchProgressDialog._onProgress = (current) {
+      if (mounted) setState(() => _current = current);
+    };
+  }
+
+  @override
+  void dispose() {
+    _BatchProgressDialog._onProgress = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          Text(l10n.processingPhotos(_current, widget.total)),
+        ],
       ),
     );
   }

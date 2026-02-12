@@ -411,6 +411,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit Date'**
   String get editDate;
+
+  /// Batch photo processing progress
+  ///
+  /// In en, this message translates to:
+  /// **'Processing {current} of {total}...'**
+  String processingPhotos(int current, int total);
+
+  /// Batch photo failure count
+  ///
+  /// In en, this message translates to:
+  /// **'{count} photo(s) could not be added'**
+  String batchPhotoFailures(int count);
 }
 
 class _AppLocalizationsDelegate
