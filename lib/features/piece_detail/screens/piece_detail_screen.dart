@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../l10n/app_localizations.dart';
-import '../../../core/constants/app_colors.dart';
 import '../../../database/database.dart';
 import '../../../models/piece_stage.dart';
 import '../../../providers/database_provider.dart';
@@ -206,6 +205,38 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     _loadPiece();
   }
 
+  Future<void> _pickUpdatedDate() async {
+    final current = _piece!.updatedAt;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    if (!mounted) return;
+
+    final newDate = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time?.hour ?? current.hour,
+      time?.minute ?? current.minute,
+    );
+
+    final dao = ref.read(piecesDaoProvider);
+    await dao.updatePiece(PiecesCompanion(
+      id: Value(widget.pieceId),
+      updatedAt: Value(newDate),
+    ));
+    _loadPiece();
+  }
+
   void _showAddPhotoSheet() {
     final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
@@ -304,7 +335,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       piece: _piece!,
                       onUpdateField: _updateField,
                     ),
-                    LastUpdatedInfo(piece: _piece!),
+                    LastUpdatedInfo(piece: _piece!, onTap: _pickUpdatedDate),
                     const SizedBox(height: 16),
                   ],
                 ),

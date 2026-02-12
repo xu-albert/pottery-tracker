@@ -117,5 +117,14 @@
   "archivePiece": "Archive",
   "@archivePiece": { "description": "Archive piece action" },
   "unarchivePiece": "Unarchive",
-  "@unarchivePiece": { "description": "Unarchive piece action" }
+  "@unarchivePiece": { "description": "Unarchive piece action" },
+  "lastUpdated": "Last updated {date}",
+  "@lastUpdated": {
+    "description": "Last updated timestamp",
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "editDate": "Edit Date",
+  "@editDate": { "description": "Edit date tooltip" }
 }

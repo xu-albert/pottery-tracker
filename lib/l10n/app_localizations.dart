@@ -399,6 +399,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unarchive'**
   String get unarchivePiece;
+
+  /// Last updated timestamp
+  ///
+  /// In en, this message translates to:
+  /// **'Last updated {date}'**
+  String lastUpdated(String date);
+
+  /// Edit date tooltip
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Date'**
+  String get editDate;
 }
 
 class _AppLocalizationsDelegate

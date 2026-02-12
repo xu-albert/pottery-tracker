@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
@@ -40,6 +41,13 @@ class PieceRow extends ConsumerWidget {
                     ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                DateFormat.yMMMd().format(piece.piece.updatedAt),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.charcoal.withValues(alpha: 0.5),
+                    ),
               ),
               const SizedBox(height: AppSizes.sm),
               photosAsync.when(

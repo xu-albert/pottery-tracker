@@ -32,7 +32,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ## 3. Album Screen (Home)
 
 ### Active View (default)
-- [ ] Pieces shown as rows with title + horizontally scrollable photo thumbnails
+- [ ] Pieces shown as rows with title, updatedAt date, + horizontally scrollable photo thumbnails
 - [ ] Newest-updated pieces appear first
 - [ ] Tapping a row opens piece detail
 - [ ] Scrollable photo row shows left/right fade gradients when overflowing
@@ -121,9 +121,13 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ### Done Button
 - [ ] Tapping "Done" saves pending form changes and navigates to home
 
-### Last Updated
-- [ ] Shows "Last updated {date} {time}" below metadata
+### Last Updated (Editable)
+- [ ] Shows "Last updated {date} {time}" below metadata with edit icon
 - [ ] Timestamp updates after any edit
+- [ ] Tapping opens date picker then time picker
+- [ ] Selected date/time updates the updatedAt in DB
+- [ ] Cancelling date picker leaves date unchanged
+- [ ] Cancelling time picker uses existing time with new date
 
 ---
 
@@ -197,3 +201,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Archive thumbnails: 1:1 square, photo-only (title removed) |
 | 2026-02-12 | Untitled piece auto-numbering: "Untitled Piece N" with lowest available number |
 | 2026-02-12 | Detail redesign: title above gallery, archive/trash icon buttons replace overflow menu, darker sepia background |
+| 2026-02-12 | Editable "last updated" date: album rows show updatedAt, detail screen date is tappable with date/time picker |

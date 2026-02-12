@@ -169,4 +169,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get unarchivePiece => 'Unarchive';
+
+  @override
+  String lastUpdated(String date) {
+    return 'Last updated $date';
+  }
+
+  @override
+  String get editDate => 'Edit Date';
 }

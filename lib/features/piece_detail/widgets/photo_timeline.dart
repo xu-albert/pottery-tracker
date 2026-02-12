@@ -6,8 +6,9 @@ import '../../../core/constants/app_colors.dart';
 
 class LastUpdatedInfo extends StatelessWidget {
   final Piece piece;
+  final VoidCallback? onTap;
 
-  const LastUpdatedInfo({super.key, required this.piece});
+  const LastUpdatedInfo({super.key, required this.piece, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -15,17 +16,28 @@ class LastUpdatedInfo extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
-      child: Row(
-        children: [
-          Icon(Icons.access_time, size: 16, color: AppColors.charcoal.withValues(alpha: 0.5)),
-          const SizedBox(width: AppSizes.xs),
-          Text(
-            'Last updated ${dateFormat.format(piece.updatedAt)}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.charcoal.withValues(alpha: 0.5),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+          child: Row(
+            children: [
+              Icon(Icons.access_time, size: 16, color: AppColors.charcoal.withValues(alpha: 0.5)),
+              const SizedBox(width: AppSizes.xs),
+              Expanded(
+                child: Text(
+                  'Last updated ${dateFormat.format(piece.updatedAt)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.charcoal.withValues(alpha: 0.5),
+                      ),
                 ),
+              ),
+              if (onTap != null)
+                Icon(Icons.edit, size: 14, color: AppColors.charcoal.withValues(alpha: 0.5)),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
