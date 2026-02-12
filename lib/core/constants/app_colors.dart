@@ -10,5 +10,6 @@ abstract final class AppColors {
   static const dustyRose = Color(0xFFCFA39A);
   static const warmWhite = Color(0xFFF5F0EB);
   static const divider = Color(0xFFD8CFC4);
+  static const inputText = Color(0xFF6B6259);
   static const error = Color(0xFFB3261E);
 }

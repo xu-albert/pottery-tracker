@@ -34,6 +34,8 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.warmWhite,
+        hintStyle: TextStyle(color: AppColors.inputText.withValues(alpha: 0.6)),
+        labelStyle: const TextStyle(color: AppColors.inputText),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSizes.radiusMd),
           borderSide: BorderSide.none,
