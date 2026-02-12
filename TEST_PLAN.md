@@ -90,6 +90,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Left/right fade gradients appear when gallery is scrollable
 - [ ] Gradients hide when scrolled to respective edge
 - [ ] Single photo → centered, no gradients
+- [ ] Date label shown below each photo (e.g. "Feb 12, 2026")
 - [ ] Tap photo → fullscreen viewer with pinch-zoom (0.5x–4x)
 - [ ] Long-press photo → bottom sheet with "Delete photo" option
 
@@ -210,3 +211,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Detail redesign: title above gallery, archive/trash icon buttons replace overflow menu, darker sepia background |
 | 2026-02-12 | Editable "last updated" date: album rows show updatedAt, detail screen date is tappable with date/time picker |
 | 2026-02-12 | Haptic feedback: light on add photo, delete photo, archive; medium on delete piece; light on piece creation |
+| 2026-02-12 | Photo date labels: dateTaken shown below each photo in detail gallery |

@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../../core/constants/app_colors.dart';
 import '../../../database/database.dart';
 import '../../../core/constants/app_sizes.dart';
 import 'photo_fullscreen.dart';
@@ -74,8 +76,10 @@ class _PhotoGalleryState extends State<PhotoGallery> {
     final bgColor = Theme.of(context).scaffoldBackgroundColor;
     final gradientWidth = photoSize * 0.3;
 
+    const dateLabelHeight = 24.0;
+
     return SizedBox(
-      height: photoSize,
+      height: photoSize + dateLabelHeight,
       child: Stack(
         children: [
           ListView.separated(
@@ -87,28 +91,43 @@ class _PhotoGalleryState extends State<PhotoGallery> {
             separatorBuilder: (_, _) => const SizedBox(width: AppSizes.md),
             itemBuilder: (context, index) {
               final photo = widget.photos[index];
-              return GestureDetector(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        PhotoFullscreen(photoPath: photo.localPath),
-                  ),
-                ),
-                onLongPress: () => _showPhotoActions(photo),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-                  child: SizedBox(
-                    width: photoSize,
-                    height: photoSize,
-                    child: Image.file(
-                      File(photo.localPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Center(
-                        child: Icon(Icons.broken_image, size: 48),
+              return SizedBox(
+                width: photoSize,
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              PhotoFullscreen(photoPath: photo.localPath),
+                        ),
+                      ),
+                      onLongPress: () => _showPhotoActions(photo),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                        child: SizedBox(
+                          width: photoSize,
+                          height: photoSize,
+                          child: Image.file(
+                            File(photo.localPath),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Icon(Icons.broken_image, size: 48),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      DateFormat.yMMMd().format(photo.dateTaken),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.charcoal.withValues(alpha: 0.6),
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
               );
             },
