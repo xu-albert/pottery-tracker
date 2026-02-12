@@ -24,18 +24,29 @@ class PieceDetailScreen extends ConsumerStatefulWidget {
 
 class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   final _formKey = GlobalKey<MetadataFormState>();
+  late final TextEditingController _titleCtrl;
   Piece? _piece;
 
   @override
   void initState() {
     super.initState();
+    _titleCtrl = TextEditingController();
     _loadPiece();
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPiece() async {
     final dao = ref.read(piecesDaoProvider);
     final piece = await dao.getPieceById(widget.pieceId);
-    if (mounted) setState(() => _piece = piece);
+    if (mounted) {
+      setState(() => _piece = piece);
+      _titleCtrl.text = piece?.title ?? '';
+    }
   }
 
   Future<void> _addPhoto(ImageSource source) async {
@@ -242,24 +253,20 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             tooltip: l10n.addPhoto,
             onPressed: _showAddPhotoSheet,
           ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'archive') _toggleArchive();
-              if (value == 'delete') _deletePiece();
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'archive',
-                child: Text(_piece!.isArchived
-                    ? l10n.unarchivePiece
-                    : l10n.archivePiece),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: Text(l10n.deletePiece,
-                    style: const TextStyle(color: Colors.red)),
-              ),
-            ],
+          IconButton(
+            icon: Icon(_piece!.isArchived
+                ? Icons.unarchive_outlined
+                : Icons.archive_outlined),
+            tooltip: _piece!.isArchived
+                ? l10n.unarchivePiece
+                : l10n.archivePiece,
+            onPressed: _toggleArchive,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: l10n.deletePiece,
+            color: Colors.red,
+            onPressed: _deletePiece,
           ),
         ],
       ),
@@ -273,6 +280,19 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: TextField(
+                        controller: _titleCtrl,
+                        style: Theme.of(context).textTheme.titleLarge,
+                        decoration: InputDecoration(
+                          hintText: l10n.untitledPiece,
+                          border: InputBorder.none,
+                        ),
+                        onEditingComplete: () =>
+                            _updateField(title: _titleCtrl.text),
+                      ),
+                    ),
                     if (photos.isNotEmpty)
                       PhotoGallery(
                         photos: photos,
@@ -297,6 +317,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
+                      _updateField(title: _titleCtrl.text);
                       _formKey.currentState?.saveAll();
                       context.go('/');
                     },

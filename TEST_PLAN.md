@@ -108,10 +108,15 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Edit notes (multiline) → saves on keyboard "done"
 - [ ] Empty string fields saved as NULL in database
 
-### Actions (Overflow Menu)
-- [ ] "Archive" → piece archived, navigates back to home
-- [ ] "Unarchive" (on archived piece) → piece unarchived, stays on detail
-- [ ] "Delete" → confirmation dialog → piece + all photos deleted, navigates home
+### Actions (Icon Buttons in App Bar)
+- [ ] Archive icon button → piece archived, navigates back to home
+- [ ] Unarchive icon (on archived piece) → piece unarchived, stays on detail
+- [ ] Trash icon (red tint) → confirmation dialog → piece + all photos deleted, navigates home
+
+### Title (Above Gallery)
+- [ ] Title displayed above photo gallery with titleLarge styling
+- [ ] Title is editable, saves on keyboard "done"
+- [ ] Empty title shows "Untitled Piece" hint
 
 ### Done Button
 - [ ] Tapping "Done" saves pending form changes and navigates to home
@@ -191,3 +196,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Archive navigates back to home |
 | 2026-02-12 | Archive thumbnails: 1:1 square, photo-only (title removed) |
 | 2026-02-12 | Untitled piece auto-numbering: "Untitled Piece N" with lowest available number |
+| 2026-02-12 | Detail redesign: title above gallery, archive/trash icon buttons replace overflow menu, darker sepia background |

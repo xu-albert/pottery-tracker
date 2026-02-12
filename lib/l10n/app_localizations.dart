@@ -241,7 +241,7 @@ abstract class AppLocalizations {
   /// Delete piece confirmation message
   ///
   /// In en, this message translates to:
-  /// **'This will permanently delete this piece and all its photos.'**
+  /// **'Are you sure you want to delete this piece? This cannot be undone.'**
   String get deletePieceConfirmMessage;
 
   /// Cancel action

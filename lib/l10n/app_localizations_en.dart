@@ -83,7 +83,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deletePieceConfirmMessage =>
-      'This will permanently delete this piece and all its photos.';
+      'Are you sure you want to delete this piece? This cannot be undone.';
 
   @override
   String get cancel => 'Cancel';

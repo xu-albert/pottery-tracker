@@ -26,7 +26,6 @@ class MetadataForm extends StatefulWidget {
 }
 
 class MetadataFormState extends State<MetadataForm> {
-  late final TextEditingController _titleCtrl;
   late final TextEditingController _clayCtrl;
   late final TextEditingController _glazesCtrl;
   late final TextEditingController _notesCtrl;
@@ -34,7 +33,6 @@ class MetadataFormState extends State<MetadataForm> {
   @override
   void initState() {
     super.initState();
-    _titleCtrl = TextEditingController(text: widget.piece.title ?? '');
     _clayCtrl = TextEditingController(text: widget.piece.clayType ?? '');
     _glazesCtrl = TextEditingController(text: widget.piece.glazes ?? '');
     _notesCtrl = TextEditingController(text: widget.piece.notes ?? '');
@@ -44,7 +42,6 @@ class MetadataFormState extends State<MetadataForm> {
   void didUpdateWidget(MetadataForm old) {
     super.didUpdateWidget(old);
     if (old.piece.id != widget.piece.id) {
-      _titleCtrl.text = widget.piece.title ?? '';
       _clayCtrl.text = widget.piece.clayType ?? '';
       _glazesCtrl.text = widget.piece.glazes ?? '';
       _notesCtrl.text = widget.piece.notes ?? '';
@@ -53,7 +50,6 @@ class MetadataFormState extends State<MetadataForm> {
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
     _clayCtrl.dispose();
     _glazesCtrl.dispose();
     _notesCtrl.dispose();
@@ -68,7 +64,6 @@ class MetadataFormState extends State<MetadataForm> {
 
   void saveAll() {
     widget.onUpdateField(
-      title: _titleCtrl.text,
       clayType: _clayCtrl.text,
       glazes: _glazesCtrl.text,
       notes: _notesCtrl.text,
@@ -84,18 +79,6 @@ class MetadataFormState extends State<MetadataForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title
-          TextField(
-            controller: _titleCtrl,
-            decoration: InputDecoration(
-              labelText: l10n.titleLabel,
-              hintText: l10n.untitledPiece,
-            ),
-            onEditingComplete: () =>
-                widget.onUpdateField(title: _titleCtrl.text),
-          ),
-          const SizedBox(height: AppSizes.md),
-
           // Stage dropdown
           DropdownButtonFormField<PieceStage?>(
             initialValue: _currentStage,

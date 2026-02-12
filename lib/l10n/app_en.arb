@@ -48,7 +48,7 @@
   "@deletePiece": { "description": "Delete piece action" },
   "deletePieceConfirmTitle": "Delete Piece?",
   "@deletePieceConfirmTitle": { "description": "Delete piece confirmation dialog title" },
-  "deletePieceConfirmMessage": "This will permanently delete this piece and all its photos.",
+  "deletePieceConfirmMessage": "Are you sure you want to delete this piece? This cannot be undone.",
   "@deletePieceConfirmMessage": { "description": "Delete piece confirmation message" },
   "cancel": "Cancel",
   "@cancel": { "description": "Cancel action" },
