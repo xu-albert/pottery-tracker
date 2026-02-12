@@ -55,6 +55,21 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
     await _createPiece(source);
   }
 
+  Future<String> _nextUntitledName(dynamic piecesDao) async {
+    final titles = await piecesDao.getUntitledPieceTitles();
+    final usedNumbers = <int>{};
+    final pattern = RegExp(r'^Untitled Piece (\d+)$');
+    for (final t in titles) {
+      final match = pattern.firstMatch(t);
+      if (match != null) usedNumbers.add(int.parse(match.group(1)!));
+    }
+    var n = 1;
+    while (usedNumbers.contains(n)) {
+      n++;
+    }
+    return 'Untitled Piece $n';
+  }
+
   Future<void> _createPiece(ImageSource source) async {
     setState(() => _processing = true);
 
@@ -77,8 +92,11 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
       final piecesDao = ref.read(piecesDaoProvider);
       final photosDao = ref.read(photosDaoProvider);
 
+      final title = await _nextUntitledName(piecesDao);
+
       await piecesDao.insertPiece(PiecesCompanion(
         id: Value(pieceId),
+        title: Value(title),
         coverPhotoId: Value(result.photoId),
         createdAt: Value(now),
         updatedAt: Value(now),

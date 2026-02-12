@@ -1,0 +1,232 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_sizes.dart';
+import '../../../database/database.dart';
+import '../../../database/daos/pieces_dao.dart';
+import '../../../providers/photos_provider.dart';
+
+class PieceRow extends ConsumerWidget {
+  final PieceWithCover piece;
+  final VoidCallback onTap;
+
+  const PieceRow({super.key, required this.piece, required this.onTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final photosAsync = ref.watch(photosForPieceProvider(piece.piece.id));
+    final title = piece.piece.title ?? 'Untitled Piece';
+
+    return Semantics(
+      label: title,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(
+            left: AppSizes.md,
+            right: AppSizes.md,
+            top: AppSizes.sm,
+            bottom: AppSizes.md,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: AppSizes.sm),
+              photosAsync.when(
+                loading: () => _buildPhotoRowPlaceholder(context),
+                error: (_, _) => _buildPhotoRowPlaceholder(context),
+                data: (photos) => _buildPhotoRow(context, photos),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotoRow(BuildContext context, List<Photo> photos) {
+    if (photos.isEmpty) {
+      return _buildPhotoRowPlaceholder(context);
+    }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final availableWidth = screenWidth - AppSizes.md * 2;
+    final thumbSize = (availableWidth - AppSizes.sm * 2) / 3;
+
+    return _ScrollablePhotoRow(
+      photos: photos,
+      thumbSize: thumbSize,
+      placeholderBuilder: _placeholderTile,
+    );
+  }
+
+  Widget _buildPhotoRowPlaceholder(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final availableWidth = screenWidth - AppSizes.md * 2;
+    final thumbSize = (availableWidth - AppSizes.sm * 2) / 3;
+
+    return SizedBox(
+      height: thumbSize,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        child: SizedBox(
+          width: thumbSize,
+          height: thumbSize,
+          child: _placeholderTile(),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholderTile() {
+    return Container(
+      color: AppColors.peach.withValues(alpha: 0.3),
+      child: const Icon(Icons.image_outlined, color: AppColors.charcoal),
+    );
+  }
+}
+
+class _ScrollablePhotoRow extends StatefulWidget {
+  final List<Photo> photos;
+  final double thumbSize;
+  final Widget Function() placeholderBuilder;
+
+  const _ScrollablePhotoRow({
+    required this.photos,
+    required this.thumbSize,
+    required this.placeholderBuilder,
+  });
+
+  @override
+  State<_ScrollablePhotoRow> createState() => _ScrollablePhotoRowState();
+}
+
+class _ScrollablePhotoRowState extends State<_ScrollablePhotoRow> {
+  final _scrollController = ScrollController();
+  bool _showLeftGradient = false;
+  bool _showRightGradient = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _checkOverflow() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    setState(() {
+      _showRightGradient = maxScroll > 0;
+    });
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final atStart = pos.pixels <= 0;
+    final atEnd = pos.pixels >= pos.maxScrollExtent - 1;
+    if (_showLeftGradient != !atStart || _showRightGradient != !atEnd) {
+      setState(() {
+        _showLeftGradient = !atStart;
+        _showRightGradient = !atEnd;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
+    final gradientWidth = widget.thumbSize * 0.4;
+
+    return SizedBox(
+      height: widget.thumbSize,
+      child: Stack(
+        children: [
+          ListView.separated(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: widget.photos.length,
+            separatorBuilder: (_, _) => const SizedBox(width: AppSizes.sm),
+            itemBuilder: (context, index) {
+              final photo = widget.photos[index];
+              final path = photo.thumbnailPath ?? photo.localPath;
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                child: SizedBox(
+                  width: widget.thumbSize,
+                  height: widget.thumbSize,
+                  child: Image.file(
+                    File(path),
+                    fit: BoxFit.cover,
+                    cacheWidth: AppSizes.thumbnailSize.toInt(),
+                    errorBuilder: (_, _, _) => widget.placeholderBuilder(),
+                  ),
+                ),
+              );
+            },
+          ),
+          if (_showLeftGradient)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: gradientWidth,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [
+                        bgColor.withValues(alpha: 0),
+                        bgColor.withValues(alpha: 0.8),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_showRightGradient)
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: gradientWidth,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        bgColor.withValues(alpha: 0),
+                        bgColor.withValues(alpha: 0.8),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

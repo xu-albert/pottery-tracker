@@ -8,6 +8,7 @@ class Pieces extends Table {
   TextColumn get glazes => text().nullable()();
   TextColumn get notes => text().nullable()();
   TextColumn get coverPhotoId => text().nullable()();
+  BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

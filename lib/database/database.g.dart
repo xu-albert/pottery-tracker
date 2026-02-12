@@ -75,6 +75,21 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isArchivedMeta = const VerificationMeta(
+    'isArchived',
+  );
+  @override
+  late final GeneratedColumn<bool> isArchived = GeneratedColumn<bool>(
+    'is_archived',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_archived" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -106,6 +121,7 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     glazes,
     notes,
     coverPhotoId,
+    isArchived,
     createdAt,
     updatedAt,
   ];
@@ -165,6 +181,12 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         ),
       );
     }
+    if (data.containsKey('is_archived')) {
+      context.handle(
+        _isArchivedMeta,
+        isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -218,6 +240,10 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         DriftSqlType.string,
         data['${effectivePrefix}cover_photo_id'],
       ),
+      isArchived: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_archived'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -243,6 +269,7 @@ class Piece extends DataClass implements Insertable<Piece> {
   final String? glazes;
   final String? notes;
   final String? coverPhotoId;
+  final bool isArchived;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Piece({
@@ -253,6 +280,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     this.glazes,
     this.notes,
     this.coverPhotoId,
+    required this.isArchived,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -278,6 +306,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     if (!nullToAbsent || coverPhotoId != null) {
       map['cover_photo_id'] = Variable<String>(coverPhotoId);
     }
+    map['is_archived'] = Variable<bool>(isArchived);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -304,6 +333,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       coverPhotoId: coverPhotoId == null && nullToAbsent
           ? const Value.absent()
           : Value(coverPhotoId),
+      isArchived: Value(isArchived),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -322,6 +352,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       glazes: serializer.fromJson<String?>(json['glazes']),
       notes: serializer.fromJson<String?>(json['notes']),
       coverPhotoId: serializer.fromJson<String?>(json['coverPhotoId']),
+      isArchived: serializer.fromJson<bool>(json['isArchived']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -337,6 +368,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       'glazes': serializer.toJson<String?>(glazes),
       'notes': serializer.toJson<String?>(notes),
       'coverPhotoId': serializer.toJson<String?>(coverPhotoId),
+      'isArchived': serializer.toJson<bool>(isArchived),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -350,6 +382,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     Value<String?> glazes = const Value.absent(),
     Value<String?> notes = const Value.absent(),
     Value<String?> coverPhotoId = const Value.absent(),
+    bool? isArchived,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Piece(
@@ -360,6 +393,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     glazes: glazes.present ? glazes.value : this.glazes,
     notes: notes.present ? notes.value : this.notes,
     coverPhotoId: coverPhotoId.present ? coverPhotoId.value : this.coverPhotoId,
+    isArchived: isArchived ?? this.isArchived,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -374,6 +408,9 @@ class Piece extends DataClass implements Insertable<Piece> {
       coverPhotoId: data.coverPhotoId.present
           ? data.coverPhotoId.value
           : this.coverPhotoId,
+      isArchived: data.isArchived.present
+          ? data.isArchived.value
+          : this.isArchived,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -389,6 +426,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           ..write('glazes: $glazes, ')
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
+          ..write('isArchived: $isArchived, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -404,6 +442,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     glazes,
     notes,
     coverPhotoId,
+    isArchived,
     createdAt,
     updatedAt,
   );
@@ -418,6 +457,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           other.glazes == this.glazes &&
           other.notes == this.notes &&
           other.coverPhotoId == this.coverPhotoId &&
+          other.isArchived == this.isArchived &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -430,6 +470,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
   final Value<String?> glazes;
   final Value<String?> notes;
   final Value<String?> coverPhotoId;
+  final Value<bool> isArchived;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -441,6 +482,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.glazes = const Value.absent(),
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
+    this.isArchived = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -453,6 +495,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.glazes = const Value.absent(),
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
+    this.isArchived = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -467,6 +510,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Expression<String>? glazes,
     Expression<String>? notes,
     Expression<String>? coverPhotoId,
+    Expression<bool>? isArchived,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -479,6 +523,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       if (glazes != null) 'glazes': glazes,
       if (notes != null) 'notes': notes,
       if (coverPhotoId != null) 'cover_photo_id': coverPhotoId,
+      if (isArchived != null) 'is_archived': isArchived,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -493,6 +538,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Value<String?>? glazes,
     Value<String?>? notes,
     Value<String?>? coverPhotoId,
+    Value<bool>? isArchived,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -505,6 +551,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       glazes: glazes ?? this.glazes,
       notes: notes ?? this.notes,
       coverPhotoId: coverPhotoId ?? this.coverPhotoId,
+      isArchived: isArchived ?? this.isArchived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -535,6 +582,9 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     if (coverPhotoId.present) {
       map['cover_photo_id'] = Variable<String>(coverPhotoId.value);
     }
+    if (isArchived.present) {
+      map['is_archived'] = Variable<bool>(isArchived.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -557,6 +607,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
           ..write('glazes: $glazes, ')
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
+          ..write('isArchived: $isArchived, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -1109,6 +1160,7 @@ typedef $$PiecesTableCreateCompanionBuilder =
       Value<String?> glazes,
       Value<String?> notes,
       Value<String?> coverPhotoId,
+      Value<bool> isArchived,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -1122,6 +1174,7 @@ typedef $$PiecesTableUpdateCompanionBuilder =
       Value<String?> glazes,
       Value<String?> notes,
       Value<String?> coverPhotoId,
+      Value<bool> isArchived,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -1192,6 +1245,11 @@ class $$PiecesTableFilterComposer
 
   ColumnFilters<String> get coverPhotoId => $composableBuilder(
     column: $table.coverPhotoId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1275,6 +1333,11 @@ class $$PiecesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -1315,6 +1378,11 @@ class $$PiecesTableAnnotationComposer
 
   GeneratedColumn<String> get coverPhotoId => $composableBuilder(
     column: $table.coverPhotoId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
     builder: (column) => column,
   );
 
@@ -1385,6 +1453,7 @@ class $$PiecesTableTableManager
                 Value<String?> glazes = const Value.absent(),
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -1396,6 +1465,7 @@ class $$PiecesTableTableManager
                 glazes: glazes,
                 notes: notes,
                 coverPhotoId: coverPhotoId,
+                isArchived: isArchived,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -1409,6 +1479,7 @@ class $$PiecesTableTableManager
                 Value<String?> glazes = const Value.absent(),
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -1420,6 +1491,7 @@ class $$PiecesTableTableManager
                 glazes: glazes,
                 notes: notes,
                 coverPhotoId: coverPhotoId,
+                isArchived: isArchived,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

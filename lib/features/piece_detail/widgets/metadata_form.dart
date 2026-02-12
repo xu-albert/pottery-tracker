@@ -22,10 +22,10 @@ class MetadataForm extends StatefulWidget {
   });
 
   @override
-  State<MetadataForm> createState() => _MetadataFormState();
+  State<MetadataForm> createState() => MetadataFormState();
 }
 
-class _MetadataFormState extends State<MetadataForm> {
+class MetadataFormState extends State<MetadataForm> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _clayCtrl;
   late final TextEditingController _glazesCtrl;
@@ -64,6 +64,15 @@ class _MetadataFormState extends State<MetadataForm> {
     final s = widget.piece.stage;
     if (s == null) return null;
     return PieceStage.values.where((e) => e.name == s).firstOrNull;
+  }
+
+  void saveAll() {
+    widget.onUpdateField(
+      title: _titleCtrl.text,
+      clayType: _clayCtrl.text,
+      glazes: _glazesCtrl.text,
+      notes: _notesCtrl.text,
+    );
   }
 
   @override

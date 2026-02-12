@@ -124,17 +124,17 @@ abstract class AppLocalizations {
   /// **'Search pieces...'**
   String get searchPieces;
 
-  /// All filter label
+  /// Active filter label
   ///
   /// In en, this message translates to:
-  /// **'All'**
+  /// **'Active'**
   String get filterAll;
 
-  /// Finished filter label
+  /// Archive filter label
   ///
   /// In en, this message translates to:
-  /// **'Finished'**
-  String get filterFinished;
+  /// **'Archive'**
+  String get filterArchived;
 
   /// Empty state title
   ///
@@ -387,6 +387,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This photo will be permanently deleted.'**
   String get deletePhotoConfirmMessage;
+
+  /// Archive piece action
+  ///
+  /// In en, this message translates to:
+  /// **'Archive'**
+  String get archivePiece;
+
+  /// Unarchive piece action
+  ///
+  /// In en, this message translates to:
+  /// **'Unarchive'**
+  String get unarchivePiece;
 }
 
 class _AppLocalizationsDelegate

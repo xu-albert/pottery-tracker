@@ -10,7 +10,7 @@ class FilterChips extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
-    final finishedOnly = ref.watch(finishedFilterProvider);
+    final archivedOnly = ref.watch(archivedFilterProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -19,16 +19,16 @@ class FilterChips extends ConsumerWidget {
         children: [
           ChoiceChip(
             label: Text(l10n.filterAll),
-            selected: !finishedOnly,
+            selected: !archivedOnly,
             onSelected: (_) =>
-                ref.read(finishedFilterProvider.notifier).state = false,
+                ref.read(archivedFilterProvider.notifier).state = false,
           ),
           const SizedBox(width: AppSizes.sm),
           ChoiceChip(
-            label: Text(l10n.filterFinished),
-            selected: finishedOnly,
+            label: Text(l10n.filterArchived),
+            selected: archivedOnly,
             onSelected: (_) =>
-                ref.read(finishedFilterProvider.notifier).state = true,
+                ref.read(archivedFilterProvider.notifier).state = true,
           ),
         ],
       ),

@@ -24,10 +24,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchPieces => 'Search pieces...';
 
   @override
-  String get filterAll => 'All';
+  String get filterAll => 'Active';
 
   @override
-  String get filterFinished => 'Finished';
+  String get filterArchived => 'Archive';
 
   @override
   String get emptyStateTitle => 'No pieces yet';
@@ -163,4 +163,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get deletePhotoConfirmMessage =>
       'This photo will be permanently deleted.';
+
+  @override
+  String get archivePiece => 'Archive';
+
+  @override
+  String get unarchivePiece => 'Unarchive';
 }

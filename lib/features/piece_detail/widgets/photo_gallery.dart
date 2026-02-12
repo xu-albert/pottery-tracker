@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../database/database.dart';
-import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_sizes.dart';
 import 'photo_fullscreen.dart';
 
@@ -20,19 +19,72 @@ class PhotoGallery extends StatefulWidget {
 }
 
 class _PhotoGalleryState extends State<PhotoGallery> {
-  int _currentPage = 0;
+  final _scrollController = ScrollController();
+  bool _showLeftGradient = false;
+  bool _showRightGradient = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
+  }
+
+  @override
+  void didUpdateWidget(PhotoGallery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photos.length != widget.photos.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _checkOverflow() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    setState(() {
+      _showRightGradient = maxScroll > 0;
+      _showLeftGradient = _scrollController.position.pixels > 0;
+    });
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final atStart = pos.pixels <= 0;
+    final atEnd = pos.pixels >= pos.maxScrollExtent - 1;
+    if (_showLeftGradient != !atStart || _showRightGradient != !atEnd) {
+      setState(() {
+        _showLeftGradient = !atStart;
+        _showRightGradient = !atEnd;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final photoSize = screenWidth * 0.72;
+    final sidePadding = (screenWidth - photoSize) / 2;
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
+    final gradientWidth = photoSize * 0.3;
 
-    return Column(
-      children: [
-        AspectRatio(
-          aspectRatio: 1,
-          child: PageView.builder(
+    return SizedBox(
+      height: photoSize,
+      child: Stack(
+        children: [
+          ListView.separated(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.symmetric(horizontal: sidePadding),
             itemCount: widget.photos.length,
-            onPageChanged: (i) => setState(() => _currentPage = i),
+            separatorBuilder: (_, _) => const SizedBox(width: AppSizes.md),
             itemBuilder: (context, index) {
               final photo = widget.photos[index];
               return GestureDetector(
@@ -44,30 +96,71 @@ class _PhotoGalleryState extends State<PhotoGallery> {
                   ),
                 ),
                 onLongPress: () => _showPhotoActions(photo),
-                child: Image.file(
-                  File(photo.localPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Center(
-                    child: Icon(Icons.broken_image, size: 48),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                  child: SizedBox(
+                    width: photoSize,
+                    height: photoSize,
+                    child: Image.file(
+                      File(photo.localPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Center(
+                        child: Icon(Icons.broken_image, size: 48),
+                      ),
+                    ),
                   ),
                 ),
               );
             },
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(AppSizes.sm),
-          child: Text(
-            l10n.photoOf(_currentPage + 1, widget.photos.length),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      ],
+          if (_showLeftGradient)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: gradientWidth,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [
+                        bgColor.withValues(alpha: 0),
+                        bgColor.withValues(alpha: 0.8),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_showRightGradient)
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: gradientWidth,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        bgColor.withValues(alpha: 0),
+                        bgColor.withValues(alpha: 0.8),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   void _showPhotoActions(Photo photo) {
-    final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -75,8 +168,8 @@ class _PhotoGalleryState extends State<PhotoGallery> {
           children: [
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
-              title: Text(l10n.deletePhoto,
-                  style: const TextStyle(color: Colors.red)),
+              title: const Text('Delete photo',
+                  style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(ctx);
                 widget.onDelete(photo);

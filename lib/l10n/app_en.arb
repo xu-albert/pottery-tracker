@@ -10,10 +10,10 @@
   "@addPiece": { "description": "Add piece button label" },
   "searchPieces": "Search pieces...",
   "@searchPieces": { "description": "Search bar placeholder" },
-  "filterAll": "All",
-  "@filterAll": { "description": "All filter label" },
-  "filterFinished": "Finished",
-  "@filterFinished": { "description": "Finished filter label" },
+  "filterAll": "Active",
+  "@filterAll": { "description": "Active filter label" },
+  "filterArchived": "Archive",
+  "@filterArchived": { "description": "Archive filter label" },
   "emptyStateTitle": "No pieces yet",
   "@emptyStateTitle": { "description": "Empty state title" },
   "emptyStateMessage": "Tap + to take a photo and start tracking your first piece!",
@@ -113,5 +113,9 @@
   "deletePhotoConfirmTitle": "Delete Photo?",
   "@deletePhotoConfirmTitle": { "description": "Delete photo confirmation title" },
   "deletePhotoConfirmMessage": "This photo will be permanently deleted.",
-  "@deletePhotoConfirmMessage": { "description": "Delete photo confirmation message" }
+  "@deletePhotoConfirmMessage": { "description": "Delete photo confirmation message" },
+  "archivePiece": "Archive",
+  "@archivePiece": { "description": "Archive piece action" },
+  "unarchivePiece": "Unarchive",
+  "@unarchivePiece": { "description": "Unarchive piece action" }
 }

@@ -23,6 +23,7 @@ class PieceDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
+  final _formKey = GlobalKey<MetadataFormState>();
   Piece? _piece;
 
   @override
@@ -111,6 +112,21 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
         updatedAt: Value(DateTime.now()),
       ));
+      _loadPiece();
+    }
+  }
+
+  Future<void> _toggleArchive() async {
+    final wasArchived = _piece!.isArchived;
+    final dao = ref.read(piecesDaoProvider);
+    await dao.updatePiece(PiecesCompanion(
+      id: Value(widget.pieceId),
+      isArchived: Value(!wasArchived),
+      updatedAt: Value(DateTime.now()),
+    ));
+    if (!wasArchived && mounted) {
+      context.go('/');
+    } else {
       _loadPiece();
     }
   }
@@ -228,9 +244,16 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
+              if (value == 'archive') _toggleArchive();
               if (value == 'delete') _deletePiece();
             },
             itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'archive',
+                child: Text(_piece!.isArchived
+                    ? l10n.unarchivePiece
+                    : l10n.archivePiece),
+              ),
               PopupMenuItem(
                 value: 'delete',
                 child: Text(l10n.deletePiece,
@@ -256,6 +279,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                         onDelete: _deletePhoto,
                       ),
                     MetadataForm(
+                      key: _formKey,
                       piece: _piece!,
                       onUpdateField: _updateField,
                     ),
@@ -272,7 +296,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => context.go('/'),
+                    onPressed: () {
+                      _formKey.currentState?.saveAll();
+                      context.go('/');
+                    },
                     child: const Text('Done'),
                   ),
                 ),

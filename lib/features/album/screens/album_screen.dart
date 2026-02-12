@@ -27,7 +27,11 @@ class AlbumScreen extends ConsumerWidget {
               error: (e, _) => Center(child: Text('Error: $e')),
               data: (pieces) {
                 if (pieces.isEmpty) return const EmptyState();
-                return AlbumGrid(pieces: pieces);
+                final isArchived = ref.watch(archivedFilterProvider);
+                return AlbumGrid(
+                  pieces: pieces,
+                  isArchived: isArchived,
+                );
               },
             ),
           ),

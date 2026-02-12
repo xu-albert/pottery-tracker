@@ -19,12 +19,19 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
   Future<void> deletePiece(String id) =>
       (delete(pieces)..where((p) => p.id.equals(id))).go();
 
+  Future<List<String>> getUntitledPieceTitles() async {
+    final query = select(pieces)
+      ..where((p) => p.title.like('Untitled Piece %'));
+    final rows = await query.get();
+    return rows.map((r) => r.title).whereType<String>().toList();
+  }
+
   Future<Piece?> getPieceById(String id) =>
       (select(pieces)..where((p) => p.id.equals(id))).getSingleOrNull();
 
   Stream<List<PieceWithCover>> watchAllPieces({
     String? searchQuery,
-    bool finishedOnly = false,
+    bool archivedOnly = false,
   }) {
     final pieceQuery = select(pieces).join([
       leftOuterJoin(photos, photos.id.equalsExp(pieces.coverPhotoId)),
@@ -40,8 +47,10 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
       );
     }
 
-    if (finishedOnly) {
-      pieceQuery.where(pieces.stage.equals('glazed'));
+    if (archivedOnly) {
+      pieceQuery.where(pieces.isArchived.equals(true));
+    } else {
+      pieceQuery.where(pieces.isArchived.equals(false));
     }
 
     pieceQuery.orderBy([OrderingTerm.desc(pieces.updatedAt)]);

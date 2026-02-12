@@ -24,14 +24,14 @@ class PhotosDao extends DatabaseAccessor<AppDatabase> with _$PhotosDaoMixin {
   Stream<List<Photo>> watchPhotosForPiece(String pieceId) {
     return (select(photos)
           ..where((p) => p.pieceId.equals(pieceId))
-          ..orderBy([(p) => OrderingTerm.asc(p.sortOrder)]))
+          ..orderBy([(p) => OrderingTerm.desc(p.sortOrder)]))
         .watch();
   }
 
   Future<List<Photo>> getPhotosForPiece(String pieceId) {
     return (select(photos)
           ..where((p) => p.pieceId.equals(pieceId))
-          ..orderBy([(p) => OrderingTerm.asc(p.sortOrder)]))
+          ..orderBy([(p) => OrderingTerm.desc(p.sortOrder)]))
         .get();
   }
 
