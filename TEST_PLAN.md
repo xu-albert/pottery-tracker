@@ -95,20 +95,20 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Long-press photo → bottom sheet with "Delete photo" option
 
 ### Photo Management
-- [ ] Add photo via camera icon in app bar → Camera / Photo Library / Select Multiple picker
+- [ ] Add photo via camera icon in app bar → Camera / Photo Library picker
 - [ ] New photo becomes cover automatically
 - [ ] Delete photo → confirmation dialog → photo removed
 - [ ] Deleting cover photo → next newest photo becomes cover
 - [ ] Deleting all photos → no gallery shown, just metadata form
 
-### Batch Photo Upload
-- [ ] "Select Multiple" option in add photo bottom sheet
-- [ ] Multi-picker allows selecting 2+ photos at once
-- [ ] Progress dialog shows "Processing X of Y..."
+### Batch Photo Upload (Photo Library multi-select)
+- [ ] Photo Library option uses multi-select picker (select 1 or many)
+- [ ] Progress dialog shows "Processing X of Y..." for multiple photos
 - [ ] All selected photos added to piece gallery
 - [ ] Last photo in batch set as cover
 - [ ] Failed photos skipped; failure count shown in snackbar
 - [ ] Cancelling multi-picker returns with no changes
+- **NOTE: Multi-select (PHPicker) does NOT work on iOS simulator. Camera also crashes on simulator. Both require a real device to test.**
 
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
