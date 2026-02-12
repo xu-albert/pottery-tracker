@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -78,6 +79,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         coverPhotoId: Value(result.photoId),
         updatedAt: Value(DateTime.now()),
       ));
+      HapticFeedback.lightImpact();
       _loadPiece();
     } catch (e) {
       if (mounted) {
@@ -113,6 +115,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
     await photosDao.deletePhoto(photo.id);
     await imageService.deletePhotoFiles(widget.pieceId, photo.id);
+    HapticFeedback.lightImpact();
 
     // If deleted photo was cover, set new cover
     if (_piece?.coverPhotoId == photo.id) {
@@ -135,6 +138,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       isArchived: Value(!wasArchived),
       updatedAt: Value(DateTime.now()),
     ));
+    HapticFeedback.lightImpact();
     if (!wasArchived && mounted) {
       context.go('/');
     } else {
@@ -170,6 +174,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     await photosDao.deletePhotosForPiece(widget.pieceId);
     await piecesDao.deletePiece(widget.pieceId);
     await imageService.deletePhotos(widget.pieceId);
+    HapticFeedback.mediumImpact();
 
     if (mounted) context.go('/');
   }

@@ -118,6 +118,13 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Title is editable, saves on keyboard "done"
 - [ ] Empty title shows "Untitled Piece" hint
 
+### Haptic Feedback (manual — requires physical device)
+- [ ] Adding a photo → light haptic
+- [ ] Deleting a photo (after confirm) → light haptic
+- [ ] Archiving/unarchiving → light haptic
+- [ ] Deleting a piece (after confirm) → medium haptic
+- [ ] Creating a new piece → light haptic
+
 ### Done Button
 - [ ] Tapping "Done" saves pending form changes and navigates to home
 
@@ -202,3 +209,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Untitled piece auto-numbering: "Untitled Piece N" with lowest available number |
 | 2026-02-12 | Detail redesign: title above gallery, archive/trash icon buttons replace overflow menu, darker sepia background |
 | 2026-02-12 | Editable "last updated" date: album rows show updatedAt, detail screen date is tappable with date/time picker |
+| 2026-02-12 | Haptic feedback: light on add photo, delete photo, archive; medium on delete piece; light on piece creation |
