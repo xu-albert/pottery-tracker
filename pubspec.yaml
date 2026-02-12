@@ -1,0 +1,52 @@
+name: pottery_tracker
+description: "A photo-first pottery tracking app for hobby potters."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # Database
+  drift: ^2.22.1
+  drift_flutter: ^0.2.4
+  sqlite3_flutter_libs: ^0.5.28
+
+  # Routing
+  go_router: ^15.1.2
+
+  # Image handling
+  image_picker: ^1.1.2
+  flutter_image_compress: ^2.4.0
+  exif: ^3.3.0
+
+  # Utilities
+  uuid: ^4.5.1
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  shared_preferences: ^2.3.4
+  intl: ^0.20.2
+
+  # Auth (UI only for Phase 1)
+  google_sign_in: ^6.2.2
+  sign_in_with_apple: ^6.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.22.1
+  build_runner: ^2.4.14
+
+flutter:
+  uses-material-design: true
+  generate: true
