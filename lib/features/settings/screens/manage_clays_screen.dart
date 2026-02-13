@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../database/database.dart';
@@ -68,23 +69,27 @@ class ManageClaysScreen extends ConsumerWidget {
   Future<void> _showAddDialog(
       BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
     final controller = TextEditingController();
-    final name = await showDialog<String>(
+    final name = await showCupertinoDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => CupertinoAlertDialog(
         title: Text(l10n.addNew),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: l10n.enterClayName),
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (value) => Navigator.of(ctx).pop(value),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            placeholder: l10n.enterClayName,
+            textCapitalization: TextCapitalization.words,
+            onSubmitted: (value) => Navigator.of(ctx).pop(value),
+          ),
         ),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDefaultAction: true,
             onPressed: () => Navigator.of(ctx).pop(controller.text),
             child: Text(l10n.create),
           ),
@@ -100,22 +105,26 @@ class ManageClaysScreen extends ConsumerWidget {
   Future<void> _showEditDialog(BuildContext context, WidgetRef ref,
       AppLocalizations l10n, ClayOption clay) async {
     final controller = TextEditingController(text: clay.name);
-    final newName = await showDialog<String>(
+    final newName = await showCupertinoDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => CupertinoAlertDialog(
         title: Text(l10n.editClayName),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (value) => Navigator.of(ctx).pop(value),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            onSubmitted: (value) => Navigator.of(ctx).pop(value),
+          ),
         ),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDefaultAction: true,
             onPressed: () => Navigator.of(ctx).pop(controller.text),
             child: Text(l10n.save),
           ),
@@ -130,17 +139,18 @@ class ManageClaysScreen extends ConsumerWidget {
 
   Future<void> _showDeleteDialog(BuildContext context, WidgetRef ref,
       AppLocalizations l10n, ClayOption clay) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => CupertinoAlertDialog(
         title: Text(l10n.deleteClayConfirmTitle),
         content: Text(l10n.deleteClayConfirmMessage),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(l10n.delete),
           ),

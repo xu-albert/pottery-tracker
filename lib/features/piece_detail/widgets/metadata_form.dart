@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/materials_dao.dart';
@@ -75,30 +76,42 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return;
 
-    final result = await showModalBottomSheet<String>(
+    final result = await showCupertinoModalPopup<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text(l10n.stageNone),
-              onTap: () => Navigator.of(ctx).pop(''),
+      builder: (ctx) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.of(ctx).pop(''),
+            child: Text(l10n.stageNone),
+          ),
+          ...clays.map((c) => CupertinoActionSheetAction(
+                onPressed: () => Navigator.of(ctx).pop(c.name),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(c.name),
+                    if (c.name == widget.piece.clayType) ...[
+                      const SizedBox(width: 8),
+                      const Icon(CupertinoIcons.checkmark_alt, size: 18),
+                    ],
+                  ],
+                ),
+              )),
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.of(ctx).pop('__add_new__'),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(CupertinoIcons.add, size: 18),
+                const SizedBox(width: 8),
+                Text(l10n.addNew),
+              ],
             ),
-            ...clays.map((c) => ListTile(
-                  title: Text(c.name),
-                  trailing: c.name == widget.piece.clayType
-                      ? const Icon(Icons.check)
-                      : null,
-                  onTap: () => Navigator.of(ctx).pop(c.name),
-                )),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.add),
-              title: Text(l10n.addNew),
-              onTap: () => Navigator.of(ctx).pop('__add_new__'),
-            ),
-          ],
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text(l10n.cancel),
         ),
       ),
     );
@@ -114,24 +127,28 @@ class MetadataFormState extends State<MetadataForm> {
   Future<void> _showAddClayDialog() async {
     final l10n = AppLocalizations.of(context)!;
     final controller = TextEditingController();
-    final name = await showDialog<String>(
+    final name = await showCupertinoDialog<String>(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
+        return CupertinoAlertDialog(
           title: Text(l10n.addNew),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(hintText: l10n.enterClayName),
-            textCapitalization: TextCapitalization.words,
-            onSubmitted: (value) => Navigator.of(ctx).pop(value),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: CupertinoTextField(
+              controller: controller,
+              autofocus: true,
+              placeholder: l10n.enterClayName,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (value) => Navigator.of(ctx).pop(value),
+            ),
           ),
           actions: [
-            TextButton(
+            CupertinoDialogAction(
               onPressed: () => Navigator.of(ctx).pop(),
               child: Text(l10n.cancel),
             ),
-            TextButton(
+            CupertinoDialogAction(
+              isDefaultAction: true,
               onPressed: () => Navigator.of(ctx).pop(controller.text),
               child: Text(l10n.create),
             ),
