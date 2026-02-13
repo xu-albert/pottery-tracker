@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -30,6 +31,16 @@ class SettingsScreen extends ConsumerWidget {
               title: Text(l10n.signOut),
               onTap: () => ref.read(authProvider.notifier).signOut(),
             ),
+          const Divider(),
+
+          // Materials section
+          _SectionHeader(title: l10n.manageMaterials),
+          ListTile(
+            leading: const Icon(Icons.terrain),
+            title: Text(l10n.manageClays),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/clays'),
+          ),
           const Divider(),
 
           // Sync section

@@ -8,6 +8,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
 import '../../../models/piece_stage.dart';
 import '../../../providers/database_provider.dart';
+import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../widgets/photo_gallery.dart';
@@ -451,6 +452,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                     MetadataForm(
                       key: _formKey,
                       piece: _piece!,
+                      materialsDao: ref.read(materialsDaoProvider),
                       onUpdateField: _updateField,
                     ),
                     LastUpdatedInfo(piece: _piece!, onTap: _pickUpdatedDate),

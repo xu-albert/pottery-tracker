@@ -190,10 +190,10 @@ abstract class AppLocalizations {
   /// **'Stage'**
   String get stageLabel;
 
-  /// Clay type field label
+  /// Clay field label
   ///
   /// In en, this message translates to:
-  /// **'Clay Type'**
+  /// **'Clay'**
   String get clayTypeLabel;
 
   /// Glazes field label
@@ -429,6 +429,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reorder'**
   String get reorderPhotos;
+
+  /// Add new option to dropdown
+  ///
+  /// In en, this message translates to:
+  /// **'+ Add New'**
+  String get addNew;
+
+  /// Create action button
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get create;
+
+  /// Clay name input hint
+  ///
+  /// In en, this message translates to:
+  /// **'Enter clay name'**
+  String get enterClayName;
+
+  /// Manage clays settings option
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Clays'**
+  String get manageClays;
+
+  /// Materials section header in settings
+  ///
+  /// In en, this message translates to:
+  /// **'Materials'**
+  String get manageMaterials;
+
+  /// Empty state for clay management
+  ///
+  /// In en, this message translates to:
+  /// **'No clays saved yet'**
+  String get noClaysYet;
+
+  /// Edit clay name dialog title
+  ///
+  /// In en, this message translates to:
+  /// **'Edit clay name'**
+  String get editClayName;
+
+  /// Save action button
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get save;
+
+  /// Delete clay confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Clay?'**
+  String get deleteClayConfirmTitle;
+
+  /// Delete clay confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'Pieces using this clay will keep their current value, but it will no longer appear in the dropdown.'**
+  String get deleteClayConfirmMessage;
 }
 
 class _AppLocalizationsDelegate

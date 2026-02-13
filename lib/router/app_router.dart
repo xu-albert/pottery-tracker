@@ -5,6 +5,7 @@ import '../features/auth/screens/sign_in_screen.dart';
 import '../features/shell/screens/shell_screen.dart';
 import '../features/album/screens/album_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
+import '../features/settings/screens/manage_clays_screen.dart';
 import '../features/create_piece/screens/create_piece_screen.dart';
 import '../features/piece_detail/screens/piece_detail_screen.dart';
 
@@ -46,6 +47,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/settings',
                 builder: (context, state) => const SettingsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'clays',
+                    builder: (context, state) => const ManageClaysScreen(),
+                  ),
+                ],
               ),
             ],
           ),

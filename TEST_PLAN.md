@@ -121,8 +121,16 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
 - [ ] Select stage (Greenware / Bisqued / Glazed / None) → saves immediately
-- [ ] Edit clay type → saves on keyboard "done"
+- [ ] Clay field is a dropdown (not free text)
+- [ ] Clay dropdown shows "None" + saved clays + divider + "+ Add New"
+- [ ] Selecting a clay → saves immediately
+- [ ] Selecting "None" → clears clay value
+- [ ] Tapping "+ Add New" → dialog with text input → creates clay + selects it
+- [ ] Newly created clay appears in dropdown for other pieces
+- [ ] Pieces with existing clay text values → preserved after DB migration
 - [ ] Edit glazes → saves on keyboard "done"
+- [ ] **TODO:** Convert glazes to multi-select dropdown with saved options library (like clay)
+- [ ] **TODO:** Add tags feature with saved options library
 - [ ] Edit notes (multiline) → saves on keyboard "done"
 - [ ] Empty string fields saved as NULL in database
 
@@ -168,9 +176,20 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 - [ ] Shows "Signed in as {name}" or "Not signed in"
 - [ ] "Sign Out" button → clears auth, redirects to sign-in
+- [ ] "Materials" section with "Manage Clays" option
 - [ ] "Cloud sync coming soon" placeholder
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version shows "1.0.0"
+
+### Manage Clays Screen (`/settings/clays`)
+- [ ] Shows list of saved clay names sorted alphabetically
+- [ ] Empty state: "No clays saved yet" when no clays exist
+- [ ] "+" button in app bar → add dialog → creates new clay
+- [ ] Edit icon on each clay → edit dialog → renames clay
+- [ ] Delete icon on each clay → confirmation dialog → deletes clay
+- [ ] Deleting a clay does NOT clear clay from existing pieces (value preserved)
+- [ ] Adding duplicate clay name (case-insensitive) → reuses existing
+- [ ] Changes reflected immediately in piece detail clay dropdown
 
 ---
 
@@ -231,3 +250,5 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Photo date labels: dateTaken shown below each photo in detail gallery |
 | 2026-02-12 | Batch photo upload: "Select Multiple" option, progress dialog, per-photo error handling |
 | 2026-02-12 | Photo reordering: drag-to-reorder screen with Done button, batch sort order update |
+| 2026-02-12 | Clay dropdown: replaced free-text clay field with single-select dropdown + "+ Add New" + clay options library (DB v3) |
+| 2026-02-12 | Manage Clays: settings screen to add, edit, and delete saved clay options |

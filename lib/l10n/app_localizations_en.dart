@@ -58,7 +58,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get stageLabel => 'Stage';
 
   @override
-  String get clayTypeLabel => 'Clay Type';
+  String get clayTypeLabel => 'Clay';
 
   @override
   String get glazesLabel => 'Glazes';
@@ -190,4 +190,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get reorderPhotos => 'Reorder';
+
+  @override
+  String get addNew => '+ Add New';
+
+  @override
+  String get create => 'Create';
+
+  @override
+  String get enterClayName => 'Enter clay name';
+
+  @override
+  String get manageClays => 'Manage Clays';
+
+  @override
+  String get manageMaterials => 'Materials';
+
+  @override
+  String get noClaysYet => 'No clays saved yet';
+
+  @override
+  String get editClayName => 'Edit clay name';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get deleteClayConfirmTitle => 'Delete Clay?';
+
+  @override
+  String get deleteClayConfirmMessage =>
+      'Pieces using this clay will keep their current value, but it will no longer appear in the dropdown.';
 }
