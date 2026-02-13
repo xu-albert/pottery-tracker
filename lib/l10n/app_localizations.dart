@@ -489,6 +489,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Pieces using this clay will keep their current value, but it will no longer appear in the dropdown.'**
   String get deleteClayConfirmMessage;
+
+  /// Manage glazes settings option
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Glazes'**
+  String get manageGlazes;
+
+  /// Empty state for glaze management
+  ///
+  /// In en, this message translates to:
+  /// **'No glazes saved yet'**
+  String get noGlazesYet;
+
+  /// Glaze name input hint
+  ///
+  /// In en, this message translates to:
+  /// **'Enter glaze name'**
+  String get enterGlazeName;
+
+  /// Edit glaze name dialog title
+  ///
+  /// In en, this message translates to:
+  /// **'Edit glaze name'**
+  String get editGlazeName;
+
+  /// Delete glaze confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Glaze?'**
+  String get deleteGlazeConfirmTitle;
+
+  /// Delete glaze confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'This glaze will be removed from all pieces that use it.'**
+  String get deleteGlazeConfirmMessage;
+
+  /// Glaze multi-select picker title
+  ///
+  /// In en, this message translates to:
+  /// **'Select Glazes'**
+  String get selectGlazes;
+
+  /// No glazes selected
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get glazesNone;
+
+  /// Done action button
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get done;
 }
 
 class _AppLocalizationsDelegate

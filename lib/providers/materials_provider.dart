@@ -10,3 +10,12 @@ final materialsDaoProvider = Provider<MaterialsDao>((ref) {
 final allClaysProvider = StreamProvider<List<ClayOption>>((ref) {
   return ref.watch(materialsDaoProvider).watchAllClays();
 });
+
+final allGlazesProvider = StreamProvider<List<GlazeOption>>((ref) {
+  return ref.watch(materialsDaoProvider).watchAllGlazes();
+});
+
+final glazesForPieceProvider =
+    StreamProvider.family<List<GlazeOption>, String>((ref, pieceId) {
+  return ref.watch(materialsDaoProvider).watchGlazesForPiece(pieceId);
+});

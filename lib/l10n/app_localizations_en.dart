@@ -221,4 +221,32 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get deleteClayConfirmMessage =>
       'Pieces using this clay will keep their current value, but it will no longer appear in the dropdown.';
+
+  @override
+  String get manageGlazes => 'Manage Glazes';
+
+  @override
+  String get noGlazesYet => 'No glazes saved yet';
+
+  @override
+  String get enterGlazeName => 'Enter glaze name';
+
+  @override
+  String get editGlazeName => 'Edit glaze name';
+
+  @override
+  String get deleteGlazeConfirmTitle => 'Delete Glaze?';
+
+  @override
+  String get deleteGlazeConfirmMessage =>
+      'This glaze will be removed from all pieces that use it.';
+
+  @override
+  String get selectGlazes => 'Select Glazes';
+
+  @override
+  String get glazesNone => 'None';
+
+  @override
+  String get done => 'Done';
 }

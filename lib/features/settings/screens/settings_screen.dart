@@ -41,6 +41,12 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.go('/settings/clays'),
           ),
+          ListTile(
+            leading: const Icon(Icons.format_paint),
+            title: Text(l10n.manageGlazes),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/glazes'),
+          ),
           const Divider(),
 
           // Sync section

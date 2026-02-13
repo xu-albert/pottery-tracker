@@ -1444,12 +1444,634 @@ class ClayOptionsCompanion extends UpdateCompanion<ClayOption> {
   }
 }
 
+class $GlazeOptionsTable extends GlazeOptions
+    with TableInfo<$GlazeOptionsTable, GlazeOption> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GlazeOptionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, sortOrder, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'glaze_options';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GlazeOption> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GlazeOption map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GlazeOption(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GlazeOptionsTable createAlias(String alias) {
+    return $GlazeOptionsTable(attachedDatabase, alias);
+  }
+}
+
+class GlazeOption extends DataClass implements Insertable<GlazeOption> {
+  final String id;
+  final String name;
+  final int sortOrder;
+  final DateTime createdAt;
+  const GlazeOption({
+    required this.id,
+    required this.name,
+    required this.sortOrder,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  GlazeOptionsCompanion toCompanion(bool nullToAbsent) {
+    return GlazeOptionsCompanion(
+      id: Value(id),
+      name: Value(name),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory GlazeOption.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GlazeOption(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  GlazeOption copyWith({
+    String? id,
+    String? name,
+    int? sortOrder,
+    DateTime? createdAt,
+  }) => GlazeOption(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  GlazeOption copyWithCompanion(GlazeOptionsCompanion data) {
+    return GlazeOption(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GlazeOption(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, sortOrder, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GlazeOption &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class GlazeOptionsCompanion extends UpdateCompanion<GlazeOption> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<int> sortOrder;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const GlazeOptionsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GlazeOptionsCompanion.insert({
+    required String id,
+    required String name,
+    this.sortOrder = const Value.absent(),
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       createdAt = Value(createdAt);
+  static Insertable<GlazeOption> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<int>? sortOrder,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GlazeOptionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return GlazeOptionsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GlazeOptionsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PieceGlazesTable extends PieceGlazes
+    with TableInfo<$PieceGlazesTable, PieceGlaze> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PieceGlazesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pieceIdMeta = const VerificationMeta(
+    'pieceId',
+  );
+  @override
+  late final GeneratedColumn<String> pieceId = GeneratedColumn<String>(
+    'piece_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _glazeOptionIdMeta = const VerificationMeta(
+    'glazeOptionId',
+  );
+  @override
+  late final GeneratedColumn<String> glazeOptionId = GeneratedColumn<String>(
+    'glaze_option_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, pieceId, glazeOptionId, sortOrder];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'piece_glazes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PieceGlaze> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('piece_id')) {
+      context.handle(
+        _pieceIdMeta,
+        pieceId.isAcceptableOrUnknown(data['piece_id']!, _pieceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pieceIdMeta);
+    }
+    if (data.containsKey('glaze_option_id')) {
+      context.handle(
+        _glazeOptionIdMeta,
+        glazeOptionId.isAcceptableOrUnknown(
+          data['glaze_option_id']!,
+          _glazeOptionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_glazeOptionIdMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PieceGlaze map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PieceGlaze(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      pieceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}piece_id'],
+      )!,
+      glazeOptionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}glaze_option_id'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+    );
+  }
+
+  @override
+  $PieceGlazesTable createAlias(String alias) {
+    return $PieceGlazesTable(attachedDatabase, alias);
+  }
+}
+
+class PieceGlaze extends DataClass implements Insertable<PieceGlaze> {
+  final String id;
+  final String pieceId;
+  final String glazeOptionId;
+  final int sortOrder;
+  const PieceGlaze({
+    required this.id,
+    required this.pieceId,
+    required this.glazeOptionId,
+    required this.sortOrder,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['piece_id'] = Variable<String>(pieceId);
+    map['glaze_option_id'] = Variable<String>(glazeOptionId);
+    map['sort_order'] = Variable<int>(sortOrder);
+    return map;
+  }
+
+  PieceGlazesCompanion toCompanion(bool nullToAbsent) {
+    return PieceGlazesCompanion(
+      id: Value(id),
+      pieceId: Value(pieceId),
+      glazeOptionId: Value(glazeOptionId),
+      sortOrder: Value(sortOrder),
+    );
+  }
+
+  factory PieceGlaze.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PieceGlaze(
+      id: serializer.fromJson<String>(json['id']),
+      pieceId: serializer.fromJson<String>(json['pieceId']),
+      glazeOptionId: serializer.fromJson<String>(json['glazeOptionId']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'pieceId': serializer.toJson<String>(pieceId),
+      'glazeOptionId': serializer.toJson<String>(glazeOptionId),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+    };
+  }
+
+  PieceGlaze copyWith({
+    String? id,
+    String? pieceId,
+    String? glazeOptionId,
+    int? sortOrder,
+  }) => PieceGlaze(
+    id: id ?? this.id,
+    pieceId: pieceId ?? this.pieceId,
+    glazeOptionId: glazeOptionId ?? this.glazeOptionId,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
+  PieceGlaze copyWithCompanion(PieceGlazesCompanion data) {
+    return PieceGlaze(
+      id: data.id.present ? data.id.value : this.id,
+      pieceId: data.pieceId.present ? data.pieceId.value : this.pieceId,
+      glazeOptionId: data.glazeOptionId.present
+          ? data.glazeOptionId.value
+          : this.glazeOptionId,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PieceGlaze(')
+          ..write('id: $id, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('glazeOptionId: $glazeOptionId, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, pieceId, glazeOptionId, sortOrder);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PieceGlaze &&
+          other.id == this.id &&
+          other.pieceId == this.pieceId &&
+          other.glazeOptionId == this.glazeOptionId &&
+          other.sortOrder == this.sortOrder);
+}
+
+class PieceGlazesCompanion extends UpdateCompanion<PieceGlaze> {
+  final Value<String> id;
+  final Value<String> pieceId;
+  final Value<String> glazeOptionId;
+  final Value<int> sortOrder;
+  final Value<int> rowid;
+  const PieceGlazesCompanion({
+    this.id = const Value.absent(),
+    this.pieceId = const Value.absent(),
+    this.glazeOptionId = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PieceGlazesCompanion.insert({
+    required String id,
+    required String pieceId,
+    required String glazeOptionId,
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       pieceId = Value(pieceId),
+       glazeOptionId = Value(glazeOptionId);
+  static Insertable<PieceGlaze> custom({
+    Expression<String>? id,
+    Expression<String>? pieceId,
+    Expression<String>? glazeOptionId,
+    Expression<int>? sortOrder,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (pieceId != null) 'piece_id': pieceId,
+      if (glazeOptionId != null) 'glaze_option_id': glazeOptionId,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PieceGlazesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? pieceId,
+    Value<String>? glazeOptionId,
+    Value<int>? sortOrder,
+    Value<int>? rowid,
+  }) {
+    return PieceGlazesCompanion(
+      id: id ?? this.id,
+      pieceId: pieceId ?? this.pieceId,
+      glazeOptionId: glazeOptionId ?? this.glazeOptionId,
+      sortOrder: sortOrder ?? this.sortOrder,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (pieceId.present) {
+      map['piece_id'] = Variable<String>(pieceId.value);
+    }
+    if (glazeOptionId.present) {
+      map['glaze_option_id'] = Variable<String>(glazeOptionId.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PieceGlazesCompanion(')
+          ..write('id: $id, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('glazeOptionId: $glazeOptionId, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $PiecesTable pieces = $PiecesTable(this);
   late final $PhotosTable photos = $PhotosTable(this);
   late final $ClayOptionsTable clayOptions = $ClayOptionsTable(this);
+  late final $GlazeOptionsTable glazeOptions = $GlazeOptionsTable(this);
+  late final $PieceGlazesTable pieceGlazes = $PieceGlazesTable(this);
   late final PiecesDao piecesDao = PiecesDao(this as AppDatabase);
   late final PhotosDao photosDao = PhotosDao(this as AppDatabase);
   late final MaterialsDao materialsDao = MaterialsDao(this as AppDatabase);
@@ -1461,6 +2083,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     pieces,
     photos,
     clayOptions,
+    glazeOptions,
+    pieceGlazes,
   ];
 }
 
@@ -2412,6 +3036,370 @@ typedef $$ClayOptionsTableProcessedTableManager =
       ClayOption,
       PrefetchHooks Function()
     >;
+typedef $$GlazeOptionsTableCreateCompanionBuilder =
+    GlazeOptionsCompanion Function({
+      required String id,
+      required String name,
+      Value<int> sortOrder,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$GlazeOptionsTableUpdateCompanionBuilder =
+    GlazeOptionsCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<int> sortOrder,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$GlazeOptionsTableFilterComposer
+    extends Composer<_$AppDatabase, $GlazeOptionsTable> {
+  $$GlazeOptionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GlazeOptionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GlazeOptionsTable> {
+  $$GlazeOptionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GlazeOptionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GlazeOptionsTable> {
+  $$GlazeOptionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$GlazeOptionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $GlazeOptionsTable,
+          GlazeOption,
+          $$GlazeOptionsTableFilterComposer,
+          $$GlazeOptionsTableOrderingComposer,
+          $$GlazeOptionsTableAnnotationComposer,
+          $$GlazeOptionsTableCreateCompanionBuilder,
+          $$GlazeOptionsTableUpdateCompanionBuilder,
+          (
+            GlazeOption,
+            BaseReferences<_$AppDatabase, $GlazeOptionsTable, GlazeOption>,
+          ),
+          GlazeOption,
+          PrefetchHooks Function()
+        > {
+  $$GlazeOptionsTableTableManager(_$AppDatabase db, $GlazeOptionsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GlazeOptionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GlazeOptionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GlazeOptionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => GlazeOptionsCompanion(
+                id: id,
+                name: name,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                Value<int> sortOrder = const Value.absent(),
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => GlazeOptionsCompanion.insert(
+                id: id,
+                name: name,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GlazeOptionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $GlazeOptionsTable,
+      GlazeOption,
+      $$GlazeOptionsTableFilterComposer,
+      $$GlazeOptionsTableOrderingComposer,
+      $$GlazeOptionsTableAnnotationComposer,
+      $$GlazeOptionsTableCreateCompanionBuilder,
+      $$GlazeOptionsTableUpdateCompanionBuilder,
+      (
+        GlazeOption,
+        BaseReferences<_$AppDatabase, $GlazeOptionsTable, GlazeOption>,
+      ),
+      GlazeOption,
+      PrefetchHooks Function()
+    >;
+typedef $$PieceGlazesTableCreateCompanionBuilder =
+    PieceGlazesCompanion Function({
+      required String id,
+      required String pieceId,
+      required String glazeOptionId,
+      Value<int> sortOrder,
+      Value<int> rowid,
+    });
+typedef $$PieceGlazesTableUpdateCompanionBuilder =
+    PieceGlazesCompanion Function({
+      Value<String> id,
+      Value<String> pieceId,
+      Value<String> glazeOptionId,
+      Value<int> sortOrder,
+      Value<int> rowid,
+    });
+
+class $$PieceGlazesTableFilterComposer
+    extends Composer<_$AppDatabase, $PieceGlazesTable> {
+  $$PieceGlazesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get glazeOptionId => $composableBuilder(
+    column: $table.glazeOptionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PieceGlazesTableOrderingComposer
+    extends Composer<_$AppDatabase, $PieceGlazesTable> {
+  $$PieceGlazesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get glazeOptionId => $composableBuilder(
+    column: $table.glazeOptionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PieceGlazesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PieceGlazesTable> {
+  $$PieceGlazesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get pieceId =>
+      $composableBuilder(column: $table.pieceId, builder: (column) => column);
+
+  GeneratedColumn<String> get glazeOptionId => $composableBuilder(
+    column: $table.glazeOptionId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+}
+
+class $$PieceGlazesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PieceGlazesTable,
+          PieceGlaze,
+          $$PieceGlazesTableFilterComposer,
+          $$PieceGlazesTableOrderingComposer,
+          $$PieceGlazesTableAnnotationComposer,
+          $$PieceGlazesTableCreateCompanionBuilder,
+          $$PieceGlazesTableUpdateCompanionBuilder,
+          (
+            PieceGlaze,
+            BaseReferences<_$AppDatabase, $PieceGlazesTable, PieceGlaze>,
+          ),
+          PieceGlaze,
+          PrefetchHooks Function()
+        > {
+  $$PieceGlazesTableTableManager(_$AppDatabase db, $PieceGlazesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PieceGlazesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PieceGlazesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PieceGlazesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> pieceId = const Value.absent(),
+                Value<String> glazeOptionId = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PieceGlazesCompanion(
+                id: id,
+                pieceId: pieceId,
+                glazeOptionId: glazeOptionId,
+                sortOrder: sortOrder,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String pieceId,
+                required String glazeOptionId,
+                Value<int> sortOrder = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PieceGlazesCompanion.insert(
+                id: id,
+                pieceId: pieceId,
+                glazeOptionId: glazeOptionId,
+                sortOrder: sortOrder,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PieceGlazesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PieceGlazesTable,
+      PieceGlaze,
+      $$PieceGlazesTableFilterComposer,
+      $$PieceGlazesTableOrderingComposer,
+      $$PieceGlazesTableAnnotationComposer,
+      $$PieceGlazesTableCreateCompanionBuilder,
+      $$PieceGlazesTableUpdateCompanionBuilder,
+      (
+        PieceGlaze,
+        BaseReferences<_$AppDatabase, $PieceGlazesTable, PieceGlaze>,
+      ),
+      PieceGlaze,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2422,4 +3410,8 @@ class $AppDatabaseManager {
       $$PhotosTableTableManager(_db, _db.photos);
   $$ClayOptionsTableTableManager get clayOptions =>
       $$ClayOptionsTableTableManager(_db, _db.clayOptions);
+  $$GlazeOptionsTableTableManager get glazeOptions =>
+      $$GlazeOptionsTableTableManager(_db, _db.glazeOptions);
+  $$PieceGlazesTableTableManager get pieceGlazes =>
+      $$PieceGlazesTableTableManager(_db, _db.pieceGlazes);
 }

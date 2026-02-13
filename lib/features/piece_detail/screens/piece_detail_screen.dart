@@ -186,7 +186,6 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     PieceStage? stage,
     bool clearStage = false,
     String? clayType,
-    String? glazes,
     String? notes,
   }) async {
     final dao = ref.read(piecesDaoProvider);
@@ -201,14 +200,17 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       clayType: clayType != null
           ? Value(clayType.isEmpty ? null : clayType)
           : const Value.absent(),
-      glazes: glazes != null
-          ? Value(glazes.isEmpty ? null : glazes)
-          : const Value.absent(),
       notes: notes != null
           ? Value(notes.isEmpty ? null : notes)
           : const Value.absent(),
       updatedAt: Value(DateTime.now()),
     ));
+    _loadPiece();
+  }
+
+  Future<void> _updateGlazes(List<String> glazeOptionIds) async {
+    final materialsDao = ref.read(materialsDaoProvider);
+    await materialsDao.setGlazesForPiece(widget.pieceId, glazeOptionIds);
     _loadPiece();
   }
 
@@ -377,6 +379,8 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final photosAsync = ref.watch(photosForPieceProvider(widget.pieceId));
+    final glazesAsync = ref.watch(glazesForPieceProvider(widget.pieceId));
+    final selectedGlazes = glazesAsync.valueOrNull ?? [];
 
     if (_piece == null) {
       return const Scaffold(
@@ -453,7 +457,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       key: _formKey,
                       piece: _piece!,
                       materialsDao: ref.read(materialsDaoProvider),
+                      selectedGlazes: selectedGlazes,
                       onUpdateField: _updateField,
+                      onUpdateGlazes: _updateGlazes,
                     ),
                     LastUpdatedInfo(piece: _piece!, onTap: _pickUpdatedDate),
                     const SizedBox(height: 16),

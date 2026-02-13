@@ -128,8 +128,13 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Tapping "+ Add New" → dialog with text input → creates clay + selects it
 - [ ] Newly created clay appears in dropdown for other pieces
 - [ ] Pieces with existing clay text values → preserved after DB migration
-- [ ] Edit glazes → saves on keyboard "done"
-- [ ] **TODO:** Convert glazes to multi-select dropdown with saved options library (like clay)
+- [ ] Glazes field is a multi-select picker (not free text)
+- [ ] Tapping Glazes → bottom sheet with checkboxes for each saved glaze
+- [ ] Checking/unchecking glazes → "Done" button commits selection
+- [ ] "None" checkbox clears all glaze selections
+- [ ] "+ Add New" in glaze picker → dialog → creates glaze + auto-checks it
+- [ ] Selected glazes displayed as comma-separated text on the field
+- [ ] Pieces with existing free-text glazes → parsed into library on migration
 - [ ] **TODO:** Add tags feature with saved options library
 - [ ] Edit notes (multiline) → saves on keyboard "done"
 - [ ] Empty string fields saved as NULL in database
@@ -176,7 +181,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 - [ ] Shows "Signed in as {name}" or "Not signed in"
 - [ ] "Sign Out" button → clears auth, redirects to sign-in
-- [ ] "Materials" section with "Manage Clays" option
+- [ ] "Materials" section with "Manage Clays" and "Manage Glazes" options
 - [ ] "Cloud sync coming soon" placeholder
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version shows "1.0.0"
@@ -199,6 +204,26 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Newly added clays appear at the bottom of the list
 - [ ] Scale + elevation animation on dragged item
 
+### Clay Rename Propagation
+- [ ] Renaming a clay in Manage Clays → all pieces using that clay show the new name
+- [ ] Renaming updates the piece detail clay display immediately
+
+### Manage Glazes Screen (`/settings/glazes`)
+- [ ] Shows list of saved glaze names in custom sort order
+- [ ] Empty state: "No glazes saved yet" when no glazes exist
+- [ ] "+" button in app bar → add dialog → creates new glaze (appears at bottom)
+- [ ] Edit icon on each glaze → edit dialog → renames glaze
+- [ ] Delete icon on each glaze → confirmation dialog → deletes glaze + removes from pieces
+- [ ] Adding duplicate glaze name (case-insensitive) → reuses existing
+- [ ] Changes reflected immediately in piece detail glaze picker
+- [ ] Drag handles visible on left side of each glaze row
+- [ ] Dragging a glaze to a new position reorders the list immediately
+- [ ] Scale + elevation animation on dragged item
+
+### Glaze Rename Propagation
+- [ ] Renaming a glaze in Manage Glazes → all pieces using that glaze show updated name
+- [ ] Denormalized glazes text column updated (for search)
+
 ---
 
 ## 8. Data & Image Pipeline
@@ -210,9 +235,13 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Compression failure → raw bytes fallback
 
 ### Database
-- [ ] Pieces table: id, title, stage, clayType, glazes, notes, isArchived, coverPhotoId, createdAt, updatedAt
+- [ ] Pieces table: id, title, stage, clayType, glazes (denormalized), notes, isArchived, coverPhotoId, createdAt, updatedAt
 - [ ] Photos table: id, pieceId, localPath, thumbnailPath, cloudUrl, dateTaken, createdAt, sortOrder
+- [ ] ClayOptions table: id, name (unique), sortOrder, createdAt
+- [ ] GlazeOptions table: id, name (unique), sortOrder, createdAt
+- [ ] PieceGlazes junction table: id, pieceId, glazeOptionId, sortOrder
 - [ ] Photos sorted by sortOrder DESC (newest first) everywhere
+- [ ] Migration v4→v5: creates GlazeOptions + PieceGlazes, parses free-text glazes into library
 
 ### Photo Ordering (Newest First)
 - [ ] Detail gallery: newest photo leftmost
@@ -261,3 +290,6 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Clay dropdown: replaced free-text clay field with single-select dropdown + "+ Add New" + clay options library (DB v3) |
 | 2026-02-12 | Manage Clays: settings screen to add, edit, and delete saved clay options |
 | 2026-02-13 | Clay reordering: drag-to-reorder in Manage Clays, sortOrder column (DB v4), custom order in clay picker |
+| 2026-02-13 | Glaze library: multi-select picker replaces free-text field, GlazeOptions + PieceGlazes tables (DB v5), migration parses existing glazes |
+| 2026-02-13 | Manage Glazes: settings screen to add, edit, delete, and reorder saved glaze options |
+| 2026-02-13 | Clay/glaze rename propagation: renaming in Manage Clays/Glazes updates all pieces using that name |

@@ -9,20 +9,23 @@ import '../../../core/constants/app_sizes.dart';
 class MetadataForm extends StatefulWidget {
   final Piece piece;
   final MaterialsDao materialsDao;
+  final List<GlazeOption> selectedGlazes;
   final void Function({
     String? title,
     PieceStage? stage,
     bool clearStage,
     String? clayType,
-    String? glazes,
     String? notes,
   }) onUpdateField;
+  final void Function(List<String> glazeOptionIds) onUpdateGlazes;
 
   const MetadataForm({
     super.key,
     required this.piece,
     required this.materialsDao,
+    required this.selectedGlazes,
     required this.onUpdateField,
+    required this.onUpdateGlazes,
   });
 
   @override
@@ -30,13 +33,11 @@ class MetadataForm extends StatefulWidget {
 }
 
 class MetadataFormState extends State<MetadataForm> {
-  late final TextEditingController _glazesCtrl;
   late final TextEditingController _notesCtrl;
 
   @override
   void initState() {
     super.initState();
-    _glazesCtrl = TextEditingController(text: widget.piece.glazes ?? '');
     _notesCtrl = TextEditingController(text: widget.piece.notes ?? '');
   }
 
@@ -44,14 +45,12 @@ class MetadataFormState extends State<MetadataForm> {
   void didUpdateWidget(MetadataForm oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.piece.id != widget.piece.id) {
-      _glazesCtrl.text = widget.piece.glazes ?? '';
       _notesCtrl.text = widget.piece.notes ?? '';
     }
   }
 
   @override
   void dispose() {
-    _glazesCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
@@ -65,7 +64,6 @@ class MetadataFormState extends State<MetadataForm> {
   void saveAll() {
     widget.onUpdateField(
       clayType: widget.piece.clayType,
-      glazes: _glazesCtrl.text,
       notes: _notesCtrl.text,
     );
   }
@@ -168,6 +166,140 @@ class MetadataFormState extends State<MetadataForm> {
     }
   }
 
+  Future<void> _showGlazePicker() async {
+    final l10n = AppLocalizations.of(context)!;
+    final allGlazes = await widget.materialsDao.getAllGlazes();
+
+    if (!mounted) return;
+
+    // Track selected IDs locally in the bottom sheet
+    final selectedIds = widget.selectedGlazes.map((g) => g.id).toSet();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          l10n.selectGlazes,
+                          style: Theme.of(ctx).textTheme.titleMedium,
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            // Commit the selection
+                            widget.onUpdateGlazes(selectedIds.toList());
+                            Navigator.of(ctx).pop();
+                          },
+                          child: Text(l10n.done),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // "None" option
+                  CheckboxListTile(
+                    title: Text(l10n.glazesNone),
+                    value: selectedIds.isEmpty,
+                    onChanged: (_) {
+                      setSheetState(() => selectedIds.clear());
+                    },
+                  ),
+                  // Glaze options
+                  ...allGlazes.map((glaze) => CheckboxListTile(
+                        title: Text(glaze.name),
+                        value: selectedIds.contains(glaze.id),
+                        onChanged: (checked) {
+                          setSheetState(() {
+                            if (checked == true) {
+                              selectedIds.add(glaze.id);
+                            } else {
+                              selectedIds.remove(glaze.id);
+                            }
+                          });
+                        },
+                      )),
+                  const Divider(height: 1),
+                  // Add new
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.add),
+                    title: Text(l10n.addNew),
+                    onTap: () async {
+                      final newGlaze = await _showAddGlazeDialog();
+                      if (newGlaze != null) {
+                        // Refresh the list and add the new glaze to selection
+                        final refreshed =
+                            await widget.materialsDao.getAllGlazes();
+                        setSheetState(() {
+                          allGlazes
+                            ..clear()
+                            ..addAll(refreshed);
+                          selectedIds.add(newGlaze.id);
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<GlazeOption?> _showAddGlazeDialog() async {
+    final l10n = AppLocalizations.of(context)!;
+    final controller = TextEditingController();
+    final name = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return CupertinoAlertDialog(
+          title: Text(l10n.addNew),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: CupertinoTextField(
+              controller: controller,
+              autofocus: true,
+              placeholder: l10n.enterGlazeName,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (value) => Navigator.of(ctx).pop(value),
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(l10n.cancel),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: Text(l10n.create),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) return null;
+    if (name != null && name.trim().isNotEmpty) {
+      return widget.materialsDao.findOrCreateGlaze(name);
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -175,6 +307,10 @@ class MetadataFormState extends State<MetadataForm> {
     final clayDisplay = (currentClay != null && currentClay.isNotEmpty)
         ? currentClay
         : l10n.stageNone;
+
+    final glazeDisplay = widget.selectedGlazes.isNotEmpty
+        ? widget.selectedGlazes.map((g) => g.name).join(', ')
+        : l10n.glazesNone;
 
     return Padding(
       padding: const EdgeInsets.all(AppSizes.md),
@@ -221,12 +357,19 @@ class MetadataFormState extends State<MetadataForm> {
           ),
           const SizedBox(height: AppSizes.md),
 
-          // Glazes
-          TextField(
-            controller: _glazesCtrl,
-            decoration: InputDecoration(labelText: l10n.glazesLabel),
-            onEditingComplete: () =>
-                widget.onUpdateField(glazes: _glazesCtrl.text),
+          // Glazes multi-select picker
+          GestureDetector(
+            onTap: _showGlazePicker,
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: l10n.glazesLabel,
+                suffixIcon: const Icon(Icons.arrow_drop_down),
+              ),
+              child: Text(
+                glazeDisplay,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
           ),
           const SizedBox(height: AppSizes.md),
 
