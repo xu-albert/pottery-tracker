@@ -13,6 +13,7 @@ import '../../../providers/image_service_provider.dart';
 import '../widgets/photo_gallery.dart';
 import '../widgets/metadata_form.dart';
 import '../widgets/photo_timeline.dart' show LastUpdatedInfo;
+import '../widgets/photo_reorder.dart';
 
 class PieceDetailScreen extends ConsumerStatefulWidget {
   final String pieceId;
@@ -323,6 +324,25 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     }
   }
 
+  Future<void> _reorderPhotos(List<Photo> photos) async {
+    final result = await Navigator.push<List<Photo>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoReorderScreen(photos: photos),
+      ),
+    );
+    if (result == null) return;
+
+    // Assign new sort orders: first in list = highest sortOrder (newest first display)
+    final updates = <({String id, int sortOrder})>[];
+    for (var i = 0; i < result.length; i++) {
+      updates.add((id: result[i].id, sortOrder: result.length - 1 - i));
+    }
+
+    final photosDao = ref.read(photosDaoProvider);
+    await photosDao.updateSortOrders(updates);
+  }
+
   void _showAddPhotoSheet() {
     final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
@@ -415,6 +435,18 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       PhotoGallery(
                         photos: photos,
                         onDelete: _deletePhoto,
+                      ),
+                    if (photos.length >= 2)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 16),
+                          child: TextButton.icon(
+                            onPressed: () => _reorderPhotos(photos),
+                            icon: const Icon(Icons.swap_vert, size: 18),
+                            label: Text(l10n.reorderPhotos),
+                          ),
+                        ),
                       ),
                     MetadataForm(
                       key: _formKey,

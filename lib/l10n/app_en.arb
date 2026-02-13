@@ -141,5 +141,7 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+  "reorderPhotos": "Reorder",
+  "@reorderPhotos": { "description": "Reorder photos button" }
 }

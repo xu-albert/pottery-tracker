@@ -110,6 +110,14 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Cancelling multi-picker returns with no changes
 - **NOTE: Multi-select (PHPicker) does NOT work on iOS simulator. Camera also crashes on simulator. Both require a real device to test.**
 
+### Photo Reordering
+- [ ] "Reorder" button appears below gallery when 2+ photos exist
+- [ ] "Reorder" button hidden when 0-1 photos
+- [ ] Tapping "Reorder" opens full-screen list with thumbnails and drag handles
+- [ ] Dragging a photo reorders the list
+- [ ] Tapping "Done" saves new order; gallery reflects updated order
+- [ ] Tapping back (without Done) discards changes
+
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
 - [ ] Select stage (Greenware / Bisqued / Glazed / None) → saves immediately
@@ -222,3 +230,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Haptic feedback: light on add photo, delete photo, archive; medium on delete piece; light on piece creation |
 | 2026-02-12 | Photo date labels: dateTaken shown below each photo in detail gallery |
 | 2026-02-12 | Batch photo upload: "Select Multiple" option, progress dialog, per-photo error handling |
+| 2026-02-12 | Photo reordering: drag-to-reorder screen with Done button, batch sort order update |

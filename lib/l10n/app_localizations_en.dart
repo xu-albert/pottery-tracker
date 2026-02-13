@@ -187,4 +187,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String batchPhotoFailures(int count) {
     return '$count photo(s) could not be added';
   }
+
+  @override
+  String get reorderPhotos => 'Reorder';
 }

@@ -423,6 +423,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} photo(s) could not be added'**
   String batchPhotoFailures(int count);
+
+  /// Reorder photos button
+  ///
+  /// In en, this message translates to:
+  /// **'Reorder'**
+  String get reorderPhotos;
 }
 
 class _AppLocalizationsDelegate
