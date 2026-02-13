@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
@@ -35,26 +37,82 @@ class ManageClaysScreen extends ConsumerWidget {
               ),
             );
           }
-          return ListView.builder(
+          return ReorderableListView.builder(
+            padding: const EdgeInsets.symmetric(
+              vertical: AppSizes.sm,
+              horizontal: AppSizes.md,
+            ),
             itemCount: clays.length,
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) newIndex--;
+              final reordered = List<ClayOption>.of(clays);
+              final item = reordered.removeAt(oldIndex);
+              reordered.insert(newIndex, item);
+              final updates = <({String id, int sortOrder})>[];
+              for (var i = 0; i < reordered.length; i++) {
+                updates.add((id: reordered[i].id, sortOrder: i));
+              }
+              ref.read(materialsDaoProvider).updateSortOrders(updates);
+            },
+            proxyDecorator: (child, index, animation) {
+              return AnimatedBuilder(
+                animation: animation,
+                builder: (context, child) {
+                  final scale = 1.0 + 0.02 * animation.value;
+                  return Transform.scale(
+                    scale: scale,
+                    child: Material(
+                      elevation: 6 * animation.value,
+                      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                      shadowColor: AppColors.charcoal.withValues(alpha: 0.3),
+                      child: child,
+                    ),
+                  );
+                },
+                child: child,
+              );
+            },
             itemBuilder: (context, index) {
               final clay = clays[index];
-              return ListTile(
-                title: Text(clay.name),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () =>
-                          _showEditDialog(context, ref, l10n, clay),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () =>
-                          _showDeleteDialog(context, ref, l10n, clay),
-                    ),
-                  ],
+              return Card(
+                key: ValueKey(clay.id),
+                margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    left: AppSizes.xs,
+                    right: AppSizes.xs,
+                    top: AppSizes.xs,
+                    bottom: AppSizes.xs,
+                  ),
+                  child: Row(
+                    children: [
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Padding(
+                          padding: EdgeInsets.all(AppSizes.sm),
+                          child: Icon(Icons.drag_handle,
+                              color: AppColors.inputText),
+                        ),
+                      ),
+                      const SizedBox(width: AppSizes.sm),
+                      Expanded(
+                        child: Text(
+                          clay.name,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () =>
+                            _showEditDialog(context, ref, l10n, clay),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () =>
+                            _showDeleteDialog(context, ref, l10n, clay),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },

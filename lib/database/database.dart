@@ -18,7 +18,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -39,6 +39,20 @@ class AppDatabase extends _$AppDatabase {
                 name: name,
                 createdAt: DateTime.now(),
               ));
+            }
+          }
+          if (from >= 3 && from < 4) {
+            await migrator.addColumn(clayOptions, clayOptions.sortOrder);
+            // Backfill existing clays with sort orders in alphabetical order
+            final existing = await customSelect(
+              'SELECT id FROM clay_options ORDER BY name ASC',
+            ).get();
+            for (var i = 0; i < existing.length; i++) {
+              await customUpdate(
+                'UPDATE clay_options SET sort_order = ? WHERE id = ?',
+                variables: [Variable.withInt(i), Variable.withString(existing[i].read<String>('id'))],
+                updates: {clayOptions},
+              );
             }
           }
         },

@@ -1162,6 +1162,18 @@ class $ClayOptionsTable extends ClayOptions
     requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1174,7 +1186,7 @@ class $ClayOptionsTable extends ClayOptions
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, name, createdAt];
+  List<GeneratedColumn> get $columns => [id, name, sortOrder, createdAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1199,6 +1211,12 @@ class $ClayOptionsTable extends ClayOptions
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
     }
     if (data.containsKey('created_at')) {
       context.handle(
@@ -1225,6 +1243,10 @@ class $ClayOptionsTable extends ClayOptions
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1241,10 +1263,12 @@ class $ClayOptionsTable extends ClayOptions
 class ClayOption extends DataClass implements Insertable<ClayOption> {
   final String id;
   final String name;
+  final int sortOrder;
   final DateTime createdAt;
   const ClayOption({
     required this.id,
     required this.name,
+    required this.sortOrder,
     required this.createdAt,
   });
   @override
@@ -1252,6 +1276,7 @@ class ClayOption extends DataClass implements Insertable<ClayOption> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
+    map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -1260,6 +1285,7 @@ class ClayOption extends DataClass implements Insertable<ClayOption> {
     return ClayOptionsCompanion(
       id: Value(id),
       name: Value(name),
+      sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
   }
@@ -1272,6 +1298,7 @@ class ClayOption extends DataClass implements Insertable<ClayOption> {
     return ClayOption(
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -1281,20 +1308,27 @@ class ClayOption extends DataClass implements Insertable<ClayOption> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
+      'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
 
-  ClayOption copyWith({String? id, String? name, DateTime? createdAt}) =>
-      ClayOption(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  ClayOption copyWith({
+    String? id,
+    String? name,
+    int? sortOrder,
+    DateTime? createdAt,
+  }) => ClayOption(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+  );
   ClayOption copyWithCompanion(ClayOptionsCompanion data) {
     return ClayOption(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1304,36 +1338,41 @@ class ClayOption extends DataClass implements Insertable<ClayOption> {
     return (StringBuffer('ClayOption(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, createdAt);
+  int get hashCode => Object.hash(id, name, sortOrder, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ClayOption &&
           other.id == this.id &&
           other.name == this.name &&
+          other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
 
 class ClayOptionsCompanion extends UpdateCompanion<ClayOption> {
   final Value<String> id;
   final Value<String> name;
+  final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const ClayOptionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ClayOptionsCompanion.insert({
     required String id,
     required String name,
+    this.sortOrder = const Value.absent(),
     required DateTime createdAt,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -1342,12 +1381,14 @@ class ClayOptionsCompanion extends UpdateCompanion<ClayOption> {
   static Insertable<ClayOption> custom({
     Expression<String>? id,
     Expression<String>? name,
+    Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1356,12 +1397,14 @@ class ClayOptionsCompanion extends UpdateCompanion<ClayOption> {
   ClayOptionsCompanion copyWith({
     Value<String>? id,
     Value<String>? name,
+    Value<int>? sortOrder,
     Value<DateTime>? createdAt,
     Value<int>? rowid,
   }) {
     return ClayOptionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
+      sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -1375,6 +1418,9 @@ class ClayOptionsCompanion extends UpdateCompanion<ClayOption> {
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
@@ -1390,6 +1436,7 @@ class ClayOptionsCompanion extends UpdateCompanion<ClayOption> {
     return (StringBuffer('ClayOptionsCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -2188,6 +2235,7 @@ typedef $$ClayOptionsTableCreateCompanionBuilder =
     ClayOptionsCompanion Function({
       required String id,
       required String name,
+      Value<int> sortOrder,
       required DateTime createdAt,
       Value<int> rowid,
     });
@@ -2195,6 +2243,7 @@ typedef $$ClayOptionsTableUpdateCompanionBuilder =
     ClayOptionsCompanion Function({
       Value<String> id,
       Value<String> name,
+      Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<int> rowid,
     });
@@ -2215,6 +2264,11 @@ class $$ClayOptionsTableFilterComposer
 
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2243,6 +2297,11 @@ class $$ClayOptionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2263,6 +2322,9 @@ class $$ClayOptionsTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -2301,11 +2363,13 @@ class $$ClayOptionsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ClayOptionsCompanion(
                 id: id,
                 name: name,
+                sortOrder: sortOrder,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -2313,11 +2377,13 @@ class $$ClayOptionsTableTableManager
               ({
                 required String id,
                 required String name,
+                Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
                 Value<int> rowid = const Value.absent(),
               }) => ClayOptionsCompanion.insert(
                 id: id,
                 name: name,
+                sortOrder: sortOrder,
                 createdAt: createdAt,
                 rowid: rowid,
               ),

@@ -182,14 +182,22 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Version shows "1.0.0"
 
 ### Manage Clays Screen (`/settings/clays`)
-- [ ] Shows list of saved clay names sorted alphabetically
+- [ ] Shows list of saved clay names in custom sort order
 - [ ] Empty state: "No clays saved yet" when no clays exist
-- [ ] "+" button in app bar → add dialog → creates new clay
+- [ ] "+" button in app bar → add dialog → creates new clay (appears at bottom)
 - [ ] Edit icon on each clay → edit dialog → renames clay
 - [ ] Delete icon on each clay → confirmation dialog → deletes clay
 - [ ] Deleting a clay does NOT clear clay from existing pieces (value preserved)
 - [ ] Adding duplicate clay name (case-insensitive) → reuses existing
 - [ ] Changes reflected immediately in piece detail clay dropdown
+
+### Clay Reordering
+- [ ] Drag handles visible on left side of each clay row
+- [ ] Dragging a clay to a new position reorders the list immediately
+- [ ] Reorder persists after leaving and returning to Manage Clays
+- [ ] Custom order reflected in piece detail clay picker dropdown
+- [ ] Newly added clays appear at the bottom of the list
+- [ ] Scale + elevation animation on dragged item
 
 ---
 
@@ -252,3 +260,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-12 | Photo reordering: drag-to-reorder screen with Done button, batch sort order update |
 | 2026-02-12 | Clay dropdown: replaced free-text clay field with single-select dropdown + "+ Add New" + clay options library (DB v3) |
 | 2026-02-12 | Manage Clays: settings screen to add, edit, and delete saved clay options |
+| 2026-02-13 | Clay reordering: drag-to-reorder in Manage Clays, sortOrder column (DB v4), custom order in clay picker |
