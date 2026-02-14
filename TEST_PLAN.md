@@ -47,6 +47,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Typing in search bar filters pieces in real-time
 - [ ] Searches across: title, clay type, glazes, tags, notes
 - [ ] Clearing search shows all pieces again
+- [ ] Search field has no autocorrect
 
 ### Empty States
 - [ ] No active pieces → "No pieces yet" message with icon
@@ -124,29 +125,33 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
+- [ ] Title field defaults to uppercase first letter (TextCapitalization.sentences)
+- [ ] Title field has no autocorrect suggestions
 - [ ] Select stage (Greenware / Bisqued / Glazed / None) → saves immediately
 - [ ] Clay field is a dropdown (not free text)
 - [ ] Clay dropdown shows "None" + saved clays + divider + "+ Add New"
 - [ ] Selecting a clay → saves immediately
 - [ ] Selecting "None" → clears clay value
-- [ ] Tapping "+ Add New" → dialog with text input → creates clay + selects it
+- [ ] Tapping "Add New" (icon + text, no duplicate +) → dialog with text input → creates clay + selects it
 - [ ] Newly created clay appears in dropdown for other pieces
 - [ ] Pieces with existing clay text values → preserved after DB migration
 - [ ] Glazes field is a multi-select picker (not free text)
 - [ ] Tapping Glazes → bottom sheet with checkboxes for each saved glaze
 - [ ] Checking/unchecking glazes → "Done" button commits selection
 - [ ] "None" checkbox clears all glaze selections
-- [ ] "+ Add New" in glaze picker → dialog → creates glaze + auto-checks it
+- [ ] "Add New" in glaze picker → dialog → creates glaze + auto-checks it
 - [ ] Selected glazes displayed as comma-separated text on the field
 - [ ] Pieces with existing free-text glazes → parsed into library on migration
 - [ ] Tags field is a multi-select picker
 - [ ] Tapping Tags → bottom sheet with checkboxes for each saved tag
 - [ ] Checking/unchecking tags → "Done" button commits selection
 - [ ] "None" checkbox clears all tag selections
-- [ ] "+ Add New" in tag picker → dialog → creates tag + auto-checks it
+- [ ] "Add New" in tag picker → dialog → creates tag + auto-checks it
 - [ ] Selected tags displayed as comma-separated text on the field
 - [ ] Tags searchable from album search bar (via denormalized column)
 - [ ] Edit notes (multiline) → saves on keyboard "done"
+- [ ] All material dialogs (clay, glaze, tag) default to uppercase first letter and have no autocorrect
+- [ ] Notes field has no autocorrect
 - [ ] Empty string fields saved as NULL in database
 
 ### Actions (Icon Buttons in App Bar)
@@ -339,3 +344,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-13 | Tags: multi-select picker, TagOptions + PieceTags tables (DB v6), Manage Tags screen with drag-to-reorder, tag rename propagation, search integration |
 | 2026-02-14 | Custom tag colors: 7 preset swatches, auto-assign on creation, color picker in Manage Tags, accessible chip rendering in album view (DB v7) |
 | 2026-02-14 | Untitled piece title as hint: title field empty for new pieces, "Untitled Piece N" shown as placeholder hint, DB value preserved when field left empty |
+| 2026-02-14 | Input field UX cleanup: TextCapitalization.sentences on all inputs, autocorrect disabled, "Add New" button text de-duplicated |
