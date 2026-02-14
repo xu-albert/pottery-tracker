@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -12,6 +14,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
     final auth = ref.watch(authProvider);
+    final authService = AuthService();
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settingsTitle)),
@@ -19,18 +22,65 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           // Account section
           _SectionHeader(title: l10n.account),
-          ListTile(
-            leading: const Icon(Icons.person),
-            title: Text(auth.displayName != null
-                ? l10n.signedInAs(auth.displayName!)
-                : l10n.notSignedIn),
-          ),
-          if (auth.displayName != null)
+          if (auth.isSignedIn) ...[
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: Text(auth.displayName != null
+                  ? l10n.signedInAs(auth.displayName!)
+                  : l10n.signedInAs('User')),
+            ),
             ListTile(
               leading: const Icon(Icons.logout),
               title: Text(l10n.signOut),
-              onTap: () => ref.read(authProvider.notifier).signOut(),
+              onTap: () async {
+                await authService.signOut();
+                ref.read(authProvider.notifier).signOut();
+              },
             ),
+          ] else ...[
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text(l10n.notSignedIn),
+              subtitle: const Text('Sign in to enable cloud sync'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.g_mobiledata),
+              title: const Text('Sign In with Google'),
+              onTap: () async {
+                try {
+                  final user = await authService.signInWithGoogle();
+                  if (context.mounted) {
+                    ref.read(authProvider.notifier).signIn(user);
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.toString())),
+                    );
+                  }
+                }
+              },
+            ),
+            if (Platform.isIOS)
+              ListTile(
+                leading: const Icon(Icons.apple),
+                title: const Text('Sign In with Apple'),
+                onTap: () async {
+                  try {
+                    final user = await authService.signInWithApple();
+                    if (context.mounted) {
+                      ref.read(authProvider.notifier).signIn(user);
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(e.toString())),
+                      );
+                    }
+                  }
+                },
+              ),
+          ],
           const Divider(),
 
           // Materials section
