@@ -16,6 +16,6 @@ enum PieceStage {
   Color get color => switch (this) {
         PieceStage.greenware => AppColors.sage,
         PieceStage.bisqued => AppColors.terracotta,
-        PieceStage.glazed => AppColors.teal,
+        PieceStage.glazed => AppColors.blue,
       };
 }

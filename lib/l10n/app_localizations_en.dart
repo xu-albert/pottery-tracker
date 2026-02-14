@@ -21,7 +21,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addPiece => 'Add Piece';
 
   @override
-  String get searchPieces => 'Search pieces...';
+  String get searchPieces => 'Search anything...';
 
   @override
   String get filterAll => 'Active';

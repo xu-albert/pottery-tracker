@@ -64,7 +64,7 @@ class PieceRow extends ConsumerWidget {
                       child: Text(
                         stage.displayName,
                         style:
-                            Theme.of(context).textTheme.labelSmall?.copyWith(
+                            Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: stage.color,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -80,6 +80,13 @@ class PieceRow extends ConsumerWidget {
                       color: AppColors.charcoal.withValues(alpha: 0.5),
                     ),
               ),
+              ..._buildClayGlazeLines(context),
+              const SizedBox(height: AppSizes.sm),
+              photosAsync.when(
+                loading: () => _buildPhotoRowPlaceholder(context),
+                error: (_, _) => _buildPhotoRowPlaceholder(context),
+                data: (photos) => _buildPhotoRow(context, photos),
+              ),
               if (metadataChips.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 SingleChildScrollView(
@@ -92,12 +99,6 @@ class PieceRow extends ConsumerWidget {
                   ),
                 ),
               ],
-              const SizedBox(height: AppSizes.sm),
-              photosAsync.when(
-                loading: () => _buildPhotoRowPlaceholder(context),
-                error: (_, _) => _buildPhotoRowPlaceholder(context),
-                data: (photos) => _buildPhotoRow(context, photos),
-              ),
             ],
           ),
         ),
@@ -107,52 +108,70 @@ class PieceRow extends ConsumerWidget {
 
   List<Widget> _buildMetadataChips(BuildContext context) {
     final chips = <Widget>[];
-    final textStyle = Theme.of(context).textTheme.labelSmall;
+    final textStyle = Theme.of(context).textTheme.bodySmall;
 
-    // Tags
     final tags = piece.piece.tags;
     if (tags != null && tags.isNotEmpty) {
       for (final tag in tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty)) {
-        chips.add(Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: AppColors.teal.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            tag,
-            style: textStyle?.copyWith(color: AppColors.teal),
-          ),
-        ));
+        chips.add(_tagChip(context, tag, textStyle));
       }
-    }
-
-    // Clay type
-    final clay = piece.piece.clayType;
-    if (clay != null && clay.isNotEmpty) {
-      chips.add(_outlinedChip(context, 'Clay: $clay', textStyle));
-    }
-
-    // Glazes
-    final glazes = piece.piece.glazes;
-    if (glazes != null && glazes.isNotEmpty) {
-      chips.add(_outlinedChip(context, 'Glaze: $glazes', textStyle));
     }
 
     return chips;
   }
 
-  Widget _outlinedChip(
-      BuildContext context, String label, TextStyle? textStyle) {
+  List<Widget> _buildClayGlazeLines(BuildContext context) {
+    final lines = <Widget>[];
+    final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: AppColors.charcoal.withValues(alpha: 0.7),
+        );
+
+    final clay = piece.piece.clayType;
+    if (clay != null && clay.isNotEmpty) {
+      lines.add(Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text('Clay: $clay', style: textStyle),
+      ));
+    }
+
+    final glazes = piece.piece.glazes;
+    if (glazes != null && glazes.isNotEmpty) {
+      final glazeList = glazes.split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList();
+      final prefix = glazeList.length > 1 ? 'Glazes' : 'Glaze';
+      lines.add(Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text('$prefix: ${glazeList.join(', ')}', style: textStyle),
+      ));
+    }
+
+    return lines;
+  }
+
+  // Each entry: (background tint color, accessible text color)
+  static const _defaultTagColors = [
+    (AppColors.teal, AppColors.teal),                   // #2D6E6E — dark enough
+    (AppColors.terracotta, Color(0xFF8B5536)),           // darken terracotta for text
+    (AppColors.dustyRose, Color(0xFF8B5D55)),            // darken dustyRose for text
+    (AppColors.sage, Color(0xFF536B53)),                 // darken sage for text
+    (AppColors.blue, AppColors.blue),                    // #4A7FB5 — dark enough
+  ];
+
+  Widget _tagChip(BuildContext context, String tag, TextStyle? textStyle) {
+    final colorIndex = tag.hashCode.abs() % _defaultTagColors.length;
+    final (bgColor, textColor) = _defaultTagColors[colorIndex];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.divider),
-        borderRadius: BorderRadius.circular(4),
+        color: bgColor.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        label,
-        style: textStyle?.copyWith(color: AppColors.charcoal),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('#', style: textStyle?.copyWith(color: textColor.withValues(alpha: 0.5))),
+          const SizedBox(width: 2),
+          Text(tag, style: textStyle?.copyWith(color: textColor)),
+        ],
       ),
     );
   }

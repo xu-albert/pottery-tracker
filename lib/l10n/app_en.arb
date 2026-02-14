@@ -8,7 +8,7 @@
   "@settingsTab": { "description": "Settings tab label" },
   "addPiece": "Add Piece",
   "@addPiece": { "description": "Add piece button label" },
-  "searchPieces": "Search pieces...",
+  "searchPieces": "Search anything...",
   "@searchPieces": { "description": "Search bar placeholder" },
   "filterAll": "Active",
   "@filterAll": { "description": "Active filter label" },

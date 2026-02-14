@@ -41,6 +41,7 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
       final q = '%$searchQuery%';
       pieceQuery.where(
         pieces.title.like(q) |
+            pieces.stage.like(q) |
             pieces.clayType.like(q) |
             pieces.glazes.like(q) |
             pieces.tags.like(q) |

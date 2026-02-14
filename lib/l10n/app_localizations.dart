@@ -121,7 +121,7 @@ abstract class AppLocalizations {
   /// Search bar placeholder
   ///
   /// In en, this message translates to:
-  /// **'Search pieces...'**
+  /// **'Search anything...'**
   String get searchPieces;
 
   /// Active filter label
