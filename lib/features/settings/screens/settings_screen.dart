@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/auth_service.dart';
@@ -118,6 +119,18 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.favorite_outline),
             title: Text(l10n.supportDeveloper),
             subtitle: const Text('Coming soon'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.mail_outline),
+            title: Text(l10n.sendFeedback),
+            onTap: () {
+              final uri = Uri(
+                scheme: 'mailto',
+                path: 'pottery.tracker.app@gmail.com',
+                queryParameters: {'subject': 'Pottery Tracker Feedback'},
+              );
+              launchUrl(uri);
+            },
           ),
           const Divider(),
 

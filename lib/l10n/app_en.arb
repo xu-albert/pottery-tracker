@@ -207,5 +207,7 @@
   "pieceUnarchivedWithTitle": "{title} unarchived",
   "@pieceUnarchivedWithTitle": { "description": "Snackbar message when a piece is unarchived", "placeholders": { "title": { "type": "String" } } },
   "undo": "Undo",
-  "@undo": { "description": "Undo action label" }
+  "@undo": { "description": "Undo action label" },
+  "sendFeedback": "Send Feedback",
+  "@sendFeedback": { "description": "Send feedback email option in settings" }
 }
