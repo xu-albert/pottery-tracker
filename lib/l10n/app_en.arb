@@ -199,5 +199,7 @@
   "selectTags": "Select Tags",
   "@selectTags": { "description": "Tag multi-select picker title" },
   "tagsNone": "None",
-  "@tagsNone": { "description": "No tags selected" }
+  "@tagsNone": { "description": "No tags selected" },
+  "tagColor": "Tag Color",
+  "@tagColor": { "description": "Tag color picker title" }
 }

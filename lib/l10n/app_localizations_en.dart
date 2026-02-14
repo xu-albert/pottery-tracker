@@ -277,4 +277,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagsNone => 'None';
+
+  @override
+  String get tagColor => 'Tag Color';
 }

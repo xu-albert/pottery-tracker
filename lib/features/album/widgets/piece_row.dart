@@ -7,6 +7,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/pieces_dao.dart';
 import '../../../models/piece_stage.dart';
+import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
 
 class PieceRow extends ConsumerWidget {
@@ -18,11 +19,12 @@ class PieceRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final photosAsync = ref.watch(photosForPieceProvider(piece.piece.id));
+    final tagColorMap = ref.watch(tagColorMapProvider);
     final title = piece.piece.title ?? 'Untitled Piece';
     final stage = piece.piece.stage != null
         ? PieceStage.values.byName(piece.piece.stage!)
         : null;
-    final metadataChips = _buildMetadataChips(context);
+    final metadataChips = _buildMetadataChips(context, tagColorMap);
 
     return Semantics(
       label: title,
@@ -106,14 +108,14 @@ class PieceRow extends ConsumerWidget {
     );
   }
 
-  List<Widget> _buildMetadataChips(BuildContext context) {
+  List<Widget> _buildMetadataChips(BuildContext context, Map<String, Color> tagColorMap) {
     final chips = <Widget>[];
     final textStyle = Theme.of(context).textTheme.bodySmall;
 
     final tags = piece.piece.tags;
     if (tags != null && tags.isNotEmpty) {
       for (final tag in tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty)) {
-        chips.add(_tagChip(context, tag, textStyle));
+        chips.add(_tagChip(context, tag, textStyle, tagColorMap));
       }
     }
 
@@ -156,13 +158,24 @@ class PieceRow extends ConsumerWidget {
     (AppColors.blue, AppColors.blue),                    // #4A7FB5 — dark enough
   ];
 
-  Widget _tagChip(BuildContext context, String tag, TextStyle? textStyle) {
-    final colorIndex = tag.hashCode.abs() % _defaultTagColors.length;
-    final (bgColor, textColor) = _defaultTagColors[colorIndex];
+  Widget _tagChip(BuildContext context, String tag, TextStyle? textStyle, Map<String, Color> tagColorMap) {
+    final customColor = tagColorMap[tag];
+    final Color bgColor;
+    final Color textColor;
+    if (customColor != null) {
+      final colors = TagColorPresets.colorsFor(customColor);
+      bgColor = colors.$1;
+      textColor = colors.$2;
+    } else {
+      final colorIndex = tag.hashCode.abs() % _defaultTagColors.length;
+      final defaults = _defaultTagColors[colorIndex];
+      bgColor = defaults.$1.withValues(alpha: 0.18);
+      textColor = defaults.$2;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.18),
+        color: bgColor,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

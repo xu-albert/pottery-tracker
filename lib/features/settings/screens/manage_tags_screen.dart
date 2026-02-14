@@ -90,6 +90,25 @@ class ManageTagsScreen extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: AppSizes.sm),
+                      GestureDetector(
+                        onTap: () =>
+                            _showColorPicker(context, ref, tag),
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: tag.color != null
+                                ? TagColorPresets.hexToColor(tag.color!)
+                                : AppColors.inputText.withValues(alpha: 0.3),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.divider,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSizes.sm),
                       Expanded(
                         child: Text(
                           tag.name,
@@ -115,6 +134,66 @@ class ManageTagsScreen extends ConsumerWidget {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
+      ),
+    );
+  }
+
+  Future<void> _showColorPicker(
+      BuildContext context, WidgetRef ref, TagOption tag) async {
+    final currentColor = tag.color != null
+        ? TagColorPresets.hexToColor(tag.color!)
+        : null;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                AppLocalizations.of(context)!.tagColor,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSizes.md),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: TagColorPresets.colors.map((color) {
+                  final isSelected = currentColor != null &&
+                      color.toARGB32() == currentColor.toARGB32();
+                  return GestureDetector(
+                    onTap: () {
+                      ref.read(materialsDaoProvider).updateTagColor(
+                            tag.id, TagColorPresets.colorToHex(color));
+                      Navigator.of(ctx).pop();
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: isSelected
+                            ? Border.all(
+                                color: AppColors.charcoal, width: 2.5)
+                            : Border.all(
+                                color: AppColors.divider, width: 1),
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check,
+                              color: Colors.white, size: 20)
+                          : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: AppSizes.md),
+            ],
+          ),
+        ),
       ),
     );
   }

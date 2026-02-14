@@ -597,6 +597,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'None'**
   String get tagsNone;
+
+  /// Tag color picker title
+  ///
+  /// In en, this message translates to:
+  /// **'Tag Color'**
+  String get tagColor;
 }
 
 class _AppLocalizationsDelegate
