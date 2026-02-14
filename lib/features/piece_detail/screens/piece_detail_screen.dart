@@ -28,6 +28,7 @@ class PieceDetailScreen extends ConsumerStatefulWidget {
 class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   final _formKey = GlobalKey<MetadataFormState>();
   late final TextEditingController _titleCtrl;
+  String? _titleHint;
   Piece? _piece;
 
   @override
@@ -47,8 +48,13 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final dao = ref.read(piecesDaoProvider);
     final piece = await dao.getPieceById(widget.pieceId);
     if (mounted) {
-      setState(() => _piece = piece);
-      _titleCtrl.text = piece?.title ?? '';
+      final title = piece?.title ?? '';
+      final isUntitled = RegExp(r'^Untitled Piece \d+$').hasMatch(title);
+      setState(() {
+        _piece = piece;
+        _titleHint = isUntitled ? title : null;
+      });
+      _titleCtrl.text = isUntitled ? '' : title;
     }
   }
 
@@ -437,11 +443,14 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                         controller: _titleCtrl,
                         style: Theme.of(context).textTheme.titleLarge,
                         decoration: InputDecoration(
-                          hintText: l10n.untitledPiece,
+                          hintText: _titleHint ?? l10n.untitledPiece,
                           border: InputBorder.none,
                         ),
-                        onEditingComplete: () =>
-                            _updateField(title: _titleCtrl.text),
+                        onEditingComplete: () {
+                          if (_titleCtrl.text.isNotEmpty) {
+                            _updateField(title: _titleCtrl.text);
+                          }
+                        },
                       ),
                     ),
                     if (photos.isNotEmpty)
@@ -485,7 +494,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      _updateField(title: _titleCtrl.text);
+                      if (_titleCtrl.text.isNotEmpty) {
+                        _updateField(title: _titleCtrl.text);
+                      }
                       _formKey.currentState?.saveAll();
                       context.go('/');
                     },
