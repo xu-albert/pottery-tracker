@@ -1,17 +1,17 @@
 # Pottery Tracker — Roadmap
 
 ## Design & Branding
-- [ ] **App logo/icon** — generate with an AI art tool (suggestions: Midjourney, Recraft, or IconKit by Apple for simple SF Symbol-style icons)
+- [x] **App logo/icon** — custom icon across all platforms
 - [ ] **Re-examine color scheme** — current palette may need refinement once logo is finalized; consider harmonizing with the logo's colors
 
 ## UX Improvements
 - [ ] **Onboarding walkthrough** — brief tutorial on first launch showing how to create a piece
-- [ ] **Haptic feedback** — light haptics on archive, delete, photo add
-- [ ] **Swipe-to-archive** from album row
+- [x] **Haptic feedback** — light haptics on archive, delete, photo add
+- [x] **Swipe-to-archive** from album row
 - [ ] **Undo snackbar** after archive/delete instead of confirmation dialog
-- [ ] **Photo reordering** — drag-to-reorder photos in detail gallery
-- [ ] **Batch photo upload** — select multiple photos at once when adding to a piece
-- [ ] **Last updated date on album rows** — show "Last updated" text under thumbnails or right-aligned next to title in active view
+- [x] **Photo reordering** — drag-to-reorder photos in detail gallery
+- [x] **Batch photo upload** — select multiple photos at once when adding to a piece
+- [x] **Last updated date on album rows** — show "Last updated" text under thumbnails or right-aligned next to title in active view
 
 ## Features
 - [x] **Tags / categories** — user-defined labels for organizing pieces (e.g., "mugs", "bowls", "gifts")
