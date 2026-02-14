@@ -157,7 +157,10 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ### Title (Above Gallery)
 - [ ] Title displayed above photo gallery with titleLarge styling
 - [ ] Title is editable, saves on keyboard "done"
-- [ ] Empty title shows "Untitled Piece" hint
+- [ ] Untitled pieces: title field is empty, hint shows "Untitled Piece N" with correct number
+- [ ] Leaving title empty preserves "Untitled Piece N" in DB for album display
+- [ ] Typing a name replaces the untitled name
+- [ ] Pieces with custom titles show the title prefilled normally
 
 ### Haptic Feedback (manual — requires physical device)
 - [ ] Adding a photo → light haptic
@@ -335,3 +338,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-13 | Clay/glaze rename propagation: renaming in Manage Clays/Glazes updates all pieces using that name |
 | 2026-02-13 | Tags: multi-select picker, TagOptions + PieceTags tables (DB v6), Manage Tags screen with drag-to-reorder, tag rename propagation, search integration |
 | 2026-02-14 | Custom tag colors: 7 preset swatches, auto-assign on creation, color picker in Manage Tags, accessible chip rendering in album view (DB v7) |
+| 2026-02-14 | Untitled piece title as hint: title field empty for new pieces, "Untitled Piece N" shown as placeholder hint, DB value preserved when field left empty |
