@@ -327,6 +327,36 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ---
 
+## 10. Widget Tests (Automated)
+
+### Album Screen (`test/features/album/album_screen_test.dart`)
+- [x] Shows loading indicator while data loads
+- [x] Shows empty state when no pieces
+- [x] Renders pieces when data available
+- [x] Shows error message on error
+
+### Filter Chips (`test/features/album/widgets/filter_chips_test.dart`)
+- [x] Active chip is selected by default
+- [x] Tapping Archive updates provider to true
+- [x] Tapping Active after Archive sets back to false
+
+### Album Grid (`test/features/album/widgets/album_grid_test.dart`)
+- [x] Active view renders list items (PieceRow)
+- [x] Swipe-to-archive calls dao.updatePiece and shows snackbar
+- [x] Undo button reverses the archive
+- [x] Archive view renders grid of ArchiveThumbnails
+
+### Archive Thumbnail (`test/features/album/widgets/archive_thumbnail_test.dart`)
+- [x] Renders with title overlay
+
+### Empty State (`test/features/album/widgets/empty_state_test.dart`)
+- [x] Shows illustration and message
+
+### Settings Screen (`test/features/settings/settings_screen_test.dart`)
+- [x] Shows Settings title and materials section
+
+---
+
 ## Changelog
 
 | Date       | Change |
@@ -355,3 +385,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Input field UX cleanup: TextCapitalization.sentences on all inputs, autocorrect disabled, "Add New" button text de-duplicated |
 | 2026-02-14 | Swipe-to-archive: left-swipe on album rows with teal background, haptic feedback, and 4-second undo snackbar |
 | 2026-02-14 | Archive thumbnail titles: bottom-right title overlay with gradient fade on archive grid thumbnails |
+| 2026-02-14 | Widget tests: 20 automated tests across 6 files covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings |

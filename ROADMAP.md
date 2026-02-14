@@ -31,5 +31,5 @@
 ## Technical / Infrastructure
 - [ ] **Firebase sync (Phase 2)** — Google/Apple auth backend, Firestore, Cloud Storage
 - [ ] **Dark mode** — respect system setting
-- [ ] **Widget tests** — unit tests for DAOs, widget tests for key screens
+- [x] **Widget tests** — 20 widget tests covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings
 - [ ] **CI/CD** — GitHub Actions for `dart analyze` + `flutter test` on PRs
