@@ -10,6 +10,7 @@ class MetadataForm extends StatefulWidget {
   final Piece piece;
   final MaterialsDao materialsDao;
   final List<GlazeOption> selectedGlazes;
+  final List<TagOption> selectedTags;
   final void Function({
     String? title,
     PieceStage? stage,
@@ -18,14 +19,17 @@ class MetadataForm extends StatefulWidget {
     String? notes,
   }) onUpdateField;
   final void Function(List<String> glazeOptionIds) onUpdateGlazes;
+  final void Function(List<String> tagOptionIds) onUpdateTags;
 
   const MetadataForm({
     super.key,
     required this.piece,
     required this.materialsDao,
     required this.selectedGlazes,
+    required this.selectedTags,
     required this.onUpdateField,
     required this.onUpdateGlazes,
+    required this.onUpdateTags,
   });
 
   @override
@@ -198,11 +202,7 @@ class MetadataFormState extends State<MetadataForm> {
                           style: Theme.of(ctx).textTheme.titleMedium,
                         ),
                         TextButton(
-                          onPressed: () {
-                            // Commit the selection
-                            widget.onUpdateGlazes(selectedIds.toList());
-                            Navigator.of(ctx).pop();
-                          },
+                          onPressed: () => Navigator.of(ctx).pop(),
                           child: Text(l10n.done),
                         ),
                       ],
@@ -258,6 +258,11 @@ class MetadataFormState extends State<MetadataForm> {
         },
       ),
     );
+
+    // Save on any dismiss (Done button, tap outside, back gesture)
+    if (mounted) {
+      widget.onUpdateGlazes(selectedIds.toList());
+    }
   }
 
   Future<GlazeOption?> _showAddGlazeDialog() async {
@@ -300,6 +305,135 @@ class MetadataFormState extends State<MetadataForm> {
     return null;
   }
 
+  Future<void> _showTagPicker() async {
+    final l10n = AppLocalizations.of(context)!;
+    final allTags = await widget.materialsDao.getAllTags();
+
+    if (!mounted) return;
+
+    final selectedIds = widget.selectedTags.map((t) => t.id).toSet();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          l10n.selectTags,
+                          style: Theme.of(ctx).textTheme.titleMedium,
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: Text(l10n.done),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  CheckboxListTile(
+                    title: Text(l10n.tagsNone),
+                    value: selectedIds.isEmpty,
+                    onChanged: (_) {
+                      setSheetState(() => selectedIds.clear());
+                    },
+                  ),
+                  ...allTags.map((tag) => CheckboxListTile(
+                        title: Text(tag.name),
+                        value: selectedIds.contains(tag.id),
+                        onChanged: (checked) {
+                          setSheetState(() {
+                            if (checked == true) {
+                              selectedIds.add(tag.id);
+                            } else {
+                              selectedIds.remove(tag.id);
+                            }
+                          });
+                        },
+                      )),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.add),
+                    title: Text(l10n.addNew),
+                    onTap: () async {
+                      final newTag = await _showAddTagDialog();
+                      if (newTag != null) {
+                        final refreshed =
+                            await widget.materialsDao.getAllTags();
+                        setSheetState(() {
+                          allTags
+                            ..clear()
+                            ..addAll(refreshed);
+                          selectedIds.add(newTag.id);
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    // Save on any dismiss (Done button, tap outside, back gesture)
+    if (mounted) {
+      widget.onUpdateTags(selectedIds.toList());
+    }
+  }
+
+  Future<TagOption?> _showAddTagDialog() async {
+    final l10n = AppLocalizations.of(context)!;
+    final controller = TextEditingController();
+    final name = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return CupertinoAlertDialog(
+          title: Text(l10n.addNew),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: CupertinoTextField(
+              controller: controller,
+              autofocus: true,
+              placeholder: l10n.enterTagName,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (value) => Navigator.of(ctx).pop(value),
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(l10n.cancel),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: Text(l10n.create),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) return null;
+    if (name != null && name.trim().isNotEmpty) {
+      return widget.materialsDao.findOrCreateTag(name);
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -311,6 +445,10 @@ class MetadataFormState extends State<MetadataForm> {
     final glazeDisplay = widget.selectedGlazes.isNotEmpty
         ? widget.selectedGlazes.map((g) => g.name).join(', ')
         : l10n.glazesNone;
+
+    final tagDisplay = widget.selectedTags.isNotEmpty
+        ? widget.selectedTags.map((t) => t.name).join(', ')
+        : l10n.tagsNone;
 
     return Padding(
       padding: const EdgeInsets.all(AppSizes.md),
@@ -367,6 +505,22 @@ class MetadataFormState extends State<MetadataForm> {
               ),
               child: Text(
                 glazeDisplay,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSizes.md),
+
+          // Tags multi-select picker
+          GestureDetector(
+            onTap: _showTagPicker,
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: l10n.tagsLabel,
+                suffixIcon: const Icon(Icons.arrow_drop_down),
+              ),
+              child: Text(
+                tagDisplay,
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
             ),

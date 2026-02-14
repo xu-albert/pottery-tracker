@@ -55,6 +55,15 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _tagsMeta = const VerificationMeta('tags');
+  @override
+  late final GeneratedColumn<String> tags = GeneratedColumn<String>(
+    'tags',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _notesMeta = const VerificationMeta('notes');
   @override
   late final GeneratedColumn<String> notes = GeneratedColumn<String>(
@@ -119,6 +128,7 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     stage,
     clayType,
     glazes,
+    tags,
     notes,
     coverPhotoId,
     isArchived,
@@ -164,6 +174,12 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
       context.handle(
         _glazesMeta,
         glazes.isAcceptableOrUnknown(data['glazes']!, _glazesMeta),
+      );
+    }
+    if (data.containsKey('tags')) {
+      context.handle(
+        _tagsMeta,
+        tags.isAcceptableOrUnknown(data['tags']!, _tagsMeta),
       );
     }
     if (data.containsKey('notes')) {
@@ -232,6 +248,10 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         DriftSqlType.string,
         data['${effectivePrefix}glazes'],
       ),
+      tags: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tags'],
+      ),
       notes: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}notes'],
@@ -267,6 +287,7 @@ class Piece extends DataClass implements Insertable<Piece> {
   final String? stage;
   final String? clayType;
   final String? glazes;
+  final String? tags;
   final String? notes;
   final String? coverPhotoId;
   final bool isArchived;
@@ -278,6 +299,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     this.stage,
     this.clayType,
     this.glazes,
+    this.tags,
     this.notes,
     this.coverPhotoId,
     required this.isArchived,
@@ -299,6 +321,9 @@ class Piece extends DataClass implements Insertable<Piece> {
     }
     if (!nullToAbsent || glazes != null) {
       map['glazes'] = Variable<String>(glazes);
+    }
+    if (!nullToAbsent || tags != null) {
+      map['tags'] = Variable<String>(tags);
     }
     if (!nullToAbsent || notes != null) {
       map['notes'] = Variable<String>(notes);
@@ -327,6 +352,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       glazes: glazes == null && nullToAbsent
           ? const Value.absent()
           : Value(glazes),
+      tags: tags == null && nullToAbsent ? const Value.absent() : Value(tags),
       notes: notes == null && nullToAbsent
           ? const Value.absent()
           : Value(notes),
@@ -350,6 +376,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       stage: serializer.fromJson<String?>(json['stage']),
       clayType: serializer.fromJson<String?>(json['clayType']),
       glazes: serializer.fromJson<String?>(json['glazes']),
+      tags: serializer.fromJson<String?>(json['tags']),
       notes: serializer.fromJson<String?>(json['notes']),
       coverPhotoId: serializer.fromJson<String?>(json['coverPhotoId']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
@@ -366,6 +393,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       'stage': serializer.toJson<String?>(stage),
       'clayType': serializer.toJson<String?>(clayType),
       'glazes': serializer.toJson<String?>(glazes),
+      'tags': serializer.toJson<String?>(tags),
       'notes': serializer.toJson<String?>(notes),
       'coverPhotoId': serializer.toJson<String?>(coverPhotoId),
       'isArchived': serializer.toJson<bool>(isArchived),
@@ -380,6 +408,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     Value<String?> stage = const Value.absent(),
     Value<String?> clayType = const Value.absent(),
     Value<String?> glazes = const Value.absent(),
+    Value<String?> tags = const Value.absent(),
     Value<String?> notes = const Value.absent(),
     Value<String?> coverPhotoId = const Value.absent(),
     bool? isArchived,
@@ -391,6 +420,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     stage: stage.present ? stage.value : this.stage,
     clayType: clayType.present ? clayType.value : this.clayType,
     glazes: glazes.present ? glazes.value : this.glazes,
+    tags: tags.present ? tags.value : this.tags,
     notes: notes.present ? notes.value : this.notes,
     coverPhotoId: coverPhotoId.present ? coverPhotoId.value : this.coverPhotoId,
     isArchived: isArchived ?? this.isArchived,
@@ -404,6 +434,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       stage: data.stage.present ? data.stage.value : this.stage,
       clayType: data.clayType.present ? data.clayType.value : this.clayType,
       glazes: data.glazes.present ? data.glazes.value : this.glazes,
+      tags: data.tags.present ? data.tags.value : this.tags,
       notes: data.notes.present ? data.notes.value : this.notes,
       coverPhotoId: data.coverPhotoId.present
           ? data.coverPhotoId.value
@@ -424,6 +455,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           ..write('stage: $stage, ')
           ..write('clayType: $clayType, ')
           ..write('glazes: $glazes, ')
+          ..write('tags: $tags, ')
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
           ..write('isArchived: $isArchived, ')
@@ -440,6 +472,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     stage,
     clayType,
     glazes,
+    tags,
     notes,
     coverPhotoId,
     isArchived,
@@ -455,6 +488,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           other.stage == this.stage &&
           other.clayType == this.clayType &&
           other.glazes == this.glazes &&
+          other.tags == this.tags &&
           other.notes == this.notes &&
           other.coverPhotoId == this.coverPhotoId &&
           other.isArchived == this.isArchived &&
@@ -468,6 +502,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
   final Value<String?> stage;
   final Value<String?> clayType;
   final Value<String?> glazes;
+  final Value<String?> tags;
   final Value<String?> notes;
   final Value<String?> coverPhotoId;
   final Value<bool> isArchived;
@@ -480,6 +515,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.stage = const Value.absent(),
     this.clayType = const Value.absent(),
     this.glazes = const Value.absent(),
+    this.tags = const Value.absent(),
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
     this.isArchived = const Value.absent(),
@@ -493,6 +529,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.stage = const Value.absent(),
     this.clayType = const Value.absent(),
     this.glazes = const Value.absent(),
+    this.tags = const Value.absent(),
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
     this.isArchived = const Value.absent(),
@@ -508,6 +545,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Expression<String>? stage,
     Expression<String>? clayType,
     Expression<String>? glazes,
+    Expression<String>? tags,
     Expression<String>? notes,
     Expression<String>? coverPhotoId,
     Expression<bool>? isArchived,
@@ -521,6 +559,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       if (stage != null) 'stage': stage,
       if (clayType != null) 'clay_type': clayType,
       if (glazes != null) 'glazes': glazes,
+      if (tags != null) 'tags': tags,
       if (notes != null) 'notes': notes,
       if (coverPhotoId != null) 'cover_photo_id': coverPhotoId,
       if (isArchived != null) 'is_archived': isArchived,
@@ -536,6 +575,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Value<String?>? stage,
     Value<String?>? clayType,
     Value<String?>? glazes,
+    Value<String?>? tags,
     Value<String?>? notes,
     Value<String?>? coverPhotoId,
     Value<bool>? isArchived,
@@ -549,6 +589,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       stage: stage ?? this.stage,
       clayType: clayType ?? this.clayType,
       glazes: glazes ?? this.glazes,
+      tags: tags ?? this.tags,
       notes: notes ?? this.notes,
       coverPhotoId: coverPhotoId ?? this.coverPhotoId,
       isArchived: isArchived ?? this.isArchived,
@@ -575,6 +616,9 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     }
     if (glazes.present) {
       map['glazes'] = Variable<String>(glazes.value);
+    }
+    if (tags.present) {
+      map['tags'] = Variable<String>(tags.value);
     }
     if (notes.present) {
       map['notes'] = Variable<String>(notes.value);
@@ -605,6 +649,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
           ..write('stage: $stage, ')
           ..write('clayType: $clayType, ')
           ..write('glazes: $glazes, ')
+          ..write('tags: $tags, ')
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
           ..write('isArchived: $isArchived, ')
@@ -2064,6 +2109,579 @@ class PieceGlazesCompanion extends UpdateCompanion<PieceGlaze> {
   }
 }
 
+class $TagOptionsTable extends TagOptions
+    with TableInfo<$TagOptionsTable, TagOption> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TagOptionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, sortOrder, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'tag_options';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TagOption> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TagOption map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TagOption(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $TagOptionsTable createAlias(String alias) {
+    return $TagOptionsTable(attachedDatabase, alias);
+  }
+}
+
+class TagOption extends DataClass implements Insertable<TagOption> {
+  final String id;
+  final String name;
+  final int sortOrder;
+  final DateTime createdAt;
+  const TagOption({
+    required this.id,
+    required this.name,
+    required this.sortOrder,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  TagOptionsCompanion toCompanion(bool nullToAbsent) {
+    return TagOptionsCompanion(
+      id: Value(id),
+      name: Value(name),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory TagOption.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TagOption(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  TagOption copyWith({
+    String? id,
+    String? name,
+    int? sortOrder,
+    DateTime? createdAt,
+  }) => TagOption(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  TagOption copyWithCompanion(TagOptionsCompanion data) {
+    return TagOption(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TagOption(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, sortOrder, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TagOption &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class TagOptionsCompanion extends UpdateCompanion<TagOption> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<int> sortOrder;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const TagOptionsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TagOptionsCompanion.insert({
+    required String id,
+    required String name,
+    this.sortOrder = const Value.absent(),
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       createdAt = Value(createdAt);
+  static Insertable<TagOption> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<int>? sortOrder,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TagOptionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return TagOptionsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TagOptionsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PieceTagsTable extends PieceTags
+    with TableInfo<$PieceTagsTable, PieceTag> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PieceTagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pieceIdMeta = const VerificationMeta(
+    'pieceId',
+  );
+  @override
+  late final GeneratedColumn<String> pieceId = GeneratedColumn<String>(
+    'piece_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _tagOptionIdMeta = const VerificationMeta(
+    'tagOptionId',
+  );
+  @override
+  late final GeneratedColumn<String> tagOptionId = GeneratedColumn<String>(
+    'tag_option_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, pieceId, tagOptionId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'piece_tags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PieceTag> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('piece_id')) {
+      context.handle(
+        _pieceIdMeta,
+        pieceId.isAcceptableOrUnknown(data['piece_id']!, _pieceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pieceIdMeta);
+    }
+    if (data.containsKey('tag_option_id')) {
+      context.handle(
+        _tagOptionIdMeta,
+        tagOptionId.isAcceptableOrUnknown(
+          data['tag_option_id']!,
+          _tagOptionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_tagOptionIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PieceTag map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PieceTag(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      pieceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}piece_id'],
+      )!,
+      tagOptionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag_option_id'],
+      )!,
+    );
+  }
+
+  @override
+  $PieceTagsTable createAlias(String alias) {
+    return $PieceTagsTable(attachedDatabase, alias);
+  }
+}
+
+class PieceTag extends DataClass implements Insertable<PieceTag> {
+  final String id;
+  final String pieceId;
+  final String tagOptionId;
+  const PieceTag({
+    required this.id,
+    required this.pieceId,
+    required this.tagOptionId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['piece_id'] = Variable<String>(pieceId);
+    map['tag_option_id'] = Variable<String>(tagOptionId);
+    return map;
+  }
+
+  PieceTagsCompanion toCompanion(bool nullToAbsent) {
+    return PieceTagsCompanion(
+      id: Value(id),
+      pieceId: Value(pieceId),
+      tagOptionId: Value(tagOptionId),
+    );
+  }
+
+  factory PieceTag.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PieceTag(
+      id: serializer.fromJson<String>(json['id']),
+      pieceId: serializer.fromJson<String>(json['pieceId']),
+      tagOptionId: serializer.fromJson<String>(json['tagOptionId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'pieceId': serializer.toJson<String>(pieceId),
+      'tagOptionId': serializer.toJson<String>(tagOptionId),
+    };
+  }
+
+  PieceTag copyWith({String? id, String? pieceId, String? tagOptionId}) =>
+      PieceTag(
+        id: id ?? this.id,
+        pieceId: pieceId ?? this.pieceId,
+        tagOptionId: tagOptionId ?? this.tagOptionId,
+      );
+  PieceTag copyWithCompanion(PieceTagsCompanion data) {
+    return PieceTag(
+      id: data.id.present ? data.id.value : this.id,
+      pieceId: data.pieceId.present ? data.pieceId.value : this.pieceId,
+      tagOptionId: data.tagOptionId.present
+          ? data.tagOptionId.value
+          : this.tagOptionId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PieceTag(')
+          ..write('id: $id, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('tagOptionId: $tagOptionId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, pieceId, tagOptionId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PieceTag &&
+          other.id == this.id &&
+          other.pieceId == this.pieceId &&
+          other.tagOptionId == this.tagOptionId);
+}
+
+class PieceTagsCompanion extends UpdateCompanion<PieceTag> {
+  final Value<String> id;
+  final Value<String> pieceId;
+  final Value<String> tagOptionId;
+  final Value<int> rowid;
+  const PieceTagsCompanion({
+    this.id = const Value.absent(),
+    this.pieceId = const Value.absent(),
+    this.tagOptionId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PieceTagsCompanion.insert({
+    required String id,
+    required String pieceId,
+    required String tagOptionId,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       pieceId = Value(pieceId),
+       tagOptionId = Value(tagOptionId);
+  static Insertable<PieceTag> custom({
+    Expression<String>? id,
+    Expression<String>? pieceId,
+    Expression<String>? tagOptionId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (pieceId != null) 'piece_id': pieceId,
+      if (tagOptionId != null) 'tag_option_id': tagOptionId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PieceTagsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? pieceId,
+    Value<String>? tagOptionId,
+    Value<int>? rowid,
+  }) {
+    return PieceTagsCompanion(
+      id: id ?? this.id,
+      pieceId: pieceId ?? this.pieceId,
+      tagOptionId: tagOptionId ?? this.tagOptionId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (pieceId.present) {
+      map['piece_id'] = Variable<String>(pieceId.value);
+    }
+    if (tagOptionId.present) {
+      map['tag_option_id'] = Variable<String>(tagOptionId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PieceTagsCompanion(')
+          ..write('id: $id, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('tagOptionId: $tagOptionId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2072,6 +2690,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ClayOptionsTable clayOptions = $ClayOptionsTable(this);
   late final $GlazeOptionsTable glazeOptions = $GlazeOptionsTable(this);
   late final $PieceGlazesTable pieceGlazes = $PieceGlazesTable(this);
+  late final $TagOptionsTable tagOptions = $TagOptionsTable(this);
+  late final $PieceTagsTable pieceTags = $PieceTagsTable(this);
   late final PiecesDao piecesDao = PiecesDao(this as AppDatabase);
   late final PhotosDao photosDao = PhotosDao(this as AppDatabase);
   late final MaterialsDao materialsDao = MaterialsDao(this as AppDatabase);
@@ -2085,6 +2705,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     clayOptions,
     glazeOptions,
     pieceGlazes,
+    tagOptions,
+    pieceTags,
   ];
 }
 
@@ -2095,6 +2717,7 @@ typedef $$PiecesTableCreateCompanionBuilder =
       Value<String?> stage,
       Value<String?> clayType,
       Value<String?> glazes,
+      Value<String?> tags,
       Value<String?> notes,
       Value<String?> coverPhotoId,
       Value<bool> isArchived,
@@ -2109,6 +2732,7 @@ typedef $$PiecesTableUpdateCompanionBuilder =
       Value<String?> stage,
       Value<String?> clayType,
       Value<String?> glazes,
+      Value<String?> tags,
       Value<String?> notes,
       Value<String?> coverPhotoId,
       Value<bool> isArchived,
@@ -2172,6 +2796,11 @@ class $$PiecesTableFilterComposer
 
   ColumnFilters<String> get glazes => $composableBuilder(
     column: $table.glazes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tags => $composableBuilder(
+    column: $table.tags,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2260,6 +2889,11 @@ class $$PiecesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get tags => $composableBuilder(
+    column: $table.tags,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get notes => $composableBuilder(
     column: $table.notes,
     builder: (column) => ColumnOrderings(column),
@@ -2309,6 +2943,9 @@ class $$PiecesTableAnnotationComposer
 
   GeneratedColumn<String> get glazes =>
       $composableBuilder(column: $table.glazes, builder: (column) => column);
+
+  GeneratedColumn<String> get tags =>
+      $composableBuilder(column: $table.tags, builder: (column) => column);
 
   GeneratedColumn<String> get notes =>
       $composableBuilder(column: $table.notes, builder: (column) => column);
@@ -2388,6 +3025,7 @@ class $$PiecesTableTableManager
                 Value<String?> stage = const Value.absent(),
                 Value<String?> clayType = const Value.absent(),
                 Value<String?> glazes = const Value.absent(),
+                Value<String?> tags = const Value.absent(),
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
@@ -2400,6 +3038,7 @@ class $$PiecesTableTableManager
                 stage: stage,
                 clayType: clayType,
                 glazes: glazes,
+                tags: tags,
                 notes: notes,
                 coverPhotoId: coverPhotoId,
                 isArchived: isArchived,
@@ -2414,6 +3053,7 @@ class $$PiecesTableTableManager
                 Value<String?> stage = const Value.absent(),
                 Value<String?> clayType = const Value.absent(),
                 Value<String?> glazes = const Value.absent(),
+                Value<String?> tags = const Value.absent(),
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
@@ -2426,6 +3066,7 @@ class $$PiecesTableTableManager
                 stage: stage,
                 clayType: clayType,
                 glazes: glazes,
+                tags: tags,
                 notes: notes,
                 coverPhotoId: coverPhotoId,
                 isArchived: isArchived,
@@ -3400,6 +4041,342 @@ typedef $$PieceGlazesTableProcessedTableManager =
       PieceGlaze,
       PrefetchHooks Function()
     >;
+typedef $$TagOptionsTableCreateCompanionBuilder =
+    TagOptionsCompanion Function({
+      required String id,
+      required String name,
+      Value<int> sortOrder,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$TagOptionsTableUpdateCompanionBuilder =
+    TagOptionsCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<int> sortOrder,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$TagOptionsTableFilterComposer
+    extends Composer<_$AppDatabase, $TagOptionsTable> {
+  $$TagOptionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TagOptionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TagOptionsTable> {
+  $$TagOptionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TagOptionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TagOptionsTable> {
+  $$TagOptionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$TagOptionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TagOptionsTable,
+          TagOption,
+          $$TagOptionsTableFilterComposer,
+          $$TagOptionsTableOrderingComposer,
+          $$TagOptionsTableAnnotationComposer,
+          $$TagOptionsTableCreateCompanionBuilder,
+          $$TagOptionsTableUpdateCompanionBuilder,
+          (
+            TagOption,
+            BaseReferences<_$AppDatabase, $TagOptionsTable, TagOption>,
+          ),
+          TagOption,
+          PrefetchHooks Function()
+        > {
+  $$TagOptionsTableTableManager(_$AppDatabase db, $TagOptionsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TagOptionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TagOptionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TagOptionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TagOptionsCompanion(
+                id: id,
+                name: name,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                Value<int> sortOrder = const Value.absent(),
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => TagOptionsCompanion.insert(
+                id: id,
+                name: name,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TagOptionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TagOptionsTable,
+      TagOption,
+      $$TagOptionsTableFilterComposer,
+      $$TagOptionsTableOrderingComposer,
+      $$TagOptionsTableAnnotationComposer,
+      $$TagOptionsTableCreateCompanionBuilder,
+      $$TagOptionsTableUpdateCompanionBuilder,
+      (TagOption, BaseReferences<_$AppDatabase, $TagOptionsTable, TagOption>),
+      TagOption,
+      PrefetchHooks Function()
+    >;
+typedef $$PieceTagsTableCreateCompanionBuilder =
+    PieceTagsCompanion Function({
+      required String id,
+      required String pieceId,
+      required String tagOptionId,
+      Value<int> rowid,
+    });
+typedef $$PieceTagsTableUpdateCompanionBuilder =
+    PieceTagsCompanion Function({
+      Value<String> id,
+      Value<String> pieceId,
+      Value<String> tagOptionId,
+      Value<int> rowid,
+    });
+
+class $$PieceTagsTableFilterComposer
+    extends Composer<_$AppDatabase, $PieceTagsTable> {
+  $$PieceTagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tagOptionId => $composableBuilder(
+    column: $table.tagOptionId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PieceTagsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PieceTagsTable> {
+  $$PieceTagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tagOptionId => $composableBuilder(
+    column: $table.tagOptionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PieceTagsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PieceTagsTable> {
+  $$PieceTagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get pieceId =>
+      $composableBuilder(column: $table.pieceId, builder: (column) => column);
+
+  GeneratedColumn<String> get tagOptionId => $composableBuilder(
+    column: $table.tagOptionId,
+    builder: (column) => column,
+  );
+}
+
+class $$PieceTagsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PieceTagsTable,
+          PieceTag,
+          $$PieceTagsTableFilterComposer,
+          $$PieceTagsTableOrderingComposer,
+          $$PieceTagsTableAnnotationComposer,
+          $$PieceTagsTableCreateCompanionBuilder,
+          $$PieceTagsTableUpdateCompanionBuilder,
+          (PieceTag, BaseReferences<_$AppDatabase, $PieceTagsTable, PieceTag>),
+          PieceTag,
+          PrefetchHooks Function()
+        > {
+  $$PieceTagsTableTableManager(_$AppDatabase db, $PieceTagsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PieceTagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PieceTagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PieceTagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> pieceId = const Value.absent(),
+                Value<String> tagOptionId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PieceTagsCompanion(
+                id: id,
+                pieceId: pieceId,
+                tagOptionId: tagOptionId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String pieceId,
+                required String tagOptionId,
+                Value<int> rowid = const Value.absent(),
+              }) => PieceTagsCompanion.insert(
+                id: id,
+                pieceId: pieceId,
+                tagOptionId: tagOptionId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PieceTagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PieceTagsTable,
+      PieceTag,
+      $$PieceTagsTableFilterComposer,
+      $$PieceTagsTableOrderingComposer,
+      $$PieceTagsTableAnnotationComposer,
+      $$PieceTagsTableCreateCompanionBuilder,
+      $$PieceTagsTableUpdateCompanionBuilder,
+      (PieceTag, BaseReferences<_$AppDatabase, $PieceTagsTable, PieceTag>),
+      PieceTag,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3414,4 +4391,8 @@ class $AppDatabaseManager {
       $$GlazeOptionsTableTableManager(_db, _db.glazeOptions);
   $$PieceGlazesTableTableManager get pieceGlazes =>
       $$PieceGlazesTableTableManager(_db, _db.pieceGlazes);
+  $$TagOptionsTableTableManager get tagOptions =>
+      $$TagOptionsTableTableManager(_db, _db.tagOptions);
+  $$PieceTagsTableTableManager get pieceTags =>
+      $$PieceTagsTableTableManager(_db, _db.pieceTags);
 }

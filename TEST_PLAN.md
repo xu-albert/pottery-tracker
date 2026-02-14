@@ -45,12 +45,15 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ### Search
 - [ ] Typing in search bar filters pieces in real-time
-- [ ] Searches across: title, clay type, glazes, notes
+- [ ] Searches across: title, clay type, glazes, tags, notes
 - [ ] Clearing search shows all pieces again
 
 ### Empty States
 - [ ] No active pieces → "No pieces yet" message with icon
 - [ ] No archived pieces → empty state shown in archive view
+
+### Metadata in Home View
+- [ ] **TODO:** Display tags, clay, glazes, and other metadata below each piece row in the home view
 
 ### Edge Cases
 - [ ] Piece with no photos → placeholder icon in row and archive grid
@@ -117,6 +120,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Dragging a photo reorders the list
 - [ ] Tapping "Done" saves new order; gallery reflects updated order
 - [ ] Tapping back (without Done) discards changes
+- [ ] **TODO:** Allow deleting photos from the reorder screen
 
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
@@ -135,7 +139,13 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] "+ Add New" in glaze picker → dialog → creates glaze + auto-checks it
 - [ ] Selected glazes displayed as comma-separated text on the field
 - [ ] Pieces with existing free-text glazes → parsed into library on migration
-- [ ] **TODO:** Add tags feature with saved options library
+- [ ] Tags field is a multi-select picker
+- [ ] Tapping Tags → bottom sheet with checkboxes for each saved tag
+- [ ] Checking/unchecking tags → "Done" button commits selection
+- [ ] "None" checkbox clears all tag selections
+- [ ] "+ Add New" in tag picker → dialog → creates tag + auto-checks it
+- [ ] Selected tags displayed as comma-separated text on the field
+- [ ] Tags searchable from album search bar (via denormalized column)
 - [ ] Edit notes (multiline) → saves on keyboard "done"
 - [ ] Empty string fields saved as NULL in database
 
@@ -181,7 +191,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 - [ ] Shows "Signed in as {name}" or "Not signed in"
 - [ ] "Sign Out" button → clears auth, redirects to sign-in
-- [ ] "Materials" section with "Manage Clays" and "Manage Glazes" options
+- [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
 - [ ] "Cloud sync coming soon" placeholder
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version shows "1.0.0"
@@ -224,6 +234,22 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Renaming a glaze in Manage Glazes → all pieces using that glaze show updated name
 - [ ] Denormalized glazes text column updated (for search)
 
+### Manage Tags Screen (`/settings/tags`)
+- [ ] Shows list of saved tag names in custom sort order
+- [ ] Empty state: "No tags saved yet" when no tags exist
+- [ ] "+" button in app bar → add dialog → creates new tag (appears at bottom)
+- [ ] Edit icon on each tag → edit dialog → renames tag
+- [ ] Delete icon on each tag → confirmation dialog → deletes tag + removes from pieces
+- [ ] Adding duplicate tag name (case-insensitive) → reuses existing
+- [ ] Changes reflected immediately in piece detail tag picker
+- [ ] Drag handles visible on left side of each tag row
+- [ ] Dragging a tag to a new position reorders the list immediately
+- [ ] Scale + elevation animation on dragged item
+
+### Tag Rename Propagation
+- [ ] Renaming a tag in Manage Tags → all pieces using that tag show updated name
+- [ ] Denormalized tags text column updated (for search)
+
 ---
 
 ## 8. Data & Image Pipeline
@@ -235,13 +261,16 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Compression failure → raw bytes fallback
 
 ### Database
-- [ ] Pieces table: id, title, stage, clayType, glazes (denormalized), notes, isArchived, coverPhotoId, createdAt, updatedAt
+- [ ] Pieces table: id, title, stage, clayType, glazes (denormalized), tags (denormalized), notes, isArchived, coverPhotoId, createdAt, updatedAt
 - [ ] Photos table: id, pieceId, localPath, thumbnailPath, cloudUrl, dateTaken, createdAt, sortOrder
 - [ ] ClayOptions table: id, name (unique), sortOrder, createdAt
 - [ ] GlazeOptions table: id, name (unique), sortOrder, createdAt
 - [ ] PieceGlazes junction table: id, pieceId, glazeOptionId, sortOrder
+- [ ] TagOptions table: id, name (unique), sortOrder, createdAt
+- [ ] PieceTags junction table: id, pieceId, tagOptionId
 - [ ] Photos sorted by sortOrder DESC (newest first) everywhere
 - [ ] Migration v4→v5: creates GlazeOptions + PieceGlazes, parses free-text glazes into library
+- [ ] Migration v5→v6: creates TagOptions + PieceTags + adds tags column to pieces
 
 ### Photo Ordering (Newest First)
 - [ ] Detail gallery: newest photo leftmost
@@ -293,3 +322,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-13 | Glaze library: multi-select picker replaces free-text field, GlazeOptions + PieceGlazes tables (DB v5), migration parses existing glazes |
 | 2026-02-13 | Manage Glazes: settings screen to add, edit, delete, and reorder saved glaze options |
 | 2026-02-13 | Clay/glaze rename propagation: renaming in Manage Clays/Glazes updates all pieces using that name |
+| 2026-02-13 | Tags: multi-select picker, TagOptions + PieceTags tables (DB v6), Manage Tags screen with drag-to-reorder, tag rename propagation, search integration |

@@ -543,6 +543,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Done'**
   String get done;
+
+  /// Tags field label
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get tagsLabel;
+
+  /// Manage tags settings option
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Tags'**
+  String get manageTags;
+
+  /// Empty state for tag management
+  ///
+  /// In en, this message translates to:
+  /// **'No tags saved yet'**
+  String get noTagsYet;
+
+  /// Tag name input hint
+  ///
+  /// In en, this message translates to:
+  /// **'Enter tag name'**
+  String get enterTagName;
+
+  /// Edit tag name dialog title
+  ///
+  /// In en, this message translates to:
+  /// **'Edit tag name'**
+  String get editTagName;
+
+  /// Delete tag confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Tag?'**
+  String get deleteTagConfirmTitle;
+
+  /// Delete tag confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'This tag will be removed from all pieces that use it.'**
+  String get deleteTagConfirmMessage;
+
+  /// Tag multi-select picker title
+  ///
+  /// In en, this message translates to:
+  /// **'Select Tags'**
+  String get selectTags;
+
+  /// No tags selected
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get tagsNone;
 }
 
 class _AppLocalizationsDelegate

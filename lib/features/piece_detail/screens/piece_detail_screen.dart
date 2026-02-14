@@ -214,6 +214,12 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     _loadPiece();
   }
 
+  Future<void> _updateTags(List<String> tagOptionIds) async {
+    final materialsDao = ref.read(materialsDaoProvider);
+    await materialsDao.setTagsForPiece(widget.pieceId, tagOptionIds);
+    _loadPiece();
+  }
+
   Future<void> _pickUpdatedDate() async {
     final current = _piece!.updatedAt;
     final date = await showDatePicker(
@@ -381,6 +387,8 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final photosAsync = ref.watch(photosForPieceProvider(widget.pieceId));
     final glazesAsync = ref.watch(glazesForPieceProvider(widget.pieceId));
     final selectedGlazes = glazesAsync.valueOrNull ?? [];
+    final tagsAsync = ref.watch(tagsForPieceProvider(widget.pieceId));
+    final selectedTags = tagsAsync.valueOrNull ?? [];
 
     if (_piece == null) {
       return const Scaffold(
@@ -458,8 +466,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       piece: _piece!,
                       materialsDao: ref.read(materialsDaoProvider),
                       selectedGlazes: selectedGlazes,
+                      selectedTags: selectedTags,
                       onUpdateField: _updateField,
                       onUpdateGlazes: _updateGlazes,
+                      onUpdateTags: _updateTags,
                     ),
                     LastUpdatedInfo(piece: _piece!, onTap: _pickUpdatedDate),
                     const SizedBox(height: 16),

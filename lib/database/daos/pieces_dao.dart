@@ -43,6 +43,7 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
         pieces.title.like(q) |
             pieces.clayType.like(q) |
             pieces.glazes.like(q) |
+            pieces.tags.like(q) |
             pieces.notes.like(q),
       );
     }

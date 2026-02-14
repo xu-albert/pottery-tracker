@@ -249,4 +249,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get done => 'Done';
+
+  @override
+  String get tagsLabel => 'Tags';
+
+  @override
+  String get manageTags => 'Manage Tags';
+
+  @override
+  String get noTagsYet => 'No tags saved yet';
+
+  @override
+  String get enterTagName => 'Enter tag name';
+
+  @override
+  String get editTagName => 'Edit tag name';
+
+  @override
+  String get deleteTagConfirmTitle => 'Delete Tag?';
+
+  @override
+  String get deleteTagConfirmMessage =>
+      'This tag will be removed from all pieces that use it.';
+
+  @override
+  String get selectTags => 'Select Tags';
+
+  @override
+  String get tagsNone => 'None';
 }

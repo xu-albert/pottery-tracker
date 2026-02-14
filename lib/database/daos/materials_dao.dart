@@ -4,11 +4,13 @@ import '../database.dart';
 import '../tables/clay_options_table.dart';
 import '../tables/glaze_options_table.dart';
 import '../tables/piece_glazes_table.dart';
+import '../tables/tag_options_table.dart';
+import '../tables/piece_tags_table.dart';
 import '../tables/pieces_table.dart';
 
 part 'materials_dao.g.dart';
 
-@DriftAccessor(tables: [ClayOptions, GlazeOptions, PieceGlazes, Pieces])
+@DriftAccessor(tables: [ClayOptions, GlazeOptions, PieceGlazes, TagOptions, PieceTags, Pieces])
 class MaterialsDao extends DatabaseAccessor<AppDatabase>
     with _$MaterialsDaoMixin {
   MaterialsDao(super.db);
@@ -231,7 +233,149 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     await _rebuildDenormalizedGlazesForPiece(pieceId);
   }
 
+  // ── Tag library methods ──
+
+  Stream<List<TagOption>> watchAllTags() {
+    return (select(tagOptions)
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .watch();
+  }
+
+  Future<List<TagOption>> getAllTags() {
+    return (select(tagOptions)
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+  }
+
+  Future<int> getNextTagSortOrder() async {
+    final result = await (selectOnly(tagOptions)
+          ..addColumns([tagOptions.sortOrder.max()]))
+        .getSingleOrNull();
+    final maxOrder = result?.read(tagOptions.sortOrder.max());
+    return (maxOrder ?? -1) + 1;
+  }
+
+  Future<TagOption> findOrCreateTag(String name) async {
+    final trimmed = name.trim();
+    final existing = await (select(tagOptions)
+          ..where((t) => t.name.lower().equals(trimmed.toLowerCase())))
+        .getSingleOrNull();
+    if (existing != null) return existing;
+
+    final nextOrder = await getNextTagSortOrder();
+    final id = const Uuid().v4();
+    final companion = TagOptionsCompanion.insert(
+      id: id,
+      name: trimmed,
+      sortOrder: Value(nextOrder),
+      createdAt: DateTime.now(),
+    );
+    await into(tagOptions).insert(companion);
+    return (select(tagOptions)
+          ..where((t) => t.id.equals(id)))
+        .getSingle();
+  }
+
+  Future<void> updateTagName(String id, String newName) async {
+    final trimmed = newName.trim();
+
+    await (update(tagOptions)..where((t) => t.id.equals(id)))
+        .write(TagOptionsCompanion(name: Value(trimmed)));
+
+    // Rebuild denormalized tags column for all affected pieces
+    final junctionRows = await (select(pieceTags)
+          ..where((pt) => pt.tagOptionId.equals(id)))
+        .get();
+    final affectedPieceIds = junctionRows.map((r) => r.pieceId).toSet();
+    for (final pieceId in affectedPieceIds) {
+      await _rebuildDenormalizedTagsForPiece(pieceId);
+    }
+  }
+
+  Future<void> deleteTag(String id) async {
+    final junctionRows = await (select(pieceTags)
+          ..where((pt) => pt.tagOptionId.equals(id)))
+        .get();
+    final affectedPieceIds = junctionRows.map((r) => r.pieceId).toSet();
+
+    await (delete(pieceTags)..where((pt) => pt.tagOptionId.equals(id))).go();
+    await (delete(tagOptions)..where((t) => t.id.equals(id))).go();
+
+    for (final pieceId in affectedPieceIds) {
+      await _rebuildDenormalizedTagsForPiece(pieceId);
+    }
+  }
+
+  Future<void> updateTagSortOrders(
+      List<({String id, int sortOrder})> updates) {
+    return batch((b) {
+      for (final entry in updates) {
+        b.update(
+          tagOptions,
+          TagOptionsCompanion(sortOrder: Value(entry.sortOrder)),
+          where: (t) => t.id.equals(entry.id),
+        );
+      }
+    });
+  }
+
+  // ── Piece-tag junction methods ──
+
+  Future<List<TagOption>> getTagsForPiece(String pieceId) async {
+    final query = select(pieceTags).join([
+      innerJoin(tagOptions, tagOptions.id.equalsExp(pieceTags.tagOptionId)),
+    ])
+      ..where(pieceTags.pieceId.equals(pieceId))
+      ..orderBy([OrderingTerm.asc(tagOptions.sortOrder)]);
+
+    final rows = await query.get();
+    return rows.map((row) => row.readTable(tagOptions)).toList();
+  }
+
+  Stream<List<TagOption>> watchTagsForPiece(String pieceId) {
+    final query = select(pieceTags).join([
+      innerJoin(tagOptions, tagOptions.id.equalsExp(pieceTags.tagOptionId)),
+    ])
+      ..where(pieceTags.pieceId.equals(pieceId))
+      ..orderBy([OrderingTerm.asc(tagOptions.sortOrder)]);
+
+    return query.watch().map(
+        (rows) => rows.map((row) => row.readTable(tagOptions)).toList());
+  }
+
+  Future<void> setTagsForPiece(
+      String pieceId, List<String> tagOptionIds) async {
+    await (delete(pieceTags)..where((pt) => pt.pieceId.equals(pieceId))).go();
+
+    for (var i = 0; i < tagOptionIds.length; i++) {
+      await into(pieceTags).insert(PieceTagsCompanion.insert(
+        id: const Uuid().v4(),
+        pieceId: pieceId,
+        tagOptionId: tagOptionIds[i],
+      ));
+    }
+
+    await _rebuildDenormalizedTagsForPiece(pieceId);
+  }
+
   // ── Private helpers ──
+
+  Future<void> _rebuildDenormalizedTagsForPiece(String pieceId) async {
+    final tagList = await getTagsForPiece(pieceId);
+    final denormalized =
+        tagList.isEmpty ? null : tagList.map((t) => t.name).join(', ');
+    await customUpdate(
+      'UPDATE pieces SET tags = ?, updated_at = ? WHERE id = ?',
+      variables: [
+        denormalized != null
+            ? Variable.withString(denormalized)
+            : const Variable(null),
+        Variable.withDateTime(DateTime.now()),
+        Variable.withString(pieceId),
+      ],
+      updates: {pieces},
+    );
+  }
 
   Future<void> _rebuildDenormalizedGlazesForPiece(String pieceId) async {
     final glazeList = await getGlazesForPiece(pieceId);

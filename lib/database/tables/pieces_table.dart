@@ -6,6 +6,7 @@ class Pieces extends Table {
   TextColumn get stage => text().nullable()();
   TextColumn get clayType => text().nullable()();
   TextColumn get glazes => text().nullable()();
+  TextColumn get tags => text().nullable()();
   TextColumn get notes => text().nullable()();
   TextColumn get coverPhotoId => text().nullable()();
   BoolColumn get isArchived => boolean().withDefault(const Constant(false))();

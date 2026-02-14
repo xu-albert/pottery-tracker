@@ -7,6 +7,7 @@ import '../features/album/screens/album_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/manage_clays_screen.dart';
 import '../features/settings/screens/manage_glazes_screen.dart';
+import '../features/settings/screens/manage_tags_screen.dart';
 import '../features/create_piece/screens/create_piece_screen.dart';
 import '../features/piece_detail/screens/piece_detail_screen.dart';
 
@@ -56,6 +57,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'glazes',
                     builder: (context, state) => const ManageGlazesScreen(),
+                  ),
+                  GoRoute(
+                    path: 'tags',
+                    builder: (context, state) => const ManageTagsScreen(),
                   ),
                 ],
               ),
