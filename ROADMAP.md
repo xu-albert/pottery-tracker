@@ -16,7 +16,7 @@
 
 ## Features
 - [x] **Tags / categories** — user-defined labels for organizing pieces (e.g., "mugs", "bowls", "gifts")
-- [ ] **Custom tag colors** — let users pick a color per tag for quick visual identification in the album view
+- [x] **Custom tag colors** — let users pick a color per tag for quick visual identification in the album view
 - [ ] **Glaze library** — save and reuse glaze recipes across pieces
 - [ ] **Firing log** — track kiln firings (cone, temperature, schedule) and link to pieces
 - [ ] **Timeline view** — show a piece's photo history as a visual timeline (greenware → bisque → glazed)

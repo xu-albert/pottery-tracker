@@ -246,6 +246,16 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Dragging a tag to a new position reorders the list immediately
 - [ ] Scale + elevation animation on dragged item
 
+### Tag Colors
+- [ ] New tags auto-assigned a default color from 7 presets (cycling)
+- [ ] Colored circle shown next to each tag in Manage Tags list
+- [ ] Tapping circle opens color picker bottom sheet with 7 preset swatches
+- [ ] Selected swatch shows checkmark and border
+- [ ] Picking a color saves immediately; Manage Tags list updates
+- [ ] Album view tag chips reflect custom color (tinted bg + darkened text)
+- [ ] Tags without a custom color fall back to hash-based palette
+- [ ] Color dot shown next to each tag in piece detail tag picker bottom sheet
+
 ### Tag Rename Propagation
 - [ ] Renaming a tag in Manage Tags → all pieces using that tag show updated name
 - [ ] Denormalized tags text column updated (for search)
@@ -266,11 +276,12 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] ClayOptions table: id, name (unique), sortOrder, createdAt
 - [ ] GlazeOptions table: id, name (unique), sortOrder, createdAt
 - [ ] PieceGlazes junction table: id, pieceId, glazeOptionId, sortOrder
-- [ ] TagOptions table: id, name (unique), sortOrder, createdAt
+- [ ] TagOptions table: id, name (unique), color (nullable), sortOrder, createdAt
 - [ ] PieceTags junction table: id, pieceId, tagOptionId
 - [ ] Photos sorted by sortOrder DESC (newest first) everywhere
 - [ ] Migration v4→v5: creates GlazeOptions + PieceGlazes, parses free-text glazes into library
 - [ ] Migration v5→v6: creates TagOptions + PieceTags + adds tags column to pieces
+- [ ] Migration v6→v7: adds color column to TagOptions
 
 ### Photo Ordering (Newest First)
 - [ ] Detail gallery: newest photo leftmost
@@ -323,3 +334,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-13 | Manage Glazes: settings screen to add, edit, delete, and reorder saved glaze options |
 | 2026-02-13 | Clay/glaze rename propagation: renaming in Manage Clays/Glazes updates all pieces using that name |
 | 2026-02-13 | Tags: multi-select picker, TagOptions + PieceTags tables (DB v6), Manage Tags screen with drag-to-reorder, tag rename propagation, search integration |
+| 2026-02-14 | Custom tag colors: 7 preset swatches, auto-assign on creation, color picker in Manage Tags, accessible chip rendering in album view (DB v7) |
