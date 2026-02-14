@@ -145,7 +145,7 @@
   "reorderPhotos": "Reorder",
   "@reorderPhotos": { "description": "Reorder photos button" },
   "addNew": "+ Add New",
-  "@addNew": { "description": "TODO: The '+' in this string causes a double '+' in places where a CupertinoIcons.add icon is already shown (metadata_form.dart lines 107-109, 237-238, 367-368). Remove the '+' from this string and verify all usages before launch." },
+  "@addNew": { "description": "Add new option to dropdown" },
   "create": "Create",
   "@create": { "description": "Create action button" },
   "enterClayName": "Enter clay name",
