@@ -3,6 +3,7 @@
 ## Design & Branding
 - [x] **App logo/icon** — custom icon across all platforms
 - [ ] **Re-examine color scheme** — current palette may need refinement once logo is finalized; consider harmonizing with the logo's colors
+- [ ] **In-app branding redesign** — incorporate app icon or other imagery into the app UI (e.g., sign-in screen, empty states, splash screen)
 
 ## UX Improvements
 - [ ] **Onboarding walkthrough** — brief tutorial on first launch showing how to create a piece
