@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,6 +24,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(const AuthState()) {
     _init();
   }
+
+  @visibleForTesting
+  AuthNotifier.withState(super.initial);
 
   static const _onboardingKey = 'hasCompletedOnboarding';
 
