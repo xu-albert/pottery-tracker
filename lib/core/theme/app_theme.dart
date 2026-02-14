@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_sizes.dart';
 
+// TODO: Re-examine all fonts across the app (body, labels, buttons, etc.)
+// Currently only app bar titles use Raleway; everything else is default.
 abstract final class AppTheme {
   static ThemeData get light {
     final colorScheme = ColorScheme.fromSeed(
@@ -18,11 +21,16 @@ abstract final class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.cream,
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: AppColors.cream,
         foregroundColor: AppColors.charcoal,
         elevation: 0,
         scrolledUnderElevation: 0.5,
+        titleTextStyle: GoogleFonts.raleway(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: AppColors.charcoal,
+        ),
       ),
       cardTheme: CardThemeData(
         color: AppColors.warmWhite,
