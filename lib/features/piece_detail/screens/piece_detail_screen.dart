@@ -442,6 +442,8 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       child: TextField(
                         controller: _titleCtrl,
                         style: Theme.of(context).textTheme.titleLarge,
+                        autocorrect: false,
+                        textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
                           hintText: _titleHint ?? l10n.untitledPiece,
                           border: InputBorder.none,

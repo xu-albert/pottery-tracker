@@ -144,7 +144,7 @@
   },
   "reorderPhotos": "Reorder",
   "@reorderPhotos": { "description": "Reorder photos button" },
-  "addNew": "+ Add New",
+  "addNew": "Add New",
   "@addNew": { "description": "Add new option to dropdown" },
   "create": "Create",
   "@create": { "description": "Create action button" },

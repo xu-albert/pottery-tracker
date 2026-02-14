@@ -23,6 +23,10 @@
 - [ ] **Export / share** — export a piece as a shareable image collage or PDF
 - [ ] **Statistics dashboard** — total pieces, pieces by stage, monthly creation chart
 
+## Testing
+- [ ] **Test input capitalization on hardware** — verify TextCapitalization.sentences behavior on physical iPhone for title field and that dialogs (clay, glaze, tag) default to no forced capitalization
+- [ ] **Handle duplicate metadata** — decide behavior when user creates a clay, glaze, or tag with a name that already exists (e.g., prevent, merge, warn). Also decide policy for duplicate piece titles (allow silently, warn, or append suffix)
+
 ## Technical / Infrastructure
 - [ ] **Firebase sync (Phase 2)** — Google/Apple auth backend, Firestore, Cloud Storage
 - [ ] **Dark mode** — respect system setting

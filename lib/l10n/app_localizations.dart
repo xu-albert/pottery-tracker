@@ -433,7 +433,7 @@ abstract class AppLocalizations {
   /// Add new option to dropdown
   ///
   /// In en, this message translates to:
-  /// **'+ Add New'**
+  /// **'Add New'**
   String get addNew;
 
   /// Create action button
