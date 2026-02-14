@@ -17,22 +17,6 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.settingsTitle)),
       body: ListView(
         children: [
-          // Account section
-          _SectionHeader(title: l10n.account),
-          ListTile(
-            leading: const Icon(Icons.person),
-            title: Text(auth.displayName != null
-                ? l10n.signedInAs(auth.displayName!)
-                : l10n.notSignedIn),
-          ),
-          if (auth.displayName != null)
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: Text(l10n.signOut),
-              onTap: () => ref.read(authProvider.notifier).signOut(),
-            ),
-          const Divider(),
-
           // Materials section
           _SectionHeader(title: l10n.manageMaterials),
           ListTile(
@@ -53,6 +37,22 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.go('/settings/tags'),
           ),
+          const Divider(),
+
+          // Account section
+          _SectionHeader(title: l10n.account),
+          ListTile(
+            leading: const Icon(Icons.person),
+            title: Text(auth.displayName != null
+                ? l10n.signedInAs(auth.displayName!)
+                : l10n.notSignedIn),
+          ),
+          if (auth.displayName != null)
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: Text(l10n.signOut),
+              onTap: () => ref.read(authProvider.notifier).signOut(),
+            ),
           const Divider(),
 
           // Sync section
