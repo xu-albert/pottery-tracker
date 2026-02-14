@@ -37,6 +37,10 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Tapping a row opens piece detail
 - [ ] Scrollable photo row shows left/right fade gradients when overflowing
 - [ ] Gradients hide when scrolled to edge
+- [ ] Swipe left on a piece row → teal background with archive icon → piece archived
+- [ ] "Piece archived" snackbar with "Undo" action shown for 4 seconds
+- [ ] Tapping "Undo" restores piece to active list
+- [ ] Light haptic feedback on swipe-archive
 
 ### Archive View
 - [ ] Tap "Archive" chip → shows 3-column grid of archived pieces
@@ -345,3 +349,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Custom tag colors: 7 preset swatches, auto-assign on creation, color picker in Manage Tags, accessible chip rendering in album view (DB v7) |
 | 2026-02-14 | Untitled piece title as hint: title field empty for new pieces, "Untitled Piece N" shown as placeholder hint, DB value preserved when field left empty |
 | 2026-02-14 | Input field UX cleanup: TextCapitalization.sentences on all inputs, autocorrect disabled, "Add New" button text de-duplicated |
+| 2026-02-14 | Swipe-to-archive: left-swipe on album rows with teal background, haptic feedback, and 4-second undo snackbar |

@@ -8,8 +8,8 @@
 ## UX Improvements
 - [ ] **Onboarding walkthrough** — brief tutorial on first launch showing how to create a piece
 - [x] **Haptic feedback** — light haptics on archive, delete, photo add
-- [ ] **Swipe-to-archive** from album row
-- [ ] **Undo snackbar** after archive/delete instead of confirmation dialog
+- [x] **Swipe-to-archive** from album row
+- [x] **Undo snackbar** after swipe-to-archive
 - [x] **Photo reordering** — drag-to-reorder photos in detail gallery
 - [x] **Batch photo upload** — select multiple photos at once when adding to a piece
 - [x] **Last updated date on album rows** — show "Last updated" text under thumbnails or right-aligned next to title in active view
