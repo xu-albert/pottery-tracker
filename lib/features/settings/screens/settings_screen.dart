@@ -20,6 +20,28 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.settingsTitle)),
       body: ListView(
         children: [
+          // Materials section
+          _SectionHeader(title: l10n.manageMaterials),
+          ListTile(
+            leading: const Icon(Icons.terrain),
+            title: Text(l10n.manageClays),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/clays'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.format_paint),
+            title: Text(l10n.manageGlazes),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/glazes'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.label_outline),
+            title: Text(l10n.manageTags),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/tags'),
+          ),
+          const Divider(),
+
           // Account section
           _SectionHeader(title: l10n.account),
           if (auth.isSignedIn) ...[
@@ -81,28 +103,6 @@ class SettingsScreen extends ConsumerWidget {
                 },
               ),
           ],
-          const Divider(),
-
-          // Materials section
-          _SectionHeader(title: l10n.manageMaterials),
-          ListTile(
-            leading: const Icon(Icons.terrain),
-            title: Text(l10n.manageClays),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/clays'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.format_paint),
-            title: Text(l10n.manageGlazes),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/glazes'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.label_outline),
-            title: Text(l10n.manageTags),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/tags'),
-          ),
           const Divider(),
 
           // Sync section
