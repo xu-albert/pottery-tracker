@@ -3,8 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_sizes.dart';
 
-// TODO: Re-examine all fonts across the app (body, labels, buttons, etc.)
-// Currently only app bar titles use Raleway; everything else is default.
 abstract final class AppTheme {
   static ThemeData get light {
     final colorScheme = ColorScheme.fromSeed(
