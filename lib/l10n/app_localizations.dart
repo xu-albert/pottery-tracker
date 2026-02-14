@@ -603,6 +603,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Tag Color'**
   String get tagColor;
+
+  /// Snackbar message when a piece is archived
+  ///
+  /// In en, this message translates to:
+  /// **'Piece archived'**
+  String get pieceArchived;
+
+  /// Undo action label
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get undo;
 }
 
 class _AppLocalizationsDelegate

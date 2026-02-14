@@ -280,4 +280,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagColor => 'Tag Color';
+
+  @override
+  String get pieceArchived => 'Piece archived';
+
+  @override
+  String get undo => 'Undo';
 }

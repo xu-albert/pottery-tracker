@@ -201,5 +201,9 @@
   "tagsNone": "None",
   "@tagsNone": { "description": "No tags selected" },
   "tagColor": "Tag Color",
-  "@tagColor": { "description": "Tag color picker title" }
+  "@tagColor": { "description": "Tag color picker title" },
+  "pieceArchived": "Piece archived",
+  "@pieceArchived": { "description": "Snackbar message when a piece is archived" },
+  "undo": "Undo",
+  "@undo": { "description": "Undo action label" }
 }

@@ -1,19 +1,25 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../database/database.dart';
 import '../../../database/daos/pieces_dao.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../../providers/database_provider.dart';
 import 'archive_thumbnail.dart';
 import 'piece_row.dart';
 
-class AlbumGrid extends StatelessWidget {
+class AlbumGrid extends ConsumerWidget {
   final List<PieceWithCover> pieces;
   final bool isArchived;
 
   const AlbumGrid({super.key, required this.pieces, this.isArchived = false});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (isArchived) {
       return GridView.builder(
         padding: const EdgeInsets.all(AppSizes.sm),
@@ -34,6 +40,9 @@ class AlbumGrid extends StatelessWidget {
       );
     }
 
+    final l10n = AppLocalizations.of(context)!;
+    final piecesDao = ref.read(piecesDaoProvider);
+
     return ListView.separated(
       itemCount: pieces.length,
       separatorBuilder: (_, _) => const Divider(
@@ -45,9 +54,59 @@ class AlbumGrid extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final item = pieces[index];
-        return PieceRow(
-          piece: item,
-          onTap: () => context.push('/piece/${item.piece.id}'),
+        return Dismissible(
+          key: ValueKey(item.piece.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: AppSizes.lg),
+            color: AppColors.teal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  l10n.archivePiece,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: AppSizes.xs),
+                const Icon(Icons.archive_outlined, color: Colors.white),
+              ],
+            ),
+          ),
+          onDismissed: (_) {
+            HapticFeedback.lightImpact();
+            final pieceId = item.piece.id;
+            piecesDao.updatePiece(PiecesCompanion(
+              id: Value(pieceId),
+              isArchived: const Value(true),
+              updatedAt: Value(DateTime.now()),
+            ));
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text(l10n.pieceArchived),
+                  duration: const Duration(seconds: 4),
+                  action: SnackBarAction(
+                    label: l10n.undo,
+                    onPressed: () {
+                      piecesDao.updatePiece(PiecesCompanion(
+                        id: Value(pieceId),
+                        isArchived: const Value(false),
+                        updatedAt: Value(DateTime.now()),
+                      ));
+                    },
+                  ),
+                ),
+              );
+          },
+          child: PieceRow(
+            piece: item,
+            onTap: () => context.push('/piece/${item.piece.id}'),
+          ),
         );
       },
     );
