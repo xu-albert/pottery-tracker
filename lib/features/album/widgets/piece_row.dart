@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/pieces_dao.dart';
+import '../../../models/piece_stage.dart';
 import '../../../providers/photos_provider.dart';
 
 class PieceRow extends ConsumerWidget {
@@ -18,6 +19,10 @@ class PieceRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final photosAsync = ref.watch(photosForPieceProvider(piece.piece.id));
     final title = piece.piece.title ?? 'Untitled Piece';
+    final stage = piece.piece.stage != null
+        ? PieceStage.values.byName(piece.piece.stage!)
+        : null;
+    final metadataChips = _buildMetadataChips(context);
 
     return Semantics(
       label: title,
@@ -34,13 +39,39 @@ class PieceRow extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style:
+                          Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                  ),
+                  if (stage != null) ...[
+                    const SizedBox(width: AppSizes.sm),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: stage.color.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        stage.displayName,
+                        style:
+                            Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: stage.color,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 2),
               Text(
@@ -49,6 +80,18 @@ class PieceRow extends ConsumerWidget {
                       color: AppColors.charcoal.withValues(alpha: 0.5),
                     ),
               ),
+              if (metadataChips.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _interleave(
+                      metadataChips,
+                      const SizedBox(width: 4),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: AppSizes.sm),
               photosAsync.when(
                 loading: () => _buildPhotoRowPlaceholder(context),
@@ -60,6 +103,68 @@ class PieceRow extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildMetadataChips(BuildContext context) {
+    final chips = <Widget>[];
+    final textStyle = Theme.of(context).textTheme.labelSmall;
+
+    // Tags
+    final tags = piece.piece.tags;
+    if (tags != null && tags.isNotEmpty) {
+      for (final tag in tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty)) {
+        chips.add(Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.teal.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            tag,
+            style: textStyle?.copyWith(color: AppColors.teal),
+          ),
+        ));
+      }
+    }
+
+    // Clay type
+    final clay = piece.piece.clayType;
+    if (clay != null && clay.isNotEmpty) {
+      chips.add(_outlinedChip(context, 'Clay: $clay', textStyle));
+    }
+
+    // Glazes
+    final glazes = piece.piece.glazes;
+    if (glazes != null && glazes.isNotEmpty) {
+      chips.add(_outlinedChip(context, 'Glaze: $glazes', textStyle));
+    }
+
+    return chips;
+  }
+
+  Widget _outlinedChip(
+      BuildContext context, String label, TextStyle? textStyle) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.divider),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: textStyle?.copyWith(color: AppColors.charcoal),
+      ),
+    );
+  }
+
+  static List<Widget> _interleave(List<Widget> widgets, Widget separator) {
+    if (widgets.length <= 1) return widgets;
+    return [
+      for (int i = 0; i < widgets.length; i++) ...[
+        if (i > 0) separator,
+        widgets[i],
+      ],
+    ];
   }
 
   Widget _buildPhotoRow(BuildContext context, List<Photo> photos) {
