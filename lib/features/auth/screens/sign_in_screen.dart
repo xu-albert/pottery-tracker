@@ -7,13 +7,58 @@ import '../../../services/auth_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 
-class SignInScreen extends ConsumerWidget {
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends ConsumerState<SignInScreen> {
+  final _authService = AuthService();
+  bool _loading = false;
+
+  Future<void> _signInWithGoogle() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final user = await _authService.signInWithGoogle();
+      if (mounted) {
+        ref.read(authProvider.notifier).signIn(user);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final user = await _authService.signInWithApple();
+      if (mounted) {
+        ref.read(authProvider.notifier).signIn(user);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final authService = AuthService();
 
     return Scaffold(
       body: SafeArea(
@@ -46,24 +91,20 @@ class SignInScreen extends ConsumerWidget {
               ),
               const Spacer(),
               ElevatedButton.icon(
-                onPressed: () async {
-                  final name = await authService.signInWithGoogle();
-                  if (name != null && context.mounted) {
-                    ref.read(authProvider.notifier).signIn(displayName: name);
-                  }
-                },
-                icon: const Icon(Icons.g_mobiledata, size: 24),
+                onPressed: _loading ? null : _signInWithGoogle,
+                icon: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.g_mobiledata, size: 24),
                 label: Text(l10n.signInWithGoogle),
               ),
               if (Platform.isIOS) ...[
                 const SizedBox(height: AppSizes.md),
                 ElevatedButton.icon(
-                  onPressed: () async {
-                    final name = await authService.signInWithApple();
-                    if (name != null && context.mounted) {
-                      ref.read(authProvider.notifier).signIn(displayName: name);
-                    }
-                  },
+                  onPressed: _loading ? null : _signInWithApple,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                   ),
@@ -73,7 +114,9 @@ class SignInScreen extends ConsumerWidget {
               ],
               const SizedBox(height: AppSizes.md),
               TextButton(
-                onPressed: () => ref.read(authProvider.notifier).skip(),
+                onPressed: _loading
+                    ? null
+                    : () => ref.read(authProvider.notifier).skip(),
                 child: Text(l10n.skipForNow),
               ),
               const SizedBox(height: AppSizes.xxl),
