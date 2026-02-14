@@ -607,8 +607,14 @@ abstract class AppLocalizations {
   /// Snackbar message when a piece is archived
   ///
   /// In en, this message translates to:
-  /// **'Piece archived'**
-  String get pieceArchived;
+  /// **'{title} archived'**
+  String pieceArchivedWithTitle(String title);
+
+  /// Snackbar message when a piece is unarchived
+  ///
+  /// In en, this message translates to:
+  /// **'{title} unarchived'**
+  String pieceUnarchivedWithTitle(String title);
 
   /// Undo action label
   ///

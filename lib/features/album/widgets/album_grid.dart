@@ -88,8 +88,10 @@ class AlbumGrid extends ConsumerWidget {
               ..hideCurrentSnackBar()
               ..showSnackBar(
                 SnackBar(
-                  content: Text(l10n.pieceArchived),
-                  duration: const Duration(seconds: 4),
+                  content: Text(l10n.pieceArchivedWithTitle(
+                    item.piece.title ?? 'Untitled Piece',
+                  )),
+                  duration: const Duration(seconds: 2),
                   action: SnackBarAction(
                     label: l10n.undo,
                     onPressed: () {

@@ -38,13 +38,17 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Scrollable photo row shows left/right fade gradients when overflowing
 - [ ] Gradients hide when scrolled to edge
 - [ ] Swipe left on a piece row → teal background with archive icon → piece archived
-- [ ] "Piece archived" snackbar with "Undo" action shown for 4 seconds
+- [ ] "Piece archived" snackbar with "Undo" action shown for 2 seconds
 - [ ] Tapping "Undo" restores piece to active list
 - [ ] Light haptic feedback on swipe-archive
 
 ### Archive View
 - [ ] Tap "Archive" chip → shows 3-column grid of archived pieces
-- [ ] Archive thumbnails are 1:1 square, photo-only (no title text overlay)
+- [ ] Archive thumbnails are 1:1 square with title text overlay at bottom-right
+- [ ] Title overlay has gradient fade from transparent to semi-black
+- [ ] Long titles truncate with ellipsis
+- [ ] Untitled pieces show "Untitled Piece N" on overlay
+- [ ] Placeholder thumbnails (no cover photo) also show gradient + title
 - [ ] Tapping thumbnail opens piece detail
 
 ### Search
@@ -350,3 +354,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Untitled piece title as hint: title field empty for new pieces, "Untitled Piece N" shown as placeholder hint, DB value preserved when field left empty |
 | 2026-02-14 | Input field UX cleanup: TextCapitalization.sentences on all inputs, autocorrect disabled, "Add New" button text de-duplicated |
 | 2026-02-14 | Swipe-to-archive: left-swipe on album rows with teal background, haptic feedback, and 4-second undo snackbar |
+| 2026-02-14 | Archive thumbnail titles: bottom-right title overlay with gradient fade on archive grid thumbnails |

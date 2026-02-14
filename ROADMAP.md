@@ -13,6 +13,7 @@
 - [x] **Photo reordering** — drag-to-reorder photos in detail gallery
 - [x] **Batch photo upload** — select multiple photos at once when adding to a piece
 - [x] **Last updated date on album rows** — show "Last updated" text under thumbnails or right-aligned next to title in active view
+- [x] **Archive thumbnail titles** — overlay piece title text at bottom-right of archive grid thumbnails with gradient fade
 
 ## Features
 - [x] **Tags / categories** — user-defined labels for organizing pieces (e.g., "mugs", "bowls", "gifts")

@@ -282,7 +282,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tagColor => 'Tag Color';
 
   @override
-  String get pieceArchived => 'Piece archived';
+  String pieceArchivedWithTitle(String title) {
+    return '$title archived';
+  }
+
+  @override
+  String pieceUnarchivedWithTitle(String title) {
+    return '$title unarchived';
+  }
 
   @override
   String get undo => 'Undo';

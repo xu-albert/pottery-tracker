@@ -202,8 +202,10 @@
   "@tagsNone": { "description": "No tags selected" },
   "tagColor": "Tag Color",
   "@tagColor": { "description": "Tag color picker title" },
-  "pieceArchived": "Piece archived",
-  "@pieceArchived": { "description": "Snackbar message when a piece is archived" },
+  "pieceArchivedWithTitle": "{title} archived",
+  "@pieceArchivedWithTitle": { "description": "Snackbar message when a piece is archived", "placeholders": { "title": { "type": "String" } } },
+  "pieceUnarchivedWithTitle": "{title} unarchived",
+  "@pieceUnarchivedWithTitle": { "description": "Snackbar message when a piece is unarchived", "placeholders": { "title": { "type": "String" } } },
   "undo": "Undo",
   "@undo": { "description": "Undo action label" }
 }

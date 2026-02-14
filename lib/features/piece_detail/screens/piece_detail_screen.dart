@@ -140,6 +140,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
   Future<void> _toggleArchive() async {
     final wasArchived = _piece!.isArchived;
+    final l10n = AppLocalizations.of(context)!;
     final dao = ref.read(piecesDaoProvider);
     await dao.updatePiece(PiecesCompanion(
       id: Value(widget.pieceId),
@@ -147,10 +148,19 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       updatedAt: Value(DateTime.now()),
     ));
     HapticFeedback.lightImpact();
-    if (!wasArchived && mounted) {
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              wasArchived
+                  ? l10n.pieceUnarchivedWithTitle(_piece!.title ?? 'Untitled Piece')
+                  : l10n.pieceArchivedWithTitle(_piece!.title ?? 'Untitled Piece'),
+            ),
+          ),
+        );
       context.go('/');
-    } else {
-      _loadPiece();
     }
   }
 
