@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,14 +7,16 @@ enum AuthStatus { unknown, unauthenticated, authenticated }
 class AuthState {
   final AuthStatus status;
   final String? displayName;
+  final String? uid;
 
-  const AuthState({this.status = AuthStatus.unknown, this.displayName});
+  const AuthState({
+    this.status = AuthStatus.unknown,
+    this.displayName,
+    this.uid,
+  });
 
-  AuthState copyWith({AuthStatus? status, String? displayName}) =>
-      AuthState(
-        status: status ?? this.status,
-        displayName: displayName ?? this.displayName,
-      );
+  bool get isSignedIn => status == AuthStatus.authenticated && uid != null;
+  bool get isLocalOnly => status == AuthStatus.authenticated && uid == null;
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
@@ -22,28 +25,39 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   static const _onboardingKey = 'hasCompletedOnboarding';
-  static const _nameKey = 'userName';
 
   Future<void> _init() async {
+    // Check Firebase first — persisted session survives app restart
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser != null) {
+      state = AuthState(
+        status: AuthStatus.authenticated,
+        displayName: firebaseUser.displayName,
+        uid: firebaseUser.uid,
+      );
+      // Ensure onboarding flag is set
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_onboardingKey, true);
+      return;
+    }
+
+    // No Firebase user — check if they skipped sign-in previously
     final prefs = await SharedPreferences.getInstance();
     final completed = prefs.getBool(_onboardingKey) ?? false;
     if (completed) {
-      state = AuthState(
-        status: AuthStatus.authenticated,
-        displayName: prefs.getString(_nameKey),
-      );
+      state = const AuthState(status: AuthStatus.authenticated);
     } else {
       state = const AuthState(status: AuthStatus.unauthenticated);
     }
   }
 
-  Future<void> signIn({String? displayName}) async {
+  Future<void> signIn(User user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_onboardingKey, true);
-    if (displayName != null) await prefs.setString(_nameKey, displayName);
     state = AuthState(
       status: AuthStatus.authenticated,
-      displayName: displayName,
+      displayName: user.displayName,
+      uid: user.uid,
     );
   }
 
@@ -56,7 +70,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_onboardingKey, false);
-    await prefs.remove(_nameKey);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 }
