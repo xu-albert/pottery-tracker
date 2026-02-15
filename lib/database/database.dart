@@ -22,7 +22,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -129,6 +129,9 @@ class AppDatabase extends _$AppDatabase {
             await migrator.createTable(tagOptions);
             await migrator.createTable(pieceTags);
             await migrator.addColumn(pieces, pieces.tags);
+          }
+          if (from < 7) {
+            await migrator.addColumn(tagOptions, tagOptions.color);
           }
         },
       );

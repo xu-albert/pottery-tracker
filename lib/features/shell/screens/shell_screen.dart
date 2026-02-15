@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../providers/pieces_provider.dart';
 
-class ShellScreen extends StatelessWidget {
+class ShellScreen extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   const ShellScreen({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
@@ -18,7 +20,8 @@ class ShellScreen extends StatelessWidget {
         currentIndex: navigationShell.currentIndex,
         onTap: (index) {
           if (index == 1) {
-            // Center "+" button — navigate to create flow
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ref.read(archivedFilterProvider.notifier).state = false;
             context.push('/create');
           } else {
             navigationShell.goBranch(

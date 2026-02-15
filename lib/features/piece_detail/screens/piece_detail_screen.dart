@@ -28,6 +28,7 @@ class PieceDetailScreen extends ConsumerStatefulWidget {
 class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   final _formKey = GlobalKey<MetadataFormState>();
   late final TextEditingController _titleCtrl;
+  String? _titleHint;
   Piece? _piece;
 
   @override
@@ -47,8 +48,13 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final dao = ref.read(piecesDaoProvider);
     final piece = await dao.getPieceById(widget.pieceId);
     if (mounted) {
-      setState(() => _piece = piece);
-      _titleCtrl.text = piece?.title ?? '';
+      final title = piece?.title ?? '';
+      final isUntitled = RegExp(r'^Untitled Piece \d+$').hasMatch(title);
+      setState(() {
+        _piece = piece;
+        _titleHint = isUntitled ? title : null;
+      });
+      _titleCtrl.text = isUntitled ? '' : title;
     }
   }
 
@@ -134,6 +140,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
   Future<void> _toggleArchive() async {
     final wasArchived = _piece!.isArchived;
+    final l10n = AppLocalizations.of(context)!;
     final dao = ref.read(piecesDaoProvider);
     await dao.updatePiece(PiecesCompanion(
       id: Value(widget.pieceId),
@@ -141,10 +148,19 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       updatedAt: Value(DateTime.now()),
     ));
     HapticFeedback.lightImpact();
-    if (!wasArchived && mounted) {
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              wasArchived
+                  ? l10n.pieceUnarchivedWithTitle(_piece!.title ?? 'Untitled Piece')
+                  : l10n.pieceArchivedWithTitle(_piece!.title ?? 'Untitled Piece'),
+            ),
+          ),
+        );
       context.go('/');
-    } else {
-      _loadPiece();
     }
   }
 
@@ -436,12 +452,17 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       child: TextField(
                         controller: _titleCtrl,
                         style: Theme.of(context).textTheme.titleLarge,
+                        autocorrect: false,
+                        textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
-                          hintText: l10n.untitledPiece,
+                          hintText: _titleHint ?? l10n.untitledPiece,
                           border: InputBorder.none,
                         ),
-                        onEditingComplete: () =>
-                            _updateField(title: _titleCtrl.text),
+                        onEditingComplete: () {
+                          if (_titleCtrl.text.isNotEmpty) {
+                            _updateField(title: _titleCtrl.text);
+                          }
+                        },
                       ),
                     ),
                     if (photos.isNotEmpty)
@@ -485,7 +506,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      _updateField(title: _titleCtrl.text);
+                      if (_titleCtrl.text.isNotEmpty) {
+                        _updateField(title: _titleCtrl.text);
+                      }
                       _formKey.currentState?.saveAll();
                       context.go('/');
                     },

@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/constants/app_colors.dart';
 import '../database.dart';
 import '../tables/clay_options_table.dart';
 import '../tables/glaze_options_table.dart';
@@ -264,9 +265,11 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
     final nextOrder = await getNextTagSortOrder();
     final id = const Uuid().v4();
+    final defaultColor = TagColorPresets.defaultHexForIndex(nextOrder);
     final companion = TagOptionsCompanion.insert(
       id: id,
       name: trimmed,
+      color: Value(defaultColor),
       sortOrder: Value(nextOrder),
       createdAt: DateTime.now(),
     );
@@ -290,6 +293,11 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     for (final pieceId in affectedPieceIds) {
       await _rebuildDenormalizedTagsForPiece(pieceId);
     }
+  }
+
+  Future<void> updateTagColor(String id, String colorHex) async {
+    await (update(tagOptions)..where((t) => t.id.equals(id)))
+        .write(TagOptionsCompanion(color: Value(colorHex)));
   }
 
   Future<void> deleteTag(String id) async {

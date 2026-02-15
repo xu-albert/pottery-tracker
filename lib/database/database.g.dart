@@ -2134,6 +2134,15 @@ class $TagOptionsTable extends TagOptions
     requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumn<String> color = GeneratedColumn<String>(
+    'color',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -2158,7 +2167,7 @@ class $TagOptionsTable extends TagOptions
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, name, sortOrder, createdAt];
+  List<GeneratedColumn> get $columns => [id, name, color, sortOrder, createdAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2183,6 +2192,12 @@ class $TagOptionsTable extends TagOptions
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('color')) {
+      context.handle(
+        _colorMeta,
+        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
     }
     if (data.containsKey('sort_order')) {
       context.handle(
@@ -2215,6 +2230,10 @@ class $TagOptionsTable extends TagOptions
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      color: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}color'],
+      ),
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -2235,11 +2254,13 @@ class $TagOptionsTable extends TagOptions
 class TagOption extends DataClass implements Insertable<TagOption> {
   final String id;
   final String name;
+  final String? color;
   final int sortOrder;
   final DateTime createdAt;
   const TagOption({
     required this.id,
     required this.name,
+    this.color,
     required this.sortOrder,
     required this.createdAt,
   });
@@ -2248,6 +2269,9 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
+    if (!nullToAbsent || color != null) {
+      map['color'] = Variable<String>(color);
+    }
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
@@ -2257,6 +2281,9 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return TagOptionsCompanion(
       id: Value(id),
       name: Value(name),
+      color: color == null && nullToAbsent
+          ? const Value.absent()
+          : Value(color),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
@@ -2270,6 +2297,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return TagOption(
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
+      color: serializer.fromJson<String?>(json['color']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
@@ -2280,6 +2308,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
+      'color': serializer.toJson<String?>(color),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
@@ -2288,11 +2317,13 @@ class TagOption extends DataClass implements Insertable<TagOption> {
   TagOption copyWith({
     String? id,
     String? name,
+    Value<String?> color = const Value.absent(),
     int? sortOrder,
     DateTime? createdAt,
   }) => TagOption(
     id: id ?? this.id,
     name: name ?? this.name,
+    color: color.present ? color.value : this.color,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -2300,6 +2331,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return TagOption(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
+      color: data.color.present ? data.color.value : this.color,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -2310,6 +2342,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return (StringBuffer('TagOption(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('color: $color, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -2317,13 +2350,14 @@ class TagOption extends DataClass implements Insertable<TagOption> {
   }
 
   @override
-  int get hashCode => Object.hash(id, name, sortOrder, createdAt);
+  int get hashCode => Object.hash(id, name, color, sortOrder, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is TagOption &&
           other.id == this.id &&
           other.name == this.name &&
+          other.color == this.color &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
@@ -2331,12 +2365,14 @@ class TagOption extends DataClass implements Insertable<TagOption> {
 class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   final Value<String> id;
   final Value<String> name;
+  final Value<String?> color;
   final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const TagOptionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
+    this.color = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2344,6 +2380,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   TagOptionsCompanion.insert({
     required String id,
     required String name,
+    this.color = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required DateTime createdAt,
     this.rowid = const Value.absent(),
@@ -2353,6 +2390,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   static Insertable<TagOption> custom({
     Expression<String>? id,
     Expression<String>? name,
+    Expression<String>? color,
     Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
@@ -2360,6 +2398,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
+      if (color != null) 'color': color,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
@@ -2369,6 +2408,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   TagOptionsCompanion copyWith({
     Value<String>? id,
     Value<String>? name,
+    Value<String?>? color,
     Value<int>? sortOrder,
     Value<DateTime>? createdAt,
     Value<int>? rowid,
@@ -2376,6 +2416,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     return TagOptionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
+      color: color ?? this.color,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
@@ -2390,6 +2431,9 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
+    }
+    if (color.present) {
+      map['color'] = Variable<String>(color.value);
     }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
@@ -2408,6 +2452,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     return (StringBuffer('TagOptionsCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('color: $color, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
@@ -4045,6 +4090,7 @@ typedef $$TagOptionsTableCreateCompanionBuilder =
     TagOptionsCompanion Function({
       required String id,
       required String name,
+      Value<String?> color,
       Value<int> sortOrder,
       required DateTime createdAt,
       Value<int> rowid,
@@ -4053,6 +4099,7 @@ typedef $$TagOptionsTableUpdateCompanionBuilder =
     TagOptionsCompanion Function({
       Value<String> id,
       Value<String> name,
+      Value<String?> color,
       Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<int> rowid,
@@ -4074,6 +4121,11 @@ class $$TagOptionsTableFilterComposer
 
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get color => $composableBuilder(
+    column: $table.color,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4107,6 +4159,11 @@ class $$TagOptionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -4132,6 +4189,9 @@ class $$TagOptionsTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -4173,12 +4233,14 @@ class $$TagOptionsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
+                Value<String?> color = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagOptionsCompanion(
                 id: id,
                 name: name,
+                color: color,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 rowid: rowid,
@@ -4187,12 +4249,14 @@ class $$TagOptionsTableTableManager
               ({
                 required String id,
                 required String name,
+                Value<String?> color = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
                 Value<int> rowid = const Value.absent(),
               }) => TagOptionsCompanion.insert(
                 id: id,
                 name: name,
+                color: color,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 rowid: rowid,

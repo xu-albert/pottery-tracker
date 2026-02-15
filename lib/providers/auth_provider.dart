@@ -26,6 +26,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _init();
   }
 
+  @visibleForTesting
+  AuthNotifier.withState(super.initial);
+
   static const _onboardingKey = 'hasCompletedOnboarding';
 
   Future<void> _init() async {

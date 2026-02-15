@@ -37,7 +37,9 @@ class ImageService {
   }
 
   Future<List<XFile>?> pickMultipleImages() async {
-    final picked = await _picker.pickMultiImage();
+    final picked = await _picker.pickMultiImage(
+      requestFullMetadata: false,
+    );
     if (picked.isEmpty) return null;
     return picked;
   }

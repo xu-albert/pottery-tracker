@@ -15,6 +15,7 @@ class PiecesSearchBar extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(
           AppSizes.md, AppSizes.sm, AppSizes.md, 0),
       child: TextField(
+        autocorrect: false,
         decoration: InputDecoration(
           hintText: l10n.searchPieces,
           prefixIcon: const Icon(Icons.search),

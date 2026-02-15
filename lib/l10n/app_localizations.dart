@@ -433,7 +433,7 @@ abstract class AppLocalizations {
   /// Add new option to dropdown
   ///
   /// In en, this message translates to:
-  /// **'+ Add New'**
+  /// **'Add New'**
   String get addNew;
 
   /// Create action button
@@ -597,6 +597,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'None'**
   String get tagsNone;
+
+  /// Tag color picker title
+  ///
+  /// In en, this message translates to:
+  /// **'Tag Color'**
+  String get tagColor;
+
+  /// Snackbar message when a piece is archived
+  ///
+  /// In en, this message translates to:
+  /// **'{title} archived'**
+  String pieceArchivedWithTitle(String title);
+
+  /// Snackbar message when a piece is unarchived
+  ///
+  /// In en, this message translates to:
+  /// **'{title} unarchived'**
+  String pieceUnarchivedWithTitle(String title);
+
+  /// Undo action label
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get undo;
 }
 
 class _AppLocalizationsDelegate

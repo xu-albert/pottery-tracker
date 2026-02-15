@@ -4,6 +4,7 @@ import '../../../database/database.dart';
 import '../../../database/daos/materials_dao.dart';
 import '../../../models/piece_stage.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 
 class MetadataForm extends StatefulWidget {
@@ -140,7 +141,8 @@ class MetadataFormState extends State<MetadataForm> {
               controller: controller,
               autofocus: true,
               placeholder: l10n.enterClayName,
-              textCapitalization: TextCapitalization.words,
+              textCapitalization: TextCapitalization.sentences,
+              autocorrect: false,
               onSubmitted: (value) => Navigator.of(ctx).pop(value),
             ),
           ),
@@ -279,7 +281,8 @@ class MetadataFormState extends State<MetadataForm> {
               controller: controller,
               autofocus: true,
               placeholder: l10n.enterGlazeName,
-              textCapitalization: TextCapitalization.words,
+              textCapitalization: TextCapitalization.sentences,
+              autocorrect: false,
               onSubmitted: (value) => Navigator.of(ctx).pop(value),
             ),
           ),
@@ -350,7 +353,26 @@ class MetadataFormState extends State<MetadataForm> {
                     },
                   ),
                   ...allTags.map((tag) => CheckboxListTile(
-                        title: Text(tag.name),
+                        title: Row(
+                          children: [
+                            if (tag.color != null) ...[
+                              Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: TagColorPresets.hexToColor(tag.color!),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppColors.divider,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Text(tag.name),
+                          ],
+                        ),
                         value: selectedIds.contains(tag.id),
                         onChanged: (checked) {
                           setSheetState(() {
@@ -408,7 +430,8 @@ class MetadataFormState extends State<MetadataForm> {
               controller: controller,
               autofocus: true,
               placeholder: l10n.enterTagName,
-              textCapitalization: TextCapitalization.words,
+              textCapitalization: TextCapitalization.sentences,
+              autocorrect: false,
               onSubmitted: (value) => Navigator.of(ctx).pop(value),
             ),
           ),
@@ -532,6 +555,7 @@ class MetadataFormState extends State<MetadataForm> {
             controller: _notesCtrl,
             decoration: InputDecoration(labelText: l10n.notesLabel),
             maxLines: 3,
+            autocorrect: false,
             onEditingComplete: () =>
                 widget.onUpdateField(notes: _notesCtrl.text),
           ),

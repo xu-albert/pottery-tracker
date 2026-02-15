@@ -192,7 +192,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reorderPhotos => 'Reorder';
 
   @override
-  String get addNew => '+ Add New';
+  String get addNew => 'Add New';
 
   @override
   String get create => 'Create';
@@ -277,4 +277,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagsNone => 'None';
+
+  @override
+  String get tagColor => 'Tag Color';
+
+  @override
+  String pieceArchivedWithTitle(String title) {
+    return '$title archived';
+  }
+
+  @override
+  String pieceUnarchivedWithTitle(String title) {
+    return '$title unarchived';
+  }
+
+  @override
+  String get undo => 'Undo';
 }
