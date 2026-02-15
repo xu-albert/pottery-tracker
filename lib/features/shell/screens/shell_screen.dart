@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/pieces_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class ShellScreen extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
@@ -13,6 +14,8 @@ class ShellScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
+    // Initialize sync provider early so it starts on auth change
+    ref.watch(syncStateProvider);
 
     return Scaffold(
       body: navigationShell,

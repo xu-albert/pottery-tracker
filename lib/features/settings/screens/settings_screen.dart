@@ -256,17 +256,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           subtitle = l10n.syncLastSynced(
               DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!));
         }
-        trailing = TextButton(
-          onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
-          child: Text(l10n.syncNow),
+        trailing = GestureDetector(
+          onLongPress: () =>
+              ref.read(syncStateProvider.notifier).syncNow(forceFullSync: true),
+          child: TextButton(
+            onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+            child: Text(l10n.syncNow),
+          ),
         );
       case SyncStatus.error:
         icon = Icons.cloud_off;
         title = l10n.syncError;
         subtitle = syncState.errorMessage;
-        trailing = TextButton(
-          onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
-          child: Text(l10n.syncNow),
+        trailing = GestureDetector(
+          onLongPress: () =>
+              ref.read(syncStateProvider.notifier).syncNow(forceFullSync: true),
+          child: TextButton(
+            onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+            child: Text(l10n.syncNow),
+          ),
         );
       case SyncStatus.disabled:
         icon = Icons.cloud_off;

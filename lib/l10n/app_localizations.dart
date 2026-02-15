@@ -759,6 +759,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Grid view'**
   String get viewModeGrid;
+
+  /// Cloud backup section header
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud Backup'**
+  String get cloudBackup;
+
+  /// Sync status when everything is synced
+  ///
+  /// In en, this message translates to:
+  /// **'All data backed up'**
+  String get syncBackedUp;
+
+  /// Sync status while syncing
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing...'**
+  String get syncSyncing;
+
+  /// Sync status with pending changes
+  ///
+  /// In en, this message translates to:
+  /// **'{count} changes pending'**
+  String syncPending(int count);
+
+  /// Sync error status
+  ///
+  /// In en, this message translates to:
+  /// **'Sync error'**
+  String get syncError;
+
+  /// Sync disabled status
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to enable cloud backup'**
+  String get syncDisabled;
+
+  /// Manual sync button
+  ///
+  /// In en, this message translates to:
+  /// **'Sync Now'**
+  String get syncNow;
+
+  /// Last sync timestamp
+  ///
+  /// In en, this message translates to:
+  /// **'Last synced {date}'**
+  String syncLastSynced(String date);
 }
 
 class _AppLocalizationsDelegate

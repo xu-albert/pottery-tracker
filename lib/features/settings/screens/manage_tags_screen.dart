@@ -6,6 +6,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class ManageTagsScreen extends ConsumerWidget {
   const ManageTagsScreen({super.key});
@@ -53,6 +54,10 @@ class ManageTagsScreen extends ConsumerWidget {
                 updates.add((id: reordered[i].id, sortOrder: i));
               }
               ref.read(materialsDaoProvider).updateTagSortOrders(updates);
+              final trigger = ref.read(syncTriggerProvider);
+              for (final entry in updates) {
+                trigger.afterTagWrite(entry.id);
+              }
             },
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(
@@ -168,6 +173,7 @@ class ManageTagsScreen extends ConsumerWidget {
                     onTap: () {
                       ref.read(materialsDaoProvider).updateTagColor(
                             tag.id, TagColorPresets.colorToHex(color));
+                      ref.read(syncTriggerProvider).afterTagWrite(tag.id);
                       Navigator.of(ctx).pop();
                     },
                     child: Container(
@@ -231,7 +237,8 @@ class ManageTagsScreen extends ConsumerWidget {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      await ref.read(materialsDaoProvider).findOrCreateTag(name);
+      final tag = await ref.read(materialsDaoProvider).findOrCreateTag(name);
+      await ref.read(syncTriggerProvider).afterTagWrite(tag.id);
     }
   }
 
@@ -270,6 +277,7 @@ class ManageTagsScreen extends ConsumerWidget {
         newName.trim().isNotEmpty &&
         newName.trim() != tag.name) {
       await ref.read(materialsDaoProvider).updateTagName(tag.id, newName);
+      await ref.read(syncTriggerProvider).afterTagWrite(tag.id);
     }
   }
 
@@ -296,6 +304,7 @@ class ManageTagsScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteTag(tag.id);
+      await ref.read(syncTriggerProvider).afterMaterialDeletion('tags', tag.id);
     }
   }
 }

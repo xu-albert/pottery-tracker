@@ -12,6 +12,7 @@ import '../../../providers/database_provider.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../widgets/photo_gallery.dart';
 import '../widgets/metadata_form.dart';
 import '../widgets/photo_timeline.dart' show LastUpdatedInfo;
@@ -93,6 +94,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         name: 'photo_added',
         parameters: {'source': source.name},
       );
+      final trigger = ref.read(syncTriggerProvider);
+      await trigger.afterPhotoWrite(result.photoId, includeFile: true);
+      await trigger.afterPieceWrite(widget.pieceId);
       _loadPiece();
     } catch (e) {
       if (mounted) {
@@ -129,6 +133,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     await photosDao.deletePhoto(photo.id);
     await imageService.deletePhotoFiles(widget.pieceId, photo.id);
     HapticFeedback.lightImpact();
+    await ref.read(syncTriggerProvider).afterPhotoDeletion(photo.id);
 
     // If deleted photo was cover, set new cover
     if (_piece?.coverPhotoId == photo.id) {
@@ -139,6 +144,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
         updatedAt: Value(DateTime.now()),
       ));
+      await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
       _loadPiece();
     }
   }
@@ -156,6 +162,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     ref.read(analyticsProvider).logEvent(
       name: wasArchived ? 'piece_unarchived' : 'piece_archived',
     );
+    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     if (mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -197,11 +204,16 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final photosDao = ref.read(photosDaoProvider);
     final imageService = ref.read(imageServiceProvider);
 
+    // Capture photo IDs before deletion for sync
+    final photos = await photosDao.getPhotosForPiece(widget.pieceId);
+    final photoIds = photos.map((p) => p.id).toList();
+
     await photosDao.deletePhotosForPiece(widget.pieceId);
     await piecesDao.deletePiece(widget.pieceId);
     await imageService.deletePhotos(widget.pieceId);
     HapticFeedback.mediumImpact();
     ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
+    await ref.read(syncTriggerProvider).afterPieceDeletion(widget.pieceId, photoIds);
 
     if (mounted) context.go('/');
   }
@@ -230,18 +242,25 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
           : const Value.absent(),
       updatedAt: Value(DateTime.now()),
     ));
+    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
   Future<void> _updateGlazes(List<String> glazeOptionIds) async {
     final materialsDao = ref.read(materialsDaoProvider);
     await materialsDao.setGlazesForPiece(widget.pieceId, glazeOptionIds);
+    final trigger = ref.read(syncTriggerProvider);
+    await trigger.afterPieceGlazesWrite(widget.pieceId);
+    await trigger.afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
   Future<void> _updateTags(List<String> tagOptionIds) async {
     final materialsDao = ref.read(materialsDaoProvider);
     await materialsDao.setTagsForPiece(widget.pieceId, tagOptionIds);
+    final trigger = ref.read(syncTriggerProvider);
+    await trigger.afterPieceTagsWrite(widget.pieceId);
+    await trigger.afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
@@ -274,6 +293,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       id: Value(widget.pieceId),
       updatedAt: Value(newDate),
     ));
+    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
@@ -322,6 +342,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             sortOrder: Value(sortOrder),
           ));
 
+          final trigger = ref.read(syncTriggerProvider);
+          await trigger.afterPhotoWrite(result.photoId, includeFile: true);
+
           lastPhotoId = result.photoId;
           sortOrder++;
         } catch (_) {
@@ -347,6 +370,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         name: 'photo_added',
         parameters: {'source': 'gallery', 'count': picked.length - failures},
       );
+      await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
       _loadPiece();
 
       if (failures > 0 && mounted) {
@@ -388,6 +412,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
     final photosDao = ref.read(photosDaoProvider);
     await photosDao.updateSortOrders(updates);
+    final trigger = ref.read(syncTriggerProvider);
+    for (final update in updates) {
+      await trigger.afterPhotoWrite(update.id);
+    }
   }
 
   void _showAddPhotoSheet() {

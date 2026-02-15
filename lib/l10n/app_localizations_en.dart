@@ -367,4 +367,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get viewModeGrid => 'Grid view';
+
+  @override
+  String get cloudBackup => 'Cloud Backup';
+
+  @override
+  String get syncBackedUp => 'All data backed up';
+
+  @override
+  String get syncSyncing => 'Syncing...';
+
+  @override
+  String syncPending(int count) {
+    return '$count changes pending';
+  }
+
+  @override
+  String get syncError => 'Sync error';
+
+  @override
+  String get syncDisabled => 'Sign in to enable cloud backup';
+
+  @override
+  String get syncNow => 'Sync Now';
+
+  @override
+  String syncLastSynced(String date) {
+    return 'Last synced $date';
+  }
 }

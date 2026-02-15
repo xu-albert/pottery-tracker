@@ -253,5 +253,21 @@
   "viewModeList": "List view",
   "@viewModeList": { "description": "List view mode label for accessibility" },
   "viewModeGrid": "Grid view",
-  "@viewModeGrid": { "description": "Grid view mode label for accessibility" }
+  "@viewModeGrid": { "description": "Grid view mode label for accessibility" },
+  "cloudBackup": "Cloud Backup",
+  "@cloudBackup": { "description": "Cloud backup section header" },
+  "syncBackedUp": "All data backed up",
+  "@syncBackedUp": { "description": "Sync status when everything is synced" },
+  "syncSyncing": "Syncing...",
+  "@syncSyncing": { "description": "Sync status while syncing" },
+  "syncPending": "{count} changes pending",
+  "@syncPending": { "description": "Sync status with pending changes", "placeholders": { "count": { "type": "int" } } },
+  "syncError": "Sync error",
+  "@syncError": { "description": "Sync error status" },
+  "syncDisabled": "Sign in to enable cloud backup",
+  "@syncDisabled": { "description": "Sync disabled status" },
+  "syncNow": "Sync Now",
+  "@syncNow": { "description": "Manual sync button" },
+  "syncLastSynced": "Last synced {date}",
+  "@syncLastSynced": { "description": "Last sync timestamp", "placeholders": { "date": { "type": "String" } } }
 }

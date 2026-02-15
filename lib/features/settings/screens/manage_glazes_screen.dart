@@ -6,6 +6,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class ManageGlazesScreen extends ConsumerWidget {
   const ManageGlazesScreen({super.key});
@@ -53,6 +54,10 @@ class ManageGlazesScreen extends ConsumerWidget {
                 updates.add((id: reordered[i].id, sortOrder: i));
               }
               ref.read(materialsDaoProvider).updateGlazeSortOrders(updates);
+              final trigger = ref.read(syncTriggerProvider);
+              for (final entry in updates) {
+                trigger.afterGlazeWrite(entry.id);
+              }
             },
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(
@@ -157,7 +162,8 @@ class ManageGlazesScreen extends ConsumerWidget {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      await ref.read(materialsDaoProvider).findOrCreateGlaze(name);
+      final glaze = await ref.read(materialsDaoProvider).findOrCreateGlaze(name);
+      await ref.read(syncTriggerProvider).afterGlazeWrite(glaze.id);
     }
   }
 
@@ -196,6 +202,7 @@ class ManageGlazesScreen extends ConsumerWidget {
         newName.trim().isNotEmpty &&
         newName.trim() != glaze.name) {
       await ref.read(materialsDaoProvider).updateGlazeName(glaze.id, newName);
+      await ref.read(syncTriggerProvider).afterGlazeWrite(glaze.id);
     }
   }
 
@@ -222,6 +229,7 @@ class ManageGlazesScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteGlaze(glaze.id);
+      await ref.read(syncTriggerProvider).afterMaterialDeletion('glazes', glaze.id);
     }
   }
 }

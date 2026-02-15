@@ -6,6 +6,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class ManageClaysScreen extends ConsumerWidget {
   const ManageClaysScreen({super.key});
@@ -53,6 +54,10 @@ class ManageClaysScreen extends ConsumerWidget {
                 updates.add((id: reordered[i].id, sortOrder: i));
               }
               ref.read(materialsDaoProvider).updateSortOrders(updates);
+              final trigger = ref.read(syncTriggerProvider);
+              for (final entry in updates) {
+                trigger.afterClayWrite(entry.id);
+              }
             },
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(
@@ -157,7 +162,8 @@ class ManageClaysScreen extends ConsumerWidget {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      await ref.read(materialsDaoProvider).findOrCreateClay(name);
+      final clay = await ref.read(materialsDaoProvider).findOrCreateClay(name);
+      await ref.read(syncTriggerProvider).afterClayWrite(clay.id);
     }
   }
 
@@ -194,6 +200,7 @@ class ManageClaysScreen extends ConsumerWidget {
 
     if (newName != null && newName.trim().isNotEmpty && newName.trim() != clay.name) {
       await ref.read(materialsDaoProvider).updateClayName(clay.id, newName);
+      await ref.read(syncTriggerProvider).afterClayWrite(clay.id);
     }
   }
 
@@ -220,6 +227,7 @@ class ManageClaysScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteClay(clay.id);
+      await ref.read(syncTriggerProvider).afterMaterialDeletion('clays', clay.id);
     }
   }
 }

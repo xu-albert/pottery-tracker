@@ -10,6 +10,7 @@ import '../../../database/database.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/image_service_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../services/image_service.dart';
 
 class CreatePieceScreen extends ConsumerStatefulWidget {
@@ -185,6 +186,11 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
       name: 'piece_created',
       parameters: {'photo_count': results.length},
     );
+    final trigger = ref.read(syncTriggerProvider);
+    await trigger.afterPieceWrite(pieceId);
+    for (final result in results) {
+      await trigger.afterPhotoWrite(result.photoId, includeFile: true);
+    }
     if (mounted) context.go('/piece/$pieceId');
   }
 
