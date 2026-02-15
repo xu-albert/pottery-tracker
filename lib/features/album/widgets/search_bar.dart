@@ -13,7 +13,11 @@ class PiecesSearchBar extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          AppSizes.md, AppSizes.sm, AppSizes.md, 0),
+        AppSizes.md,
+        AppSizes.sm,
+        AppSizes.md,
+        0,
+      ),
       child: TextField(
         autocorrect: false,
         decoration: InputDecoration(

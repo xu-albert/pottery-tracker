@@ -17,17 +17,20 @@ final allGlazesProvider = StreamProvider<List<GlazeOption>>((ref) {
   return ref.watch(materialsDaoProvider).watchAllGlazes();
 });
 
-final glazesForPieceProvider =
-    StreamProvider.family<List<GlazeOption>, String>((ref, pieceId) {
-  return ref.watch(materialsDaoProvider).watchGlazesForPiece(pieceId);
-});
+final glazesForPieceProvider = StreamProvider.family<List<GlazeOption>, String>(
+  (ref, pieceId) {
+    return ref.watch(materialsDaoProvider).watchGlazesForPiece(pieceId);
+  },
+);
 
 final allTagsProvider = StreamProvider<List<TagOption>>((ref) {
   return ref.watch(materialsDaoProvider).watchAllTags();
 });
 
-final tagsForPieceProvider =
-    StreamProvider.family<List<TagOption>, String>((ref, pieceId) {
+final tagsForPieceProvider = StreamProvider.family<List<TagOption>, String>((
+  ref,
+  pieceId,
+) {
   return ref.watch(materialsDaoProvider).watchTagsForPiece(pieceId);
 });
 

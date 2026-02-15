@@ -95,28 +95,36 @@ class AlbumGrid extends ConsumerWidget {
             HapticFeedback.lightImpact();
             ref.read(analyticsProvider).logEvent(name: 'piece_archived');
             final pieceId = item.piece.id;
-            piecesDao.updatePiece(PiecesCompanion(
-              id: Value(pieceId),
-              isArchived: const Value(true),
-              updatedAt: Value(DateTime.now()),
-            ));
+            piecesDao.updatePiece(
+              PiecesCompanion(
+                id: Value(pieceId),
+                isArchived: const Value(true),
+                updatedAt: Value(DateTime.now()),
+              ),
+            );
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
               ..showSnackBar(
                 SnackBar(
-                  content: Text(l10n.pieceArchivedWithTitle(
-                    item.piece.title ?? 'Untitled Piece',
-                  )),
+                  content: Text(
+                    l10n.pieceArchivedWithTitle(
+                      item.piece.title ?? 'Untitled Piece',
+                    ),
+                  ),
                   duration: const Duration(seconds: 2),
                   action: SnackBarAction(
                     label: l10n.undo,
                     onPressed: () {
-                      piecesDao.updatePiece(PiecesCompanion(
-                        id: Value(pieceId),
-                        isArchived: const Value(false),
-                        updatedAt: Value(DateTime.now()),
-                      ));
-                      ref.read(analyticsProvider).logEvent(name: 'piece_unarchived');
+                      piecesDao.updatePiece(
+                        PiecesCompanion(
+                          id: Value(pieceId),
+                          isArchived: const Value(false),
+                          updatedAt: Value(DateTime.now()),
+                        ),
+                      );
+                      ref
+                          .read(analyticsProvider)
+                          .logEvent(name: 'piece_unarchived');
                     },
                   ),
                 ),

@@ -63,8 +63,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '22629038852',
     projectId: 'pottery-tracker-31b1f',
     storageBucket: 'pottery-tracker-31b1f.firebasestorage.app',
-    iosClientId: '22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com',
+    iosClientId:
+        '22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com',
     iosBundleId: 'com.albertxu.potterytracker',
   );
-
 }

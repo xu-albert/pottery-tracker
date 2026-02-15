@@ -29,7 +29,8 @@ class AuthService {
     );
   }
 
-  Future<(OAuthCredential, AuthorizationCredentialAppleID)> _getAppleCredential() async {
+  Future<(OAuthCredential, AuthorizationCredentialAppleID)>
+  _getAppleCredential() async {
     final rawNonce = _generateNonce();
     final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
@@ -60,15 +61,15 @@ class AuthService {
 
   Future<User> signInWithGoogle() async {
     final credential = await _getGoogleCredential();
-    final userCredential =
-        await _firebaseAuth.signInWithCredential(credential);
+    final userCredential = await _firebaseAuth.signInWithCredential(credential);
     return userCredential.user!;
   }
 
   Future<User> signInWithApple() async {
     final (oauthCredential, appleCredential) = await _getAppleCredential();
-    final userCredential =
-        await _firebaseAuth.signInWithCredential(oauthCredential);
+    final userCredential = await _firebaseAuth.signInWithCredential(
+      oauthCredential,
+    );
 
     // Apple only returns the name on the first sign-in, so persist it
     final user = userCredential.user!;
@@ -127,7 +128,9 @@ class AuthService {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-        .join();
+    return List.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
   }
 }

@@ -106,9 +106,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  Future<void> _signInWith({
-    required Future<User> Function() signInFn,
-  }) async {
+  Future<void> _signInWith({required Future<User> Function() signInFn}) async {
     if (_isLinking) return;
     setState(() => _isLinking = true);
     final l10n = AppLocalizations.of(context)!;
@@ -192,9 +190,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Text(
             isLinked ? l10n.linked : l10n.notLinked,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: isLinked ? linkedColor : notLinkedColor,
-                  fontWeight: FontWeight.bold,
-                ),
+              color: isLinked ? linkedColor : notLinkedColor,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(width: 6),
           Container(
@@ -257,12 +255,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             providerCount: auth.linkedProviders.length,
             onConnect: auth.isSignedIn
                 ? () => _linkProvider(
-                      linkFn: _authService.linkGoogle,
-                      successMessage: l10n.googleLinkedSuccess,
-                    )
-                : () => _signInWith(
-                      signInFn: _authService.signInWithGoogle,
-                    ),
+                    linkFn: _authService.linkGoogle,
+                    successMessage: l10n.googleLinkedSuccess,
+                  )
+                : () => _signInWith(signInFn: _authService.signInWithGoogle),
             onDisconnect: () => _unlinkProvider(
               unlinkFn: _authService.unlinkGoogle,
               providerName: l10n.google,
@@ -277,12 +273,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               providerCount: auth.linkedProviders.length,
               onConnect: auth.isSignedIn
                   ? () => _linkProvider(
-                        linkFn: _authService.linkApple,
-                        successMessage: l10n.appleLinkedSuccess,
-                      )
-                  : () => _signInWith(
-                        signInFn: _authService.signInWithApple,
-                      ),
+                      linkFn: _authService.linkApple,
+                      successMessage: l10n.appleLinkedSuccess,
+                    )
+                  : () => _signInWith(signInFn: _authService.signInWithApple),
               onDisconnect: () => _unlinkProvider(
                 unlinkFn: _authService.unlinkApple,
                 providerName: l10n.apple,
@@ -354,12 +348,16 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          AppSizes.md, AppSizes.md, AppSizes.md, AppSizes.xs),
+        AppSizes.md,
+        AppSizes.md,
+        AppSizes.md,
+        AppSizes.xs,
+      ),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
       ),
     );
   }

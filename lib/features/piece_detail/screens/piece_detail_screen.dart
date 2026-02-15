@@ -71,34 +71,37 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       if (result == null) return;
 
       final sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
-      await photosDao.insertPhoto(PhotosCompanion(
-        id: Value(result.photoId),
-        pieceId: Value(widget.pieceId),
-        localPath: Value(result.localPath),
-        thumbnailPath: Value(result.thumbnailPath),
-        dateTaken: Value(result.dateTaken),
-        createdAt: Value(DateTime.now()),
-        sortOrder: Value(sortOrder),
-      ));
+      await photosDao.insertPhoto(
+        PhotosCompanion(
+          id: Value(result.photoId),
+          pieceId: Value(widget.pieceId),
+          localPath: Value(result.localPath),
+          thumbnailPath: Value(result.thumbnailPath),
+          dateTaken: Value(result.dateTaken),
+          createdAt: Value(DateTime.now()),
+          sortOrder: Value(sortOrder),
+        ),
+      );
 
       // Update piece timestamp and set new photo as cover
       final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(PiecesCompanion(
-        id: Value(widget.pieceId),
-        coverPhotoId: Value(result.photoId),
-        updatedAt: Value(DateTime.now()),
-      ));
-      HapticFeedback.lightImpact();
-      ref.read(analyticsProvider).logEvent(
-        name: 'photo_added',
-        parameters: {'source': source.name},
+      await piecesDao.updatePiece(
+        PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(result.photoId),
+          updatedAt: Value(DateTime.now()),
+        ),
       );
+      HapticFeedback.lightImpact();
+      ref
+          .read(analyticsProvider)
+          .logEvent(name: 'photo_added', parameters: {'source': source.name});
       _loadPiece();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photo: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not add photo: $e')));
       }
     }
   }
@@ -112,11 +115,13 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         content: Text(l10n.deletePhotoConfirmMessage),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel)),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.delete)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.delete),
+          ),
         ],
       ),
     );
@@ -134,11 +139,13 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     if (_piece?.coverPhotoId == photo.id) {
       final remaining = await photosDao.getPhotosForPiece(widget.pieceId);
       final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(PiecesCompanion(
-        id: Value(widget.pieceId),
-        coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
-        updatedAt: Value(DateTime.now()),
-      ));
+      await piecesDao.updatePiece(
+        PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
       _loadPiece();
     }
   }
@@ -147,15 +154,17 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final wasArchived = _piece!.isArchived;
     final l10n = AppLocalizations.of(context)!;
     final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(PiecesCompanion(
-      id: Value(widget.pieceId),
-      isArchived: Value(!wasArchived),
-      updatedAt: Value(DateTime.now()),
-    ));
-    HapticFeedback.lightImpact();
-    ref.read(analyticsProvider).logEvent(
-      name: wasArchived ? 'piece_unarchived' : 'piece_archived',
+    await dao.updatePiece(
+      PiecesCompanion(
+        id: Value(widget.pieceId),
+        isArchived: Value(!wasArchived),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
+    HapticFeedback.lightImpact();
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: wasArchived ? 'piece_unarchived' : 'piece_archived');
     if (mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -163,8 +172,12 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
           SnackBar(
             content: Text(
               wasArchived
-                  ? l10n.pieceUnarchivedWithTitle(_piece!.title ?? 'Untitled Piece')
-                  : l10n.pieceArchivedWithTitle(_piece!.title ?? 'Untitled Piece'),
+                  ? l10n.pieceUnarchivedWithTitle(
+                      _piece!.title ?? 'Untitled Piece',
+                    )
+                  : l10n.pieceArchivedWithTitle(
+                      _piece!.title ?? 'Untitled Piece',
+                    ),
             ),
           ),
         );
@@ -181,12 +194,13 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         content: Text(l10n.deletePieceConfirmMessage),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel)),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.delete,
-                  style: const TextStyle(color: Colors.red))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
@@ -214,22 +228,26 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     String? notes,
   }) async {
     final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(PiecesCompanion(
-      id: Value(widget.pieceId),
-      title: title != null ? Value(title.isEmpty ? null : title) : const Value.absent(),
-      stage: clearStage
-          ? const Value(null)
-          : stage != null
-              ? Value(stage.name)
-              : const Value.absent(),
-      clayType: clayType != null
-          ? Value(clayType.isEmpty ? null : clayType)
-          : const Value.absent(),
-      notes: notes != null
-          ? Value(notes.isEmpty ? null : notes)
-          : const Value.absent(),
-      updatedAt: Value(DateTime.now()),
-    ));
+    await dao.updatePiece(
+      PiecesCompanion(
+        id: Value(widget.pieceId),
+        title: title != null
+            ? Value(title.isEmpty ? null : title)
+            : const Value.absent(),
+        stage: clearStage
+            ? const Value(null)
+            : stage != null
+            ? Value(stage.name)
+            : const Value.absent(),
+        clayType: clayType != null
+            ? Value(clayType.isEmpty ? null : clayType)
+            : const Value.absent(),
+        notes: notes != null
+            ? Value(notes.isEmpty ? null : notes)
+            : const Value.absent(),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
     _loadPiece();
   }
 
@@ -270,10 +288,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     );
 
     final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(PiecesCompanion(
-      id: Value(widget.pieceId),
-      updatedAt: Value(newDate),
-    ));
+    await dao.updatePiece(
+      PiecesCompanion(id: Value(widget.pieceId), updatedAt: Value(newDate)),
+    );
     _loadPiece();
   }
 
@@ -312,15 +329,17 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             pieceId: widget.pieceId,
           );
 
-          await photosDao.insertPhoto(PhotosCompanion(
-            id: Value(result.photoId),
-            pieceId: Value(widget.pieceId),
-            localPath: Value(result.localPath),
-            thumbnailPath: Value(result.thumbnailPath),
-            dateTaken: Value(result.dateTaken),
-            createdAt: Value(DateTime.now()),
-            sortOrder: Value(sortOrder),
-          ));
+          await photosDao.insertPhoto(
+            PhotosCompanion(
+              id: Value(result.photoId),
+              pieceId: Value(widget.pieceId),
+              localPath: Value(result.localPath),
+              thumbnailPath: Value(result.thumbnailPath),
+              dateTaken: Value(result.dateTaken),
+              createdAt: Value(DateTime.now()),
+              sortOrder: Value(sortOrder),
+            ),
+          );
 
           lastPhotoId = result.photoId;
           sortOrder++;
@@ -335,18 +354,25 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
       // Set last photo as cover
       if (lastPhotoId != null) {
-        await piecesDao.updatePiece(PiecesCompanion(
-          id: Value(widget.pieceId),
-          coverPhotoId: Value(lastPhotoId),
-          updatedAt: Value(DateTime.now()),
-        ));
+        await piecesDao.updatePiece(
+          PiecesCompanion(
+            id: Value(widget.pieceId),
+            coverPhotoId: Value(lastPhotoId),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
 
       HapticFeedback.lightImpact();
-      ref.read(analyticsProvider).logEvent(
-        name: 'photo_added',
-        parameters: {'source': 'gallery', 'count': picked.length - failures},
-      );
+      ref
+          .read(analyticsProvider)
+          .logEvent(
+            name: 'photo_added',
+            parameters: {
+              'source': 'gallery',
+              'count': picked.length - failures,
+            },
+          );
       _loadPiece();
 
       if (failures > 0 && mounted) {
@@ -360,9 +386,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         Navigator.of(context, rootNavigator: true).pop();
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photos: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not add photos: $e')));
       }
     }
   }
@@ -370,15 +396,15 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   Future<void> _reorderPhotos(List<Photo> photos) async {
     final result = await Navigator.push<List<Photo>>(
       context,
-      MaterialPageRoute(
-        builder: (_) => PhotoReorderScreen(photos: photos),
-      ),
+      MaterialPageRoute(builder: (_) => PhotoReorderScreen(photos: photos)),
     );
     if (result == null) return;
-    ref.read(analyticsProvider).logEvent(
-      name: 'photo_reorder_saved',
-      parameters: {'photo_count': result.length},
-    );
+    ref
+        .read(analyticsProvider)
+        .logEvent(
+          name: 'photo_reorder_saved',
+          parameters: {'photo_count': result.length},
+        );
 
     // Assign new sort orders: first in list = highest sortOrder (newest first display)
     final updates = <({String id, int sortOrder})>[];
@@ -429,9 +455,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final selectedTags = tagsAsync.valueOrNull ?? [];
 
     if (_piece == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -443,9 +467,11 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             onPressed: _showAddPhotoSheet,
           ),
           IconButton(
-            icon: Icon(_piece!.isArchived
-                ? Icons.unarchive_outlined
-                : Icons.archive_outlined),
+            icon: Icon(
+              _piece!.isArchived
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined,
+            ),
             tooltip: _piece!.isArchived
                 ? l10n.unarchivePiece
                 : l10n.archivePiece,
@@ -488,10 +514,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       ),
                     ),
                     if (photos.isNotEmpty)
-                      PhotoGallery(
-                        photos: photos,
-                        onDelete: _deletePhoto,
-                      ),
+                      PhotoGallery(photos: photos, onDelete: _deletePhoto),
                     if (photos.length >= 2)
                       Align(
                         alignment: Alignment.centerRight,

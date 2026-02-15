@@ -17,7 +17,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     initialLocation: '/',
-    observers: [FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance)],
+    observers: [
+      FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
+    ],
     redirect: (context, state) {
       final isSignedIn = authStatus == AuthStatus.authenticated;
       final isSignInRoute = state.matchedLocation == '/sign-in';
@@ -72,9 +74,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/piece/:id',
-        builder: (context, state) => PieceDetailScreen(
-          pieceId: state.pathParameters['id']!,
-        ),
+        builder: (context, state) =>
+            PieceDetailScreen(pieceId: state.pathParameters['id']!),
       ),
     ],
   );

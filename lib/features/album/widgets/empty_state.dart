@@ -31,8 +31,8 @@ class EmptyState extends StatelessWidget {
               l10n.emptyStateMessage,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.charcoal.withValues(alpha: 0.6),
-                  ),
+                color: AppColors.charcoal.withValues(alpha: 0.6),
+              ),
             ),
           ],
         ),

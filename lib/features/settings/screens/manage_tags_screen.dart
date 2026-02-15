@@ -32,8 +32,8 @@ class ManageTagsScreen extends ConsumerWidget {
               child: Text(
                 l10n.noTagsYet,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             );
           }
@@ -85,14 +85,15 @@ class ManageTagsScreen extends ConsumerWidget {
                         index: index,
                         child: const Padding(
                           padding: EdgeInsets.all(AppSizes.sm),
-                          child: Icon(Icons.drag_handle,
-                              color: AppColors.inputText),
+                          child: Icon(
+                            Icons.drag_handle,
+                            color: AppColors.inputText,
+                          ),
                         ),
                       ),
                       const SizedBox(width: AppSizes.sm),
                       GestureDetector(
-                        onTap: () =>
-                            _showColorPicker(context, ref, tag),
+                        onTap: () => _showColorPicker(context, ref, tag),
                         child: Container(
                           width: 24,
                           height: 24,
@@ -139,7 +140,10 @@ class ManageTagsScreen extends ConsumerWidget {
   }
 
   Future<void> _showColorPicker(
-      BuildContext context, WidgetRef ref, TagOption tag) async {
+    BuildContext context,
+    WidgetRef ref,
+    TagOption tag,
+  ) async {
     final currentColor = tag.color != null
         ? TagColorPresets.hexToColor(tag.color!)
         : null;
@@ -162,12 +166,17 @@ class ManageTagsScreen extends ConsumerWidget {
                 spacing: 12,
                 runSpacing: 12,
                 children: TagColorPresets.colors.map((color) {
-                  final isSelected = currentColor != null &&
+                  final isSelected =
+                      currentColor != null &&
                       color.toARGB32() == currentColor.toARGB32();
                   return GestureDetector(
                     onTap: () {
-                      ref.read(materialsDaoProvider).updateTagColor(
-                            tag.id, TagColorPresets.colorToHex(color));
+                      ref
+                          .read(materialsDaoProvider)
+                          .updateTagColor(
+                            tag.id,
+                            TagColorPresets.colorToHex(color),
+                          );
                       Navigator.of(ctx).pop();
                     },
                     child: Container(
@@ -177,14 +186,15 @@ class ManageTagsScreen extends ConsumerWidget {
                         color: color,
                         shape: BoxShape.circle,
                         border: isSelected
-                            ? Border.all(
-                                color: AppColors.charcoal, width: 2.5)
-                            : Border.all(
-                                color: AppColors.divider, width: 1),
+                            ? Border.all(color: AppColors.charcoal, width: 2.5)
+                            : Border.all(color: AppColors.divider, width: 1),
                       ),
                       child: isSelected
-                          ? const Icon(Icons.check,
-                              color: Colors.white, size: 20)
+                          ? const Icon(
+                              Icons.check,
+                              color: Colors.white,
+                              size: 20,
+                            )
                           : null,
                     ),
                   );
@@ -199,7 +209,10 @@ class ManageTagsScreen extends ConsumerWidget {
   }
 
   Future<void> _showAddDialog(
-      BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
     final controller = TextEditingController();
     final name = await showCupertinoDialog<String>(
       context: context,
@@ -235,8 +248,12 @@ class ManageTagsScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _showEditDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, TagOption tag) async {
+  Future<void> _showEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    TagOption tag,
+  ) async {
     final controller = TextEditingController(text: tag.name);
     final newName = await showCupertinoDialog<String>(
       context: context,
@@ -273,8 +290,12 @@ class ManageTagsScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _showDeleteDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, TagOption tag) async {
+  Future<void> _showDeleteDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    TagOption tag,
+  ) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(

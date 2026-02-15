@@ -11,11 +11,7 @@ class PhotoGallery extends StatefulWidget {
   final List<Photo> photos;
   final ValueChanged<Photo> onDelete;
 
-  const PhotoGallery({
-    super.key,
-    required this.photos,
-    required this.onDelete,
-  });
+  const PhotoGallery({super.key, required this.photos, required this.onDelete});
 
   @override
   State<PhotoGallery> createState() => _PhotoGalleryState();
@@ -129,8 +125,8 @@ class _PhotoGalleryState extends State<PhotoGallery> {
                     Text(
                       DateFormat.yMMMd().format(photo.dateTaken),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.charcoal.withValues(alpha: 0.6),
-                          ),
+                        color: AppColors.charcoal.withValues(alpha: 0.6),
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -193,8 +189,10 @@ class _PhotoGalleryState extends State<PhotoGallery> {
           children: [
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete photo',
-                  style: TextStyle(color: Colors.red)),
+              title: const Text(
+                'Delete photo',
+                style: TextStyle(color: Colors.red),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 widget.onDelete(photo);

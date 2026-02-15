@@ -8,17 +8,13 @@ class ArchiveThumbnail extends StatelessWidget {
   final PieceWithCover piece;
   final VoidCallback onTap;
 
-  const ArchiveThumbnail({
-    super.key,
-    required this.piece,
-    required this.onTap,
-  });
+  const ArchiveThumbnail({super.key, required this.piece, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final title = piece.piece.title ?? 'Untitled Piece';
-    final coverPath = piece.coverPhoto?.thumbnailPath ??
-        piece.coverPhoto?.localPath;
+    final coverPath =
+        piece.coverPhoto?.thumbnailPath ?? piece.coverPhoto?.localPath;
 
     return Semantics(
       label: title,

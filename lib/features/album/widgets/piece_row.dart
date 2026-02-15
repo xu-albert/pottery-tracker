@@ -46,10 +46,9 @@ class PieceRow extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       title,
-                      style:
-                          Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -58,18 +57,19 @@ class PieceRow extends ConsumerWidget {
                     const SizedBox(width: AppSizes.sm),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: stage.color.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         stage.displayName,
-                        style:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: stage.color,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: stage.color,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -79,8 +79,8 @@ class PieceRow extends ConsumerWidget {
               Text(
                 DateFormat.yMMMd().format(piece.piece.updatedAt),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.charcoal.withValues(alpha: 0.5),
-                    ),
+                  color: AppColors.charcoal.withValues(alpha: 0.5),
+                ),
               ),
               ..._buildClayGlazeLines(context),
               const SizedBox(height: AppSizes.sm),
@@ -108,13 +108,17 @@ class PieceRow extends ConsumerWidget {
     );
   }
 
-  List<Widget> _buildMetadataChips(BuildContext context, Map<String, Color> tagColorMap) {
+  List<Widget> _buildMetadataChips(
+    BuildContext context,
+    Map<String, Color> tagColorMap,
+  ) {
     final chips = <Widget>[];
     final textStyle = Theme.of(context).textTheme.bodySmall;
 
     final tags = piece.piece.tags;
     if (tags != null && tags.isNotEmpty) {
-      for (final tag in tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty)) {
+      for (final tag
+          in tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty)) {
         chips.add(_tagChip(context, tag, textStyle, tagColorMap));
       }
     }
@@ -125,25 +129,33 @@ class PieceRow extends ConsumerWidget {
   List<Widget> _buildClayGlazeLines(BuildContext context) {
     final lines = <Widget>[];
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: AppColors.charcoal.withValues(alpha: 0.7),
-        );
+      color: AppColors.charcoal.withValues(alpha: 0.7),
+    );
 
     final clay = piece.piece.clayType;
     if (clay != null && clay.isNotEmpty) {
-      lines.add(Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text('Clay: $clay', style: textStyle),
-      ));
+      lines.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('Clay: $clay', style: textStyle),
+        ),
+      );
     }
 
     final glazes = piece.piece.glazes;
     if (glazes != null && glazes.isNotEmpty) {
-      final glazeList = glazes.split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList();
+      final glazeList = glazes
+          .split(',')
+          .map((g) => g.trim())
+          .where((g) => g.isNotEmpty)
+          .toList();
       final prefix = glazeList.length > 1 ? 'Glazes' : 'Glaze';
-      lines.add(Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text('$prefix: ${glazeList.join(', ')}', style: textStyle),
-      ));
+      lines.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('$prefix: ${glazeList.join(', ')}', style: textStyle),
+        ),
+      );
     }
 
     return lines;
@@ -151,14 +163,19 @@ class PieceRow extends ConsumerWidget {
 
   // Each entry: (background tint color, accessible text color)
   static const _defaultTagColors = [
-    (AppColors.teal, AppColors.teal),                   // #2D6E6E — dark enough
-    (AppColors.terracotta, Color(0xFF8B5536)),           // darken terracotta for text
-    (AppColors.dustyRose, Color(0xFF8B5D55)),            // darken dustyRose for text
-    (AppColors.sage, Color(0xFF536B53)),                 // darken sage for text
-    (AppColors.blue, AppColors.blue),                    // #4A7FB5 — dark enough
+    (AppColors.teal, AppColors.teal), // #2D6E6E — dark enough
+    (AppColors.terracotta, Color(0xFF8B5536)), // darken terracotta for text
+    (AppColors.dustyRose, Color(0xFF8B5D55)), // darken dustyRose for text
+    (AppColors.sage, Color(0xFF536B53)), // darken sage for text
+    (AppColors.blue, AppColors.blue), // #4A7FB5 — dark enough
   ];
 
-  Widget _tagChip(BuildContext context, String tag, TextStyle? textStyle, Map<String, Color> tagColorMap) {
+  Widget _tagChip(
+    BuildContext context,
+    String tag,
+    TextStyle? textStyle,
+    Map<String, Color> tagColorMap,
+  ) {
     final customColor = tagColorMap[tag];
     final Color bgColor;
     final Color textColor;
@@ -181,7 +198,10 @@ class PieceRow extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('#', style: textStyle?.copyWith(color: textColor.withValues(alpha: 0.5))),
+          Text(
+            '#',
+            style: textStyle?.copyWith(color: textColor.withValues(alpha: 0.5)),
+          ),
           const SizedBox(width: 2),
           Text(tag, style: textStyle?.copyWith(color: textColor)),
         ],

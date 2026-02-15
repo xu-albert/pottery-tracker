@@ -82,7 +82,10 @@ abstract final class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.teal,
-          minimumSize: const Size(AppSizes.minTouchTarget, AppSizes.minTouchTarget),
+          minimumSize: const Size(
+            AppSizes.minTouchTarget,
+            AppSizes.minTouchTarget,
+          ),
         ),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
