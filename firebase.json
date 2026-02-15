@@ -1,1 +1,35 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"pottery-tracker-31b1f","appId":"1:22629038852:android:fc0f7acedf9b618b0fae51","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"pottery-tracker-31b1f","appId":"1:22629038852:ios:f3cd8152c04934a70fae51","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"pottery-tracker-31b1f","configurations":{"ios":"1:22629038852:ios:f3cd8152c04934a70fae51"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "pottery-tracker-31b1f",
+          "appId": "1:22629038852:android:fc0f7acedf9b618b0fae51",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "pottery-tracker-31b1f",
+          "appId": "1:22629038852:ios:f3cd8152c04934a70fae51",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "pottery-tracker-31b1f",
+          "configurations": {
+            "ios": "1:22629038852:ios:f3cd8152c04934a70fae51"
+          }
+        }
+      }
+    }
+  }
+}
