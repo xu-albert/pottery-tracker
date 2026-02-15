@@ -361,4 +361,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get signOutConfirmMessage =>
       'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.';
+
+  @override
+  String get viewModeList => 'List view';
+
+  @override
+  String get viewModeGrid => 'Grid view';
 }

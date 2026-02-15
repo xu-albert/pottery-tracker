@@ -747,6 +747,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.'**
   String get signOutConfirmMessage;
+
+  /// List view mode label for accessibility
+  ///
+  /// In en, this message translates to:
+  /// **'List view'**
+  String get viewModeList;
+
+  /// Grid view mode label for accessibility
+  ///
+  /// In en, this message translates to:
+  /// **'Grid view'**
+  String get viewModeGrid;
 }
 
 class _AppLocalizationsDelegate

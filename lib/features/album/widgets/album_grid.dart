@@ -10,18 +10,25 @@ import '../../../database/daos/pieces_dao.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
+import '../../../providers/pieces_provider.dart';
 import 'archive_thumbnail.dart';
 import 'piece_row.dart';
 
 class AlbumGrid extends ConsumerWidget {
   final List<PieceWithCover> pieces;
   final bool isArchived;
+  final ViewMode viewMode;
 
-  const AlbumGrid({super.key, required this.pieces, this.isArchived = false});
+  const AlbumGrid({
+    super.key,
+    required this.pieces,
+    required this.viewMode,
+    this.isArchived = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (isArchived) {
+    if (viewMode == ViewMode.grid) {
       return GridView.builder(
         padding: const EdgeInsets.all(AppSizes.sm),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -55,6 +62,13 @@ class AlbumGrid extends ConsumerWidget {
       ),
       itemBuilder: (context, index) {
         final item = pieces[index];
+        final child = PieceRow(
+          piece: item,
+          onTap: () => context.push('/piece/${item.piece.id}'),
+        );
+
+        if (isArchived) return child;
+
         return Dismissible(
           key: ValueKey(item.piece.id),
           direction: DismissDirection.endToStart,
@@ -108,10 +122,7 @@ class AlbumGrid extends ConsumerWidget {
                 ),
               );
           },
-          child: PieceRow(
-            piece: item,
-            onTap: () => context.push('/piece/${item.piece.id}'),
-          ),
+          child: child,
         );
       },
     );

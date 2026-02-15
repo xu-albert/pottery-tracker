@@ -4,6 +4,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/pieces_provider.dart';
 import '../../../core/constants/app_sizes.dart';
+import 'view_mode_toggle.dart';
 
 class FilterChips extends ConsumerWidget {
   const FilterChips({super.key});
@@ -41,6 +42,8 @@ class FilterChips extends ConsumerWidget {
                 ref.read(archivedFilterProvider.notifier).state = true;
               },
           ),
+          const Spacer(),
+          const ViewModeToggle(),
         ],
       ),
     );

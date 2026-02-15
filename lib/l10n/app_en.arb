@@ -249,5 +249,9 @@
   "signOutConfirmTitle": "Sign out of everything?",
   "@signOutConfirmTitle": { "description": "Sign out confirmation title" },
   "signOutConfirmMessage": "Your pieces are stored on this device and won't be deleted. You'll need to sign in again to enable cloud sync in the future.",
-  "@signOutConfirmMessage": { "description": "Sign out confirmation message" }
+  "@signOutConfirmMessage": { "description": "Sign out confirmation message" },
+  "viewModeList": "List view",
+  "@viewModeList": { "description": "List view mode label for accessibility" },
+  "viewModeGrid": "Grid view",
+  "@viewModeGrid": { "description": "Grid view mode label for accessibility" }
 }
