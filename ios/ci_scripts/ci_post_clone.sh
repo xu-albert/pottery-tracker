@@ -12,6 +12,9 @@ export PATH="$PATH:$HOME/flutter/bin"
 flutter precache --ios
 flutter pub get
 
-# Pods are checked into the repo, so no pod install needed.
+# Regenerate Pods with correct paths for this environment.
+# --no-repo-update skips CDN access (Xcode Cloud can't reach cdn.jsdelivr.net).
+# Pods source code is checked into the repo so no downloads are needed.
+cd ios && pod install --no-repo-update
 
 exit 0
