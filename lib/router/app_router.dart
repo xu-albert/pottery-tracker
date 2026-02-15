@@ -12,12 +12,12 @@ import '../features/create_piece/screens/create_piece_screen.dart';
 import '../features/piece_detail/screens/piece_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authProvider);
+  final authStatus = ref.watch(authProvider.select((s) => s.status));
 
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
-      final isSignedIn = authState.status == AuthStatus.authenticated;
+      final isSignedIn = authStatus == AuthStatus.authenticated;
       final isSignInRoute = state.matchedLocation == '/sign-in';
 
       if (!isSignedIn && !isSignInRoute) return '/sign-in';

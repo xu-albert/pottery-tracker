@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
-import '../../../services/auth_service.dart';
+import '../../../services/auth_service.dart' show AuthService, SignInCancelledException;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 
@@ -26,6 +26,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       if (mounted) {
         ref.read(authProvider.notifier).signIn(user);
       }
+    } on SignInCancelledException {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context)!.signInCancelled)),
+          );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -44,6 +52,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       final user = await _authService.signInWithApple();
       if (mounted) {
         ref.read(authProvider.notifier).signIn(user);
+      }
+    } on SignInCancelledException {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context)!.signInCancelled)),
+          );
       }
     } catch (e) {
       if (mounted) {

@@ -9,15 +9,19 @@ class AuthState {
   final AuthStatus status;
   final String? displayName;
   final String? uid;
+  final Set<String> linkedProviders;
 
   const AuthState({
     this.status = AuthStatus.unknown,
     this.displayName,
     this.uid,
+    this.linkedProviders = const {},
   });
 
   bool get isSignedIn => status == AuthStatus.authenticated && uid != null;
   bool get isLocalOnly => status == AuthStatus.authenticated && uid == null;
+  bool get isGoogleLinked => linkedProviders.contains('google.com');
+  bool get isAppleLinked => linkedProviders.contains('apple.com');
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
@@ -30,6 +34,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier.withState(super.initial);
 
   static const _onboardingKey = 'hasCompletedOnboarding';
+
+  static Set<String> _providerIds(User user) {
+    return user.providerData.map((info) => info.providerId).toSet();
+  }
 
   Future<void> _init() async {
     try {
@@ -58,10 +66,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
               : const AuthState(status: AuthStatus.unauthenticated);
           return;
         }
+        final currentUser = FirebaseAuth.instance.currentUser!;
         state = AuthState(
           status: AuthStatus.authenticated,
-          displayName: FirebaseAuth.instance.currentUser?.displayName,
-          uid: firebaseUser.uid,
+          displayName: currentUser.displayName,
+          uid: currentUser.uid,
+          linkedProviders: _providerIds(currentUser),
         );
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_onboardingKey, true);
@@ -89,6 +99,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       status: AuthStatus.authenticated,
       displayName: user.displayName,
       uid: user.uid,
+      linkedProviders: _providerIds(user),
     );
   }
 
@@ -102,6 +113,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_onboardingKey, false);
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  void refreshProviders() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    state = AuthState(
+      status: state.status,
+      displayName: user.displayName ?? state.displayName,
+      uid: user.uid,
+      linkedProviders: _providerIds(user),
+    );
   }
 }
 

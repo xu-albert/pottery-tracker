@@ -17,7 +17,9 @@ class ShellScreen extends ConsumerWidget {
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: navigationShell.currentIndex,
+        currentIndex: navigationShell.currentIndex >= 1
+            ? navigationShell.currentIndex + 1
+            : navigationShell.currentIndex,
         onTap: (index) {
           if (index == 1) {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();

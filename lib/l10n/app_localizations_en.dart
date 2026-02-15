@@ -130,6 +130,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signOut => 'Sign Out';
 
   @override
+  String get signInCancelled => 'Sign-in cancelled';
+
+  @override
   String get about => 'About';
 
   @override
@@ -293,4 +296,69 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get undo => 'Undo';
+
+  @override
+  String get sendFeedback => 'Send Feedback';
+
+  @override
+  String get connectedAccounts => 'Connected Accounts';
+
+  @override
+  String get google => 'Google';
+
+  @override
+  String get apple => 'Apple';
+
+  @override
+  String get connect => 'Connect';
+
+  @override
+  String get connected => 'Connected';
+
+  @override
+  String get googleLinkedSuccess => 'Google account connected';
+
+  @override
+  String get appleLinkedSuccess => 'Apple account connected';
+
+  @override
+  String get accountAlreadyLinked =>
+      'This account is already linked to a different user';
+
+  @override
+  String get signInToEnableSync => 'Sign in to enable cloud sync';
+
+  @override
+  String get comingSoon => 'Coming soon';
+
+  @override
+  String get linked => 'LINKED';
+
+  @override
+  String get notLinked => 'NOT LINKED';
+
+  @override
+  String get disconnect => 'Disconnect';
+
+  @override
+  String disconnectConfirmTitle(String provider) {
+    return 'Disconnect $provider?';
+  }
+
+  @override
+  String get disconnectConfirmMessage =>
+      'You can reconnect anytime from Settings.';
+
+  @override
+  String get googleDisconnected => 'Google account disconnected';
+
+  @override
+  String get appleDisconnected => 'Apple account disconnected';
+
+  @override
+  String get signOutConfirmTitle => 'Sign out of everything?';
+
+  @override
+  String get signOutConfirmMessage =>
+      'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.';
 }
