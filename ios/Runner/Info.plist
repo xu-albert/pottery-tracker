@@ -31,12 +31,12 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.22629038852-j10llbo65prign9dmr54s94h68gs7onv</string>
+				<string>com.googleusercontent.apps.22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj</string>
 			</array>
 		</dict>
 	</array>
 	<key>GIDClientID</key>
-	<string>22629038852-j10llbo65prign9dmr54s94h68gs7onv.apps.googleusercontent.com</string>
+	<string>22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>FirebaseAppDelegateProxyEnabled</key>

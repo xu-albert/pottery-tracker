@@ -59,12 +59,12 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyC-gT63i1UsP-c-fAUqNqRijLOpOIlGuzU',
-    appId: '1:22629038852:ios:3d0922d6310c32b40fae51',
+    appId: '1:22629038852:ios:21037012b59e03d00fae51',
     messagingSenderId: '22629038852',
     projectId: 'pottery-tracker-31b1f',
     storageBucket: 'pottery-tracker-31b1f.firebasestorage.app',
-    iosClientId: '22629038852-j10llbo65prign9dmr54s94h68gs7onv.apps.googleusercontent.com',
-    iosBundleId: 'com.potterytracker.app',
+    iosClientId: '22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com',
+    iosBundleId: 'com.albertxu.potterytracker',
   );
 
 }
