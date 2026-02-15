@@ -1,3 +1,4 @@
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../../database/database.dart';
@@ -167,6 +168,10 @@ class MetadataFormState extends State<MetadataForm> {
     if (!mounted) return;
     if (name != null && name.trim().isNotEmpty) {
       await widget.materialsDao.findOrCreateClay(name);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'material_created',
+        parameters: {'type': 'clay'},
+      );
       if (!mounted) return;
       widget.onUpdateField(clayType: name.trim());
     }
@@ -303,7 +308,12 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      return widget.materialsDao.findOrCreateGlaze(name);
+      final glaze = await widget.materialsDao.findOrCreateGlaze(name);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'material_created',
+        parameters: {'type': 'glaze'},
+      );
+      return glaze;
     }
     return null;
   }
@@ -452,7 +462,12 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      return widget.materialsDao.findOrCreateTag(name);
+      final tag = await widget.materialsDao.findOrCreateTag(name);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'material_created',
+        parameters: {'type': 'tag'},
+      );
+      return tag;
     }
     return null;
   }

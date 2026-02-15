@@ -8,6 +8,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/pieces_dao.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import 'archive_thumbnail.dart';
 import 'piece_row.dart';
@@ -78,6 +79,7 @@ class AlbumGrid extends ConsumerWidget {
           ),
           onDismissed: (_) {
             HapticFeedback.lightImpact();
+            ref.read(analyticsProvider).logEvent(name: 'piece_archived');
             final pieceId = item.piece.id;
             piecesDao.updatePiece(PiecesCompanion(
               id: Value(pieceId),
@@ -100,6 +102,7 @@ class AlbumGrid extends ConsumerWidget {
                         isArchived: const Value(false),
                         updatedAt: Value(DateTime.now()),
                       ));
+                      ref.read(analyticsProvider).logEvent(name: 'piece_unarchived');
                     },
                   ),
                 ),

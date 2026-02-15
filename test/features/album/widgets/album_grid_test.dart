@@ -6,6 +6,7 @@ import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/features/album/widgets/album_grid.dart';
 import 'package:pottery_tracker/features/album/widgets/archive_thumbnail.dart';
 import 'package:pottery_tracker/features/album/widgets/piece_row.dart';
+import 'package:pottery_tracker/providers/analytics_provider.dart';
 import 'package:pottery_tracker/providers/database_provider.dart';
 import 'package:pottery_tracker/providers/materials_provider.dart';
 import 'package:pottery_tracker/providers/photos_provider.dart';
@@ -16,6 +17,7 @@ import '../../../helpers/test_helpers.dart';
 
 void main() {
   late MockPiecesDao mockPiecesDao;
+  late MockFirebaseAnalytics mockAnalytics;
 
   setUpAll(() {
     registerFallbackValue(PiecesCompanion(
@@ -28,6 +30,11 @@ void main() {
   setUp(() {
     mockPiecesDao = MockPiecesDao();
     when(() => mockPiecesDao.updatePiece(any())).thenAnswer((_) async {});
+    mockAnalytics = MockFirebaseAnalytics();
+    when(() => mockAnalytics.logEvent(
+          name: any(named: 'name'),
+          parameters: any(named: 'parameters'),
+        )).thenAnswer((_) async {});
   });
 
   group('AlbumGrid - Active view', () {
@@ -42,6 +49,7 @@ void main() {
         AlbumGrid(pieces: pieces, isArchived: false),
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
+          analyticsProvider.overrideWithValue(mockAnalytics),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
           photosForPieceProvider('p1')
               .overrideWith((ref) => Stream.value(<Photo>[])),
@@ -66,6 +74,7 @@ void main() {
         AlbumGrid(pieces: pieces, isArchived: false),
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
+          analyticsProvider.overrideWithValue(mockAnalytics),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
           photosForPieceProvider('p1')
               .overrideWith((ref) => Stream.value(<Photo>[])),
@@ -98,6 +107,7 @@ void main() {
         AlbumGrid(pieces: pieces, isArchived: false),
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
+          analyticsProvider.overrideWithValue(mockAnalytics),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
           photosForPieceProvider('p1')
               .overrideWith((ref) => Stream.value(<Photo>[])),

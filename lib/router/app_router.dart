@@ -1,3 +1,4 @@
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
@@ -16,6 +17,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     initialLocation: '/',
+    observers: [FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance)],
     redirect: (context, state) {
       final isSignedIn = authState.status == AuthStatus.authenticated;
       final isSignInRoute = state.matchedLocation == '/sign-in';
