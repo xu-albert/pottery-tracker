@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,33 +21,60 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState()) {
+  AuthNotifier()
+      : super(const AuthState(status: AuthStatus.unauthenticated)) {
     _init();
   }
 
   static const _onboardingKey = 'hasCompletedOnboarding';
 
   Future<void> _init() async {
-    // Check Firebase first — persisted session survives app restart
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (firebaseUser != null) {
-      state = AuthState(
-        status: AuthStatus.authenticated,
-        displayName: firebaseUser.displayName,
-        uid: firebaseUser.uid,
-      );
-      // Ensure onboarding flag is set
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_onboardingKey, true);
-      return;
-    }
+    try {
+      // Check Firebase first — persisted session survives app restart
+      User? firebaseUser;
+      try {
+        firebaseUser = FirebaseAuth.instance.currentUser;
+      } catch (e) {
+        debugPrint('AuthNotifier: Firebase not ready: $e');
+      }
 
-    // No Firebase user — check if they skipped sign-in previously
-    final prefs = await SharedPreferences.getInstance();
-    final completed = prefs.getBool(_onboardingKey) ?? false;
-    if (completed) {
-      state = const AuthState(status: AuthStatus.authenticated);
-    } else {
+      if (firebaseUser != null) {
+        // Verify the token is still valid
+        try {
+          await firebaseUser.reload().timeout(const Duration(seconds: 3));
+        } catch (e) {
+          debugPrint('Firebase user reload failed, signing out: $e');
+          try {
+            await FirebaseAuth.instance.signOut()
+                .timeout(const Duration(seconds: 3));
+          } catch (_) {}
+          final prefs = await SharedPreferences.getInstance();
+          final completed = prefs.getBool(_onboardingKey) ?? false;
+          state = completed
+              ? const AuthState(status: AuthStatus.authenticated)
+              : const AuthState(status: AuthStatus.unauthenticated);
+          return;
+        }
+        state = AuthState(
+          status: AuthStatus.authenticated,
+          displayName: FirebaseAuth.instance.currentUser?.displayName,
+          uid: firebaseUser.uid,
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_onboardingKey, true);
+        return;
+      }
+
+      // No Firebase user — check if they skipped sign-in previously
+      final prefs = await SharedPreferences.getInstance();
+      final completed = prefs.getBool(_onboardingKey) ?? false;
+      if (completed) {
+        state = const AuthState(status: AuthStatus.authenticated);
+      } else {
+        state = const AuthState(status: AuthStatus.unauthenticated);
+      }
+    } catch (e) {
+      debugPrint('Auth init failed: $e');
       state = const AuthState(status: AuthStatus.unauthenticated);
     }
   }

@@ -38,7 +38,7 @@ dependencies:
 
   # Auth
   google_sign_in: ^6.2.2
-  sign_in_with_apple: ^6.1.4
+  # sign_in_with_apple: ^6.1.4  # disabled until CODE_SIGNING_ALLOWED fix confirmed
   crypto: ^3.0.7
   google_fonts: ^8.0.1
 

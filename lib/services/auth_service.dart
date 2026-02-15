@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+// import 'package:sign_in_with_apple/sign_in_with_apple.dart'; // temporarily disabled
 
 class AuthService {
   final _firebaseAuth = FirebaseAuth.instance;
@@ -34,17 +34,22 @@ class AuthService {
     final rawNonce = _generateNonce();
     final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
-    final appleCredential = await SignInWithApple.getAppleIDCredential(
+    // sign_in_with_apple temporarily disabled — throw user-friendly error
+    throw Exception('Apple Sign-In is not yet configured');
+
+    // ignore: dead_code
+    final appleCredential = null; /*await SignInWithApple.getAppleIDCredential(
       scopes: [
         AppleIDAuthorizationScopes.email,
         AppleIDAuthorizationScopes.fullName,
       ],
       nonce: hashedNonce,
-    );
+    );*/
 
     final oauthCredential = OAuthProvider('apple.com').credential(
       idToken: appleCredential.identityToken,
       rawNonce: rawNonce,
+      accessToken: appleCredential.authorizationCode,
     );
 
     final userCredential =

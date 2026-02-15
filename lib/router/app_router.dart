@@ -20,8 +20,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isSignedIn = authState.status == AuthStatus.authenticated;
       final isSignInRoute = state.matchedLocation == '/sign-in';
 
-      if (authState.status == AuthStatus.unknown) return null;
-
       if (!isSignedIn && !isSignInRoute) return '/sign-in';
       if (isSignedIn && isSignInRoute) return '/';
 
