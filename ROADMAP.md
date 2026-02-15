@@ -34,4 +34,4 @@
 - [x] **Firebase Crashlytics** — crash reporting with test crash button in Settings
 - [ ] **Dark mode** — respect system setting
 - [x] **Widget tests** — 20 widget tests covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings
-- [ ] **CI/CD** — GitHub Actions for `dart analyze` + `flutter test` on PRs
+- [x] **CI/CD** — GitHub Actions for `dart analyze` + `flutter test` on PRs
