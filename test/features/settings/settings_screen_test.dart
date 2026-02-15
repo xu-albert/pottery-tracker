@@ -12,9 +12,9 @@ void main() {
         ProviderScope(
           overrides: [
             authProvider.overrideWith(
-              (ref) => _FakeAuthNotifier(const AuthState(
-                status: AuthStatus.authenticated,
-              )),
+              (ref) => _FakeAuthNotifier(
+                const AuthState(status: AuthStatus.authenticated),
+              ),
             ),
           ],
           child: MaterialApp(
@@ -25,9 +25,7 @@ void main() {
               GlobalCupertinoLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en')],
-            home: const Scaffold(
-              body: _SettingsSubset(),
-            ),
+            home: const Scaffold(body: _SettingsSubset()),
           ),
         ),
       );

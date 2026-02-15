@@ -14,16 +14,21 @@ void main() {
 
   setUp(() {
     mockAnalytics = MockFirebaseAnalytics();
-    when(() => mockAnalytics.logEvent(
-          name: any(named: 'name'),
-          parameters: any(named: 'parameters'),
-        )).thenAnswer((_) async {});
+    when(
+      () => mockAnalytics.logEvent(
+        name: any(named: 'name'),
+        parameters: any(named: 'parameters'),
+      ),
+    ).thenAnswer((_) async {});
   });
 
   group('FilterChips', () {
     testWidgets('Active is selected by default', (tester) async {
-      await pumpApp(tester, const FilterChips(),
-          overrides: [analyticsProvider.overrideWithValue(mockAnalytics)]);
+      await pumpApp(
+        tester,
+        const FilterChips(),
+        overrides: [analyticsProvider.overrideWithValue(mockAnalytics)],
+      );
 
       final activeChip = tester.widget<ChoiceChip>(
         find.widgetWithText(ChoiceChip, 'Active'),
@@ -40,10 +45,12 @@ void main() {
       late WidgetRef capturedRef;
       await pumpApp(
         tester,
-        Consumer(builder: (context, ref, _) {
-          capturedRef = ref;
-          return const FilterChips();
-        }),
+        Consumer(
+          builder: (context, ref, _) {
+            capturedRef = ref;
+            return const FilterChips();
+          },
+        ),
         overrides: [analyticsProvider.overrideWithValue(mockAnalytics)],
       );
 
@@ -53,15 +60,18 @@ void main() {
       expect(capturedRef.read(archivedFilterProvider), isTrue);
     });
 
-    testWidgets('tapping Active after Archive sets back to false',
-        (tester) async {
+    testWidgets('tapping Active after Archive sets back to false', (
+      tester,
+    ) async {
       late WidgetRef capturedRef;
       await pumpApp(
         tester,
-        Consumer(builder: (context, ref, _) {
-          capturedRef = ref;
-          return const FilterChips();
-        }),
+        Consumer(
+          builder: (context, ref, _) {
+            capturedRef = ref;
+            return const FilterChips();
+          },
+        ),
         overrides: [analyticsProvider.overrideWithValue(mockAnalytics)],
       );
 

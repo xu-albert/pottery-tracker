@@ -14,9 +14,7 @@ void main() {
           width: 100,
           height: 100,
           child: ArchiveThumbnail(
-            piece: makePieceWithCover(
-              piece: makePiece(title: 'My Vase'),
-            ),
+            piece: makePieceWithCover(piece: makePiece(title: 'My Vase')),
             onTap: () {},
           ),
         ),
@@ -50,9 +48,7 @@ void main() {
           width: 100,
           height: 100,
           child: ArchiveThumbnail(
-            piece: makePieceWithCover(
-              piece: makePiece(title: null),
-            ),
+            piece: makePieceWithCover(piece: makePiece(title: null)),
             onTap: () {},
           ),
         ),
@@ -67,10 +63,7 @@ void main() {
         SizedBox(
           width: 100,
           height: 100,
-          child: ArchiveThumbnail(
-            piece: makePieceWithCover(),
-            onTap: () {},
-          ),
+          child: ArchiveThumbnail(piece: makePieceWithCover(), onTap: () {}),
         ),
       );
 
