@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -139,6 +140,15 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: Text(l10n.version('1.0.0')),
+          ),
+
+          // Debug
+          const Divider(),
+          _SectionHeader(title: 'Debug'),
+          ListTile(
+            leading: const Icon(Icons.bug_report),
+            title: const Text('Test Crash'),
+            onTap: () => FirebaseCrashlytics.instance.crash(),
           ),
         ],
       ),
