@@ -23,12 +23,16 @@ void main() async {
     debugPrint('Firebase init failed: $e');
   }
 
-  await FirebaseAppCheck.instance.activate(
-    androidProvider:
-        kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider:
-        kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
-  );
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider:
+          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+      appleProvider:
+          kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+    );
+  } catch (e) {
+    debugPrint('App Check activation failed (non-fatal): $e');
+  }
 
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
