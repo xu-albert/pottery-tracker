@@ -328,6 +328,12 @@ abstract class AppLocalizations {
   /// **'Sign Out'**
   String get signOut;
 
+  /// Shown when user cancels sign-in
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in cancelled'**
+  String get signInCancelled;
+
   /// About section label
   ///
   /// In en, this message translates to:
@@ -627,6 +633,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Send Feedback'**
   String get sendFeedback;
+
+  /// Connected accounts section header
+  ///
+  /// In en, this message translates to:
+  /// **'Connected Accounts'**
+  String get connectedAccounts;
+
+  /// Google provider name
+  ///
+  /// In en, this message translates to:
+  /// **'Google'**
+  String get google;
+
+  /// Apple provider name
+  ///
+  /// In en, this message translates to:
+  /// **'Apple'**
+  String get apple;
+
+  /// Connect provider button
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get connect;
+
+  /// Provider is connected label
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get connected;
+
+  /// Google link success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Google account connected'**
+  String get googleLinkedSuccess;
+
+  /// Apple link success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Apple account connected'**
+  String get appleLinkedSuccess;
+
+  /// Account already linked error
+  ///
+  /// In en, this message translates to:
+  /// **'This account is already linked to a different user'**
+  String get accountAlreadyLinked;
+
+  /// Subtitle when not signed in
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to enable cloud sync'**
+  String get signInToEnableSync;
+
+  /// Coming soon placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Coming soon'**
+  String get comingSoon;
+
+  /// Provider linked status label
+  ///
+  /// In en, this message translates to:
+  /// **'LINKED'**
+  String get linked;
+
+  /// Provider not linked status label
+  ///
+  /// In en, this message translates to:
+  /// **'NOT LINKED'**
+  String get notLinked;
+
+  /// Disconnect provider button
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get disconnect;
+
+  /// Disconnect confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect {provider}?'**
+  String disconnectConfirmTitle(String provider);
+
+  /// Disconnect confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'You can reconnect anytime from Settings.'**
+  String get disconnectConfirmMessage;
+
+  /// Google disconnect success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Google account disconnected'**
+  String get googleDisconnected;
+
+  /// Apple disconnect success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Apple account disconnected'**
+  String get appleDisconnected;
+
+  /// Sign out confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out of everything?'**
+  String get signOutConfirmTitle;
+
+  /// Sign out confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.'**
+  String get signOutConfirmMessage;
 }
 
 class _AppLocalizationsDelegate

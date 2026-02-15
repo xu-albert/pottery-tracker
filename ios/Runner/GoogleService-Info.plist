@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>22629038852-9a772s5se89rtj1j0d174krtli07s578.apps.googleusercontent.com</string>
+	<string>22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.22629038852-9a772s5se89rtj1j0d174krtli07s578</string>
+	<string>com.googleusercontent.apps.22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj</string>
 	<key>API_KEY</key>
 	<string>AIzaSyC-gT63i1UsP-c-fAUqNqRijLOpOIlGuzU</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +13,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.potterytracker.potteryTracker</string>
+	<string>com.albertxu.potterytracker</string>
 	<key>PROJECT_ID</key>
 	<string>pottery-tracker-31b1f</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,6 +29,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:22629038852:ios:f3cd8152c04934a70fae51</string>
+	<string>1:22629038852:ios:21037012b59e03d00fae51</string>
 </dict>
 </plist>

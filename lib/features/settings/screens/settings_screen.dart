@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,14 +10,217 @@ import '../../../providers/auth_provider.dart';
 import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final _authService = AuthService();
+  bool _isLinking = false;
+
+  Future<void> _linkProvider({
+    required Future<void> Function() linkFn,
+    required String successMessage,
+  }) async {
+    if (_isLinking) return;
+    setState(() => _isLinking = true);
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      await linkFn();
+      ref.read(authProvider.notifier).refreshProviders();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+    } on SignInCancelledException {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(l10n.signInCancelled)));
+      }
+    } on AccountAlreadyLinkedException {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(l10n.accountAlreadyLinked)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isLinking = false);
+    }
+  }
+
+  Future<void> _unlinkProvider({
+    required Future<void> Function() unlinkFn,
+    required String providerName,
+    required String successMessage,
+  }) async {
+    if (_isLinking) return;
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.disconnectConfirmTitle(providerName)),
+        content: Text(l10n.disconnectConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(l10n.disconnect),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isLinking = true);
+    try {
+      await unlinkFn();
+      ref.read(authProvider.notifier).refreshProviders();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isLinking = false);
+    }
+  }
+
+  Future<void> _signInWith({
+    required Future<User> Function() signInFn,
+  }) async {
+    if (_isLinking) return;
+    setState(() => _isLinking = true);
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final user = await signInFn();
+      if (mounted) {
+        ref.read(authProvider.notifier).signIn(user);
+      }
+    } on SignInCancelledException {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(l10n.signInCancelled)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isLinking = false);
+    }
+  }
+
+  Future<void> _confirmSignOut() async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.signOutConfirmTitle),
+        content: Text(l10n.signOutConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(l10n.signOut),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _authService.signOut();
+    ref.read(authProvider.notifier).signOut();
+  }
+
+  Widget _providerTile({
+    required IconData icon,
+    required String name,
+    required bool isLinked,
+    required int providerCount,
+    required VoidCallback onConnect,
+    required VoidCallback onDisconnect,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    const linkedColor = Color(0xFF2E7D32);
+    const notLinkedColor = Color(0xFFE91E63);
+
+    final VoidCallback? onTap;
+    if (_isLinking) {
+      onTap = null;
+    } else if (!isLinked) {
+      onTap = onConnect;
+    } else if (providerCount > 1) {
+      onTap = onDisconnect;
+    } else {
+      onTap = null;
+    }
+
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(name),
+      onTap: onTap,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isLinked ? l10n.linked : l10n.notLinked,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: isLinked ? linkedColor : notLinkedColor,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isLinked ? linkedColor : notLinkedColor,
+                width: 2,
+              ),
+              color: isLinked ? linkedColor : Colors.transparent,
+            ),
+            child: isLinked
+                ? const Icon(Icons.check, color: Colors.white, size: 16)
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final auth = ref.watch(authProvider);
-    final authService = AuthService();
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settingsTitle)),
@@ -45,66 +249,52 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
 
           // Account section
-          _SectionHeader(title: l10n.account),
-          if (auth.isSignedIn) ...[
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: Text(auth.displayName != null
-                  ? l10n.signedInAs(auth.displayName!)
-                  : l10n.signedInAs('User')),
+          _SectionHeader(title: l10n.connectedAccounts),
+          _providerTile(
+            icon: Icons.g_mobiledata,
+            name: l10n.google,
+            isLinked: auth.isGoogleLinked,
+            providerCount: auth.linkedProviders.length,
+            onConnect: auth.isSignedIn
+                ? () => _linkProvider(
+                      linkFn: _authService.linkGoogle,
+                      successMessage: l10n.googleLinkedSuccess,
+                    )
+                : () => _signInWith(
+                      signInFn: _authService.signInWithGoogle,
+                    ),
+            onDisconnect: () => _unlinkProvider(
+              unlinkFn: _authService.unlinkGoogle,
+              providerName: l10n.google,
+              successMessage: l10n.googleDisconnected,
             ),
+          ),
+          if (Platform.isIOS)
+            _providerTile(
+              icon: Icons.apple,
+              name: l10n.apple,
+              isLinked: auth.isAppleLinked,
+              providerCount: auth.linkedProviders.length,
+              onConnect: auth.isSignedIn
+                  ? () => _linkProvider(
+                        linkFn: _authService.linkApple,
+                        successMessage: l10n.appleLinkedSuccess,
+                      )
+                  : () => _signInWith(
+                        signInFn: _authService.signInWithApple,
+                      ),
+              onDisconnect: () => _unlinkProvider(
+                unlinkFn: _authService.unlinkApple,
+                providerName: l10n.apple,
+                successMessage: l10n.appleDisconnected,
+              ),
+            ),
+          if (auth.isSignedIn)
             ListTile(
               leading: const Icon(Icons.logout),
               title: Text(l10n.signOut),
-              onTap: () async {
-                await authService.signOut();
-                ref.read(authProvider.notifier).signOut();
-              },
+              onTap: _confirmSignOut,
             ),
-          ] else ...[
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: Text(l10n.notSignedIn),
-              subtitle: const Text('Sign in to enable cloud sync'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.g_mobiledata),
-              title: const Text('Sign In with Google'),
-              onTap: () async {
-                try {
-                  final user = await authService.signInWithGoogle();
-                  if (context.mounted) {
-                    ref.read(authProvider.notifier).signIn(user);
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(e.toString())),
-                    );
-                  }
-                }
-              },
-            ),
-            if (Platform.isIOS)
-              ListTile(
-                leading: const Icon(Icons.apple),
-                title: const Text('Sign In with Apple'),
-                onTap: () async {
-                  try {
-                    final user = await authService.signInWithApple();
-                    if (context.mounted) {
-                      ref.read(authProvider.notifier).signIn(user);
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(e.toString())),
-                      );
-                    }
-                  }
-                },
-              ),
-          ],
           const Divider(),
 
           // Sync section
@@ -119,7 +309,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.favorite_outline),
             title: Text(l10n.supportDeveloper),
-            subtitle: const Text('Coming soon'),
+            subtitle: Text(l10n.comingSoon),
           ),
           ListTile(
             leading: const Icon(Icons.mail_outline),

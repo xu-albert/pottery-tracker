@@ -47,7 +47,7 @@ class AlbumGrid extends ConsumerWidget {
     return ListView.separated(
       itemCount: pieces.length,
       separatorBuilder: (_, _) => const Divider(
-        height: AppSizes.xl,
+        height: AppSizes.sm,
         thickness: 0.5,
         color: AppColors.divider,
         indent: AppSizes.md,

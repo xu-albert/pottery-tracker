@@ -14,17 +14,6 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.22629038852-9a772s5se89rtj1j0d174krtli07s578</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleName</key>
 	<string>pottery_tracker</string>
 	<key>CFBundlePackageType</key>
@@ -35,8 +24,23 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
