@@ -35,8 +35,8 @@ class PieceRow extends ConsumerWidget {
           padding: const EdgeInsets.only(
             left: AppSizes.md,
             right: AppSizes.md,
-            top: AppSizes.sm,
-            bottom: AppSizes.md,
+            top: AppSizes.xs,
+            bottom: AppSizes.sm,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

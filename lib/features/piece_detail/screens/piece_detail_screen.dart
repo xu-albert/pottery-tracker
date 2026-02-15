@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
 import '../../../models/piece_stage.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
@@ -88,6 +89,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         updatedAt: Value(DateTime.now()),
       ));
       HapticFeedback.lightImpact();
+      ref.read(analyticsProvider).logEvent(
+        name: 'photo_added',
+        parameters: {'source': source.name},
+      );
       _loadPiece();
     } catch (e) {
       if (mounted) {
@@ -148,6 +153,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       updatedAt: Value(DateTime.now()),
     ));
     HapticFeedback.lightImpact();
+    ref.read(analyticsProvider).logEvent(
+      name: wasArchived ? 'piece_unarchived' : 'piece_archived',
+    );
     if (mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -193,6 +201,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     await piecesDao.deletePiece(widget.pieceId);
     await imageService.deletePhotos(widget.pieceId);
     HapticFeedback.mediumImpact();
+    ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
 
     if (mounted) context.go('/');
   }
@@ -331,6 +340,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       }
 
       HapticFeedback.lightImpact();
+      ref.read(analyticsProvider).logEvent(
+        name: 'photo_added',
+        parameters: {'source': 'gallery', 'count': picked.length - failures},
+      );
       _loadPiece();
 
       if (failures > 0 && mounted) {
@@ -357,6 +370,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       ),
     );
     if (result == null) return;
+    ref.read(analyticsProvider).logEvent(
+      name: 'photo_reorder_saved',
+      parameters: {'photo_count': result.length},
+    );
 
     // Assign new sort orders: first in list = highest sortOrder (newest first display)
     final updates = <({String id, int sortOrder})>[];

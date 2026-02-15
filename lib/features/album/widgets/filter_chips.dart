@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/pieces_provider.dart';
 import '../../../core/constants/app_sizes.dart';
 
@@ -20,15 +21,25 @@ class FilterChips extends ConsumerWidget {
           ChoiceChip(
             label: Text(l10n.filterAll),
             selected: !archivedOnly,
-            onSelected: (_) =>
-                ref.read(archivedFilterProvider.notifier).state = false,
+            onSelected: (_) {
+                ref.read(analyticsProvider).logEvent(
+                  name: 'filter_changed',
+                  parameters: {'filter': 'active'},
+                );
+                ref.read(archivedFilterProvider.notifier).state = false;
+              },
           ),
           const SizedBox(width: AppSizes.sm),
           ChoiceChip(
             label: Text(l10n.filterArchived),
             selected: archivedOnly,
-            onSelected: (_) =>
-                ref.read(archivedFilterProvider.notifier).state = true,
+            onSelected: (_) {
+                ref.read(analyticsProvider).logEvent(
+                  name: 'filter_changed',
+                  parameters: {'filter': 'archived'},
+                );
+                ref.read(archivedFilterProvider.notifier).state = true;
+              },
           ),
         ],
       ),

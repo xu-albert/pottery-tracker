@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
@@ -96,13 +97,18 @@ class _PhotoGalleryState extends State<PhotoGallery> {
                 child: Column(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              PhotoFullscreen(photoPath: photo.localPath),
-                        ),
-                      ),
+                      onTap: () {
+                        FirebaseAnalytics.instance.logEvent(
+                          name: 'photo_viewed_fullscreen',
+                        );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                PhotoFullscreen(photoPath: photo.localPath),
+                          ),
+                        );
+                      },
                       onLongPress: () => _showPhotoActions(photo),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(AppSizes.radiusMd),

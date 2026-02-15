@@ -1,15 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:pottery_tracker/features/album/widgets/filter_chips.dart';
+import 'package:pottery_tracker/providers/analytics_provider.dart';
 import 'package:pottery_tracker/providers/pieces_provider.dart';
 
+import '../../../helpers/mock_providers.dart';
 import '../../../helpers/test_helpers.dart';
 
 void main() {
+  late MockFirebaseAnalytics mockAnalytics;
+
+  setUp(() {
+    mockAnalytics = MockFirebaseAnalytics();
+    when(() => mockAnalytics.logEvent(
+          name: any(named: 'name'),
+          parameters: any(named: 'parameters'),
+        )).thenAnswer((_) async {});
+  });
+
   group('FilterChips', () {
     testWidgets('Active is selected by default', (tester) async {
-      await pumpApp(tester, const FilterChips());
+      await pumpApp(tester, const FilterChips(),
+          overrides: [analyticsProvider.overrideWithValue(mockAnalytics)]);
 
       final activeChip = tester.widget<ChoiceChip>(
         find.widgetWithText(ChoiceChip, 'Active'),
@@ -30,6 +44,7 @@ void main() {
           capturedRef = ref;
           return const FilterChips();
         }),
+        overrides: [analyticsProvider.overrideWithValue(mockAnalytics)],
       );
 
       await tester.tap(find.widgetWithText(ChoiceChip, 'Archive'));
@@ -47,6 +62,7 @@ void main() {
           capturedRef = ref;
           return const FilterChips();
         }),
+        overrides: [analyticsProvider.overrideWithValue(mockAnalytics)],
       );
 
       // Tap Archive first

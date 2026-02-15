@@ -357,6 +357,37 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ---
 
+## 11. Firebase Analytics & Crashlytics
+
+### Analytics Events
+- [ ] `sign_in_attempted` — fires when user taps Google or Apple sign-in button (with `method` parameter)
+- [ ] `sign_in_skipped` — fires when user taps "Skip for now"
+- [ ] `filter_changed` — fires when user switches between Active/Archive filter chips (with `filter` parameter)
+- [ ] `photo_viewed_fullscreen` — fires when user taps a photo to view fullscreen
+- [ ] `photo_reorder_saved` — fires when user saves a new photo order (with `photo_count` parameter)
+- [ ] `material_created` — fires when user creates a new clay, glaze, or tag (with `material_type` parameter)
+- [ ] `piece_created` — fires when a new piece is created
+- [ ] `piece_deleted` — fires when a piece is deleted
+- [ ] `piece_archived` — fires when a piece is archived
+- [ ] `piece_unarchived` — fires when a piece is unarchived
+- [ ] `photo_added` — fires when a photo is added to a piece
+
+### Screen Tracking
+- [ ] Auto screen tracking logs screen changes via `FirebaseAnalyticsObserver` on GoRouter
+
+### Crashlytics
+- [ ] Test crash button visible in Settings under "Debug" section
+- [ ] Tapping "Test Crash" triggers a `FirebaseCrashlytics.instance.crash()`
+- [ ] Uncaught Flutter errors reported via `FlutterError.onError`
+- [ ] Uncaught platform errors reported via `PlatformDispatcher.instance.onError`
+
+### Verification
+- [ ] All analytics events fire without errors (no crashes or exceptions)
+- [ ] Events visible in Firebase Console (DebugView) after ~24h or via debug mode
+- [ ] Crashlytics test crash appears in Firebase Console
+
+---
+
 ## Changelog
 
 | Date       | Change |
@@ -386,3 +417,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Swipe-to-archive: left-swipe on album rows with teal background, haptic feedback, and 4-second undo snackbar |
 | 2026-02-14 | Archive thumbnail titles: bottom-right title overlay with gradient fade on archive grid thumbnails |
 | 2026-02-14 | Widget tests: 20 automated tests across 6 files covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings |
+| 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |

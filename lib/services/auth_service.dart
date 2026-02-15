@@ -6,47 +6,67 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+class SignInCancelledException implements Exception {}
+
+class AccountAlreadyLinkedException implements Exception {}
+
 class AuthService {
   final _firebaseAuth = FirebaseAuth.instance;
   final _googleSignIn = GoogleSignIn();
 
   User? get currentUser => _firebaseAuth.currentUser;
 
-  Future<User> signInWithGoogle() async {
+  Future<AuthCredential> _getGoogleCredential() async {
     final googleUser = await _googleSignIn.signIn();
     if (googleUser == null) {
-      throw Exception('Google sign-in was cancelled');
+      throw SignInCancelledException();
     }
 
     final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
+    return GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
+  }
 
+  Future<(OAuthCredential, AuthorizationCredentialAppleID)> _getAppleCredential() async {
+    final rawNonce = _generateNonce();
+    final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
+    final AuthorizationCredentialAppleID appleCredential;
+    try {
+      appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        throw SignInCancelledException();
+      }
+      rethrow;
+    }
+
+    final oauthCredential = OAuthProvider('apple.com').credential(
+      idToken: appleCredential.identityToken,
+      rawNonce: rawNonce,
+      accessToken: appleCredential.authorizationCode,
+    );
+
+    return (oauthCredential, appleCredential);
+  }
+
+  Future<User> signInWithGoogle() async {
+    final credential = await _getGoogleCredential();
     final userCredential =
         await _firebaseAuth.signInWithCredential(credential);
     return userCredential.user!;
   }
 
   Future<User> signInWithApple() async {
-    // Generate a nonce for security
-    final rawNonce = _generateNonce();
-    final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
-
-    final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: [
-        AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName,
-      ],
-      nonce: hashedNonce,
-    );
-
-    final oauthCredential = OAuthProvider('apple.com').credential(
-      idToken: appleCredential.identityToken,
-      rawNonce: rawNonce,
-    );
-
+    final (oauthCredential, appleCredential) = await _getAppleCredential();
     final userCredential =
         await _firebaseAuth.signInWithCredential(oauthCredential);
 
@@ -64,6 +84,38 @@ class AuthService {
     }
 
     return user;
+  }
+
+  Future<void> linkGoogle() async {
+    final credential = await _getGoogleCredential();
+    try {
+      await currentUser!.linkWithCredential(credential);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'credential-already-in-use') {
+        throw AccountAlreadyLinkedException();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> linkApple() async {
+    final (oauthCredential, _) = await _getAppleCredential();
+    try {
+      await currentUser!.linkWithCredential(oauthCredential);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'credential-already-in-use') {
+        throw AccountAlreadyLinkedException();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> unlinkGoogle() async {
+    await currentUser!.unlink('google.com');
+  }
+
+  Future<void> unlinkApple() async {
+    await currentUser!.unlink('apple.com');
   }
 
   Future<void> signOut() async {

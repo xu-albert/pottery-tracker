@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
 import '../../../providers/database_provider.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../../../services/image_service.dart';
 
@@ -180,6 +181,10 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
     }
 
     HapticFeedback.lightImpact();
+    ref.read(analyticsProvider).logEvent(
+      name: 'piece_created',
+      parameters: {'photo_count': results.length},
+    );
     if (mounted) context.go('/piece/$pieceId');
   }
 
