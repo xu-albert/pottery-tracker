@@ -279,6 +279,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
   Future<void> _addMultiplePhotos() async {
     final l10n = AppLocalizations.of(context)!;
+    var dialogOpen = false;
     try {
       final imageService = ref.read(imageServiceProvider);
       final picked = await imageService.pickMultipleImages();
@@ -290,6 +291,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         barrierDismissible: false,
         builder: (_) => _BatchProgressDialog(total: picked.length),
       );
+      dialogOpen = true;
 
       final photosDao = ref.read(photosDaoProvider);
       final piecesDao = ref.read(piecesDaoProvider);
@@ -329,6 +331,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
       // Dismiss progress dialog
       if (mounted) Navigator.of(context).pop();
+      dialogOpen = false;
 
       // Set last photo as cover
       if (lastPhotoId != null) {
@@ -352,8 +355,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         );
       }
     } catch (e) {
-      // Dismiss progress dialog if open
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      // Dismiss progress dialog only if it was shown
+      if (dialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not add photos: $e')),

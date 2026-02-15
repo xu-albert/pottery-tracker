@@ -28,8 +28,10 @@ class AlbumScreen extends ConsumerWidget {
               data: (pieces) {
                 if (pieces.isEmpty) return const EmptyState();
                 final isArchived = ref.watch(archivedFilterProvider);
+                final viewMode = ref.watch(viewModeProvider);
                 return AlbumGrid(
                   pieces: pieces,
+                  viewMode: viewMode,
                   isArchived: isArchived,
                 );
               },

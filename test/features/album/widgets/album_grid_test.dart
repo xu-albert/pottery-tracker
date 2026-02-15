@@ -10,6 +10,7 @@ import 'package:pottery_tracker/providers/analytics_provider.dart';
 import 'package:pottery_tracker/providers/database_provider.dart';
 import 'package:pottery_tracker/providers/materials_provider.dart';
 import 'package:pottery_tracker/providers/photos_provider.dart';
+import 'package:pottery_tracker/providers/pieces_provider.dart';
 
 import '../../../helpers/fixtures.dart';
 import '../../../helpers/mock_providers.dart';
@@ -46,7 +47,7 @@ void main() {
 
       await pumpApp(
         tester,
-        AlbumGrid(pieces: pieces, isArchived: false),
+        AlbumGrid(pieces: pieces, viewMode: ViewMode.list, isArchived: false),
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
@@ -71,7 +72,7 @@ void main() {
 
       await pumpApp(
         tester,
-        AlbumGrid(pieces: pieces, isArchived: false),
+        AlbumGrid(pieces: pieces, viewMode: ViewMode.list, isArchived: false),
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
@@ -104,7 +105,7 @@ void main() {
 
       await pumpApp(
         tester,
-        AlbumGrid(pieces: pieces, isArchived: false),
+        AlbumGrid(pieces: pieces, viewMode: ViewMode.list, isArchived: false),
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
@@ -142,7 +143,7 @@ void main() {
 
       await pumpApp(
         tester,
-        AlbumGrid(pieces: pieces, isArchived: true),
+        AlbumGrid(pieces: pieces, viewMode: ViewMode.grid, isArchived: true),
       );
 
       expect(find.byType(ArchiveThumbnail), findsNWidgets(2));
