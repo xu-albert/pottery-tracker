@@ -49,20 +49,6 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/settings',
                 builder: (context, state) => const SettingsScreen(),
-                routes: [
-                  GoRoute(
-                    path: 'clays',
-                    builder: (context, state) => const ManageClaysScreen(),
-                  ),
-                  GoRoute(
-                    path: 'glazes',
-                    builder: (context, state) => const ManageGlazesScreen(),
-                  ),
-                  GoRoute(
-                    path: 'tags',
-                    builder: (context, state) => const ManageTagsScreen(),
-                  ),
-                ],
               ),
             ],
           ),
@@ -71,6 +57,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/create',
         builder: (context, state) => const CreatePieceScreen(),
+      ),
+      GoRoute(
+        path: '/settings/clays',
+        builder: (context, state) => const ManageClaysScreen(),
+      ),
+      GoRoute(
+        path: '/settings/glazes',
+        builder: (context, state) => const ManageGlazesScreen(),
+      ),
+      GoRoute(
+        path: '/settings/tags',
+        builder: (context, state) => const ManageTagsScreen(),
       ),
       GoRoute(
         path: '/piece/:id',

@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
 
@@ -217,6 +219,68 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildSyncTile(
+      BuildContext context, WidgetRef ref, AppLocalizations l10n, AuthState auth) {
+    if (!auth.isSignedIn) {
+      return ListTile(
+        leading: const Icon(Icons.cloud_off),
+        title: Text(l10n.syncDisabled),
+      );
+    }
+
+    final syncState = ref.watch(syncStateProvider);
+
+    final IconData icon;
+    final String title;
+    String? subtitle;
+    Widget? trailing;
+
+    switch (syncState.status) {
+      case SyncStatus.syncing:
+        icon = Icons.cloud_sync;
+        title = l10n.syncSyncing;
+        trailing = const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      case SyncStatus.idle:
+        if (syncState.pendingCount > 0) {
+          icon = Icons.cloud_upload;
+          title = l10n.syncPending(syncState.pendingCount);
+        } else {
+          icon = Icons.cloud_done;
+          title = l10n.syncBackedUp;
+        }
+        if (syncState.lastSyncedAt != null) {
+          subtitle = l10n.syncLastSynced(
+              DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!));
+        }
+        trailing = TextButton(
+          onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+          child: Text(l10n.syncNow),
+        );
+      case SyncStatus.error:
+        icon = Icons.cloud_off;
+        title = l10n.syncError;
+        subtitle = syncState.errorMessage;
+        trailing = TextButton(
+          onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+          child: Text(l10n.syncNow),
+        );
+      case SyncStatus.disabled:
+        icon = Icons.cloud_off;
+        title = l10n.syncDisabled;
+    }
+
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: subtitle != null ? Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis) : null,
+      trailing: trailing,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -232,19 +296,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.terrain),
             title: Text(l10n.manageClays),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/clays'),
+            onTap: () => context.push('/settings/clays'),
           ),
           ListTile(
             leading: const Icon(Icons.format_paint),
             title: Text(l10n.manageGlazes),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/glazes'),
+            onTap: () => context.push('/settings/glazes'),
           ),
           ListTile(
             leading: const Icon(Icons.label_outline),
             title: Text(l10n.manageTags),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/tags'),
+            onTap: () => context.push('/settings/tags'),
           ),
           const Divider(),
 
@@ -297,12 +361,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           const Divider(),
 
-          // Sync section
-          _SectionHeader(title: l10n.syncStatus),
-          ListTile(
-            leading: const Icon(Icons.cloud_off),
-            title: Text(l10n.syncComingSoon),
-          ),
+          // Cloud Backup section
+          _SectionHeader(title: l10n.cloudBackup),
+          _buildSyncTile(context, ref, l10n, auth),
           const Divider(),
 
           // Support
