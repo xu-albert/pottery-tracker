@@ -31,6 +31,13 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # In Xcode Cloud, www.sqlite.org is unreachable (restricted network).
+  # Override the sqlite3 pod to use the system SQLite library instead of
+  # downloading and compiling from source.
+  if ENV['CI_XCODE_CLOUD']
+    pod 'sqlite3', :podspec => 'LocalPodspecs/sqlite3.podspec'
+  end
   target 'RunnerTests' do
     inherit! :search_paths
   end
