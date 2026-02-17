@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/auth_provider.dart';
-import '../../../services/auth_service.dart' show AuthService, SignInCancelledException;
+import '../../../services/auth_service.dart'
+    show AuthService, SignInCancelledException;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 
@@ -21,10 +22,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
   Future<void> _signInWithGoogle() async {
     if (_loading) return;
-    ref.read(analyticsProvider).logEvent(
-      name: 'sign_in_attempted',
-      parameters: {'method': 'google'},
-    );
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: 'sign_in_attempted', parameters: {'method': 'google'});
     setState(() => _loading = true);
     try {
       final user = await _authService.signInWithGoogle();
@@ -36,14 +36,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.signInCancelled)),
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.signInCancelled),
+            ),
           );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -52,10 +54,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
   Future<void> _signInWithApple() async {
     if (_loading) return;
-    ref.read(analyticsProvider).logEvent(
-      name: 'sign_in_attempted',
-      parameters: {'method': 'apple'},
-    );
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: 'sign_in_attempted', parameters: {'method': 'apple'});
     setState(() => _loading = true);
     try {
       final user = await _authService.signInWithApple();
@@ -67,14 +68,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.signInCancelled)),
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.signInCancelled),
+            ),
           );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -103,16 +106,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               Text(
                 l10n.signInTitle,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: AppColors.charcoal,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: AppColors.charcoal,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: AppSizes.sm),
               Text(
                 l10n.signInSubtitle,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppColors.charcoal.withValues(alpha: 0.7),
-                    ),
+                  color: AppColors.charcoal.withValues(alpha: 0.7),
+                ),
               ),
               const Spacer(),
               ElevatedButton.icon(
@@ -142,7 +145,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 onPressed: _loading
                     ? null
                     : () {
-                        ref.read(analyticsProvider).logEvent(name: 'sign_in_skipped');
+                        ref
+                            .read(analyticsProvider)
+                            .logEvent(name: 'sign_in_skipped');
                         ref.read(authProvider.notifier).skip();
                       },
                 child: Text(l10n.skipForNow),

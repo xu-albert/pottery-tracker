@@ -19,7 +19,8 @@ class MetadataForm extends StatefulWidget {
     bool clearStage,
     String? clayType,
     String? notes,
-  }) onUpdateField;
+  })
+  onUpdateField;
   final void Function(List<String> glazeOptionIds) onUpdateGlazes;
   final void Function(List<String> tagOptionIds) onUpdateTags;
 
@@ -88,19 +89,21 @@ class MetadataFormState extends State<MetadataForm> {
             onPressed: () => Navigator.of(ctx).pop(''),
             child: Text(l10n.stageNone),
           ),
-          ...clays.map((c) => CupertinoActionSheetAction(
-                onPressed: () => Navigator.of(ctx).pop(c.name),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(c.name),
-                    if (c.name == widget.piece.clayType) ...[
-                      const SizedBox(width: 8),
-                      const Icon(CupertinoIcons.checkmark_alt, size: 18),
-                    ],
+          ...clays.map(
+            (c) => CupertinoActionSheetAction(
+              onPressed: () => Navigator.of(ctx).pop(c.name),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(c.name),
+                  if (c.name == widget.piece.clayType) ...[
+                    const SizedBox(width: 8),
+                    const Icon(CupertinoIcons.checkmark_alt, size: 18),
                   ],
-                ),
-              )),
+                ],
+              ),
+            ),
+          ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.of(ctx).pop('__add_new__'),
             child: Row(
@@ -199,8 +202,10 @@ class MetadataFormState extends State<MetadataForm> {
                 children: [
                   // Header
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -225,19 +230,21 @@ class MetadataFormState extends State<MetadataForm> {
                     },
                   ),
                   // Glaze options
-                  ...allGlazes.map((glaze) => CheckboxListTile(
-                        title: Text(glaze.name),
-                        value: selectedIds.contains(glaze.id),
-                        onChanged: (checked) {
-                          setSheetState(() {
-                            if (checked == true) {
-                              selectedIds.add(glaze.id);
-                            } else {
-                              selectedIds.remove(glaze.id);
-                            }
-                          });
-                        },
-                      )),
+                  ...allGlazes.map(
+                    (glaze) => CheckboxListTile(
+                      title: Text(glaze.name),
+                      value: selectedIds.contains(glaze.id),
+                      onChanged: (checked) {
+                        setSheetState(() {
+                          if (checked == true) {
+                            selectedIds.add(glaze.id);
+                          } else {
+                            selectedIds.remove(glaze.id);
+                          }
+                        });
+                      },
+                    ),
+                  ),
                   const Divider(height: 1),
                   // Add new
                   ListTile(
@@ -247,8 +254,8 @@ class MetadataFormState extends State<MetadataForm> {
                       final newGlaze = await _showAddGlazeDialog();
                       if (newGlaze != null) {
                         // Refresh the list and add the new glaze to selection
-                        final refreshed =
-                            await widget.materialsDao.getAllGlazes();
+                        final refreshed = await widget.materialsDao
+                            .getAllGlazes();
                         setSheetState(() {
                           allGlazes
                             ..clear()
@@ -338,8 +345,10 @@ class MetadataFormState extends State<MetadataForm> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -362,38 +371,40 @@ class MetadataFormState extends State<MetadataForm> {
                       setSheetState(() => selectedIds.clear());
                     },
                   ),
-                  ...allTags.map((tag) => CheckboxListTile(
-                        title: Row(
-                          children: [
-                            if (tag.color != null) ...[
-                              Container(
-                                width: 14,
-                                height: 14,
-                                decoration: BoxDecoration(
-                                  color: TagColorPresets.hexToColor(tag.color!),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppColors.divider,
-                                    width: 1,
-                                  ),
+                  ...allTags.map(
+                    (tag) => CheckboxListTile(
+                      title: Row(
+                        children: [
+                          if (tag.color != null) ...[
+                            Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: TagColorPresets.hexToColor(tag.color!),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AppColors.divider,
+                                  width: 1,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                            ],
-                            Text(tag.name),
+                            ),
+                            const SizedBox(width: 8),
                           ],
-                        ),
-                        value: selectedIds.contains(tag.id),
-                        onChanged: (checked) {
-                          setSheetState(() {
-                            if (checked == true) {
-                              selectedIds.add(tag.id);
-                            } else {
-                              selectedIds.remove(tag.id);
-                            }
-                          });
-                        },
-                      )),
+                          Text(tag.name),
+                        ],
+                      ),
+                      value: selectedIds.contains(tag.id),
+                      onChanged: (checked) {
+                        setSheetState(() {
+                          if (checked == true) {
+                            selectedIds.add(tag.id);
+                          } else {
+                            selectedIds.remove(tag.id);
+                          }
+                        });
+                      },
+                    ),
+                  ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(CupertinoIcons.add),
@@ -401,8 +412,8 @@ class MetadataFormState extends State<MetadataForm> {
                     onTap: () async {
                       final newTag = await _showAddTagDialog();
                       if (newTag != null) {
-                        final refreshed =
-                            await widget.materialsDao.getAllTags();
+                        final refreshed = await widget.materialsDao
+                            .getAllTags();
                         setSheetState(() {
                           allTags
                             ..clear()
@@ -502,10 +513,9 @@ class MetadataFormState extends State<MetadataForm> {
                 value: null,
                 child: Text(l10n.stageNone),
               ),
-              ...PieceStage.values.map((s) => DropdownMenuItem(
-                    value: s,
-                    child: Text(s.displayName),
-                  )),
+              ...PieceStage.values.map(
+                (s) => DropdownMenuItem(value: s, child: Text(s.displayName)),
+              ),
             ],
             onChanged: (value) {
               if (value == null) {

@@ -37,9 +37,7 @@ class ImageService {
   }
 
   Future<List<XFile>?> pickMultipleImages() async {
-    final picked = await _picker.pickMultiImage(
-      requestFullMetadata: false,
-    );
+    final picked = await _picker.pickMultiImage(requestFullMetadata: false);
     if (picked.isEmpty) return null;
     return picked;
   }
@@ -95,7 +93,8 @@ class ImageService {
   DateTime _extractDateFromBytes(Uint8List bytes) {
     try {
       final tags = readExifFromBytes(bytes) as Map<String, IfdTag>;
-      final dateTag = tags['EXIF DateTimeOriginal']?.toString() ??
+      final dateTag =
+          tags['EXIF DateTimeOriginal']?.toString() ??
           tags['Image DateTime']?.toString();
       if (dateTag != null && dateTag.length >= 19) {
         final datePart = dateTag.substring(0, 10).replaceAll(':', '-');

@@ -51,16 +51,15 @@ class ViewModeToggle extends ConsumerWidget {
               height: _height,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.35),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
                 borderRadius: BorderRadius.circular(_radius),
               ),
               child: Stack(
                 children: [
                   AnimatedAlign(
-                    alignment:
-                        isGrid ? Alignment.centerRight : Alignment.centerLeft,
+                    alignment: isGrid
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeInOut,
                     child: Padding(
@@ -113,10 +112,9 @@ class ViewModeToggle extends ConsumerWidget {
   void _setMode(WidgetRef ref, ViewMode mode) {
     if (ref.read(viewModeProvider) == mode) return;
     ref.read(viewModeProvider.notifier).state = mode;
-    ref.read(analyticsProvider).logEvent(
-      name: 'view_mode_changed',
-      parameters: {'mode': mode.name},
-    );
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: 'view_mode_changed', parameters: {'mode': mode.name});
     SharedPreferences.getInstance().then((prefs) {
       prefs.setString('view_mode', mode.name);
     });

@@ -100,9 +100,9 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
       await _savePiece(pieceId, [result]);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not capture photo: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not capture photo: $e')));
         context.pop();
       }
     }
@@ -145,9 +145,9 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
       await _savePiece(pieceId, results);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photos: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not add photos: $e')));
         context.pop();
       }
     }
@@ -160,32 +160,38 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
 
     final title = await _nextUntitledName(piecesDao);
 
-    await piecesDao.insertPiece(PiecesCompanion(
-      id: Value(pieceId),
-      title: Value(title),
-      coverPhotoId: Value(results.last.photoId),
-      createdAt: Value(now),
-      updatedAt: Value(now),
-    ));
+    await piecesDao.insertPiece(
+      PiecesCompanion(
+        id: Value(pieceId),
+        title: Value(title),
+        coverPhotoId: Value(results.last.photoId),
+        createdAt: Value(now),
+        updatedAt: Value(now),
+      ),
+    );
 
     for (var i = 0; i < results.length; i++) {
       final result = results[i];
-      await photosDao.insertPhoto(PhotosCompanion(
-        id: Value(result.photoId),
-        pieceId: Value(pieceId),
-        localPath: Value(result.localPath),
-        thumbnailPath: Value(result.thumbnailPath),
-        dateTaken: Value(result.dateTaken),
-        createdAt: Value(now),
-        sortOrder: Value(i),
-      ));
+      await photosDao.insertPhoto(
+        PhotosCompanion(
+          id: Value(result.photoId),
+          pieceId: Value(pieceId),
+          localPath: Value(result.localPath),
+          thumbnailPath: Value(result.thumbnailPath),
+          dateTaken: Value(result.dateTaken),
+          createdAt: Value(now),
+          sortOrder: Value(i),
+        ),
+      );
     }
 
     HapticFeedback.lightImpact();
-    ref.read(analyticsProvider).logEvent(
-      name: 'piece_created',
-      parameters: {'photo_count': results.length},
-    );
+    ref
+        .read(analyticsProvider)
+        .logEvent(
+          name: 'piece_created',
+          parameters: {'photo_count': results.length},
+        );
     final trigger = ref.read(syncTriggerProvider);
     await trigger.afterPieceWrite(pieceId);
     for (final result in results) {

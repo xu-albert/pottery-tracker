@@ -9,12 +9,10 @@ part 'pieces_dao.g.dart';
 class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
   PiecesDao(super.db);
 
-  Future<void> insertPiece(PiecesCompanion piece) =>
-      into(pieces).insert(piece);
+  Future<void> insertPiece(PiecesCompanion piece) => into(pieces).insert(piece);
 
   Future<void> updatePiece(PiecesCompanion piece) =>
-      (update(pieces)..where((p) => p.id.equals(piece.id.value)))
-          .write(piece);
+      (update(pieces)..where((p) => p.id.equals(piece.id.value))).write(piece);
 
   Future<void> deletePiece(String id) =>
       (delete(pieces)..where((p) => p.id.equals(id))).go();
@@ -33,9 +31,9 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
     String? searchQuery,
     bool archivedOnly = false,
   }) {
-    final pieceQuery = select(pieces).join([
-      leftOuterJoin(photos, photos.id.equalsExp(pieces.coverPhotoId)),
-    ]);
+    final pieceQuery = select(
+      pieces,
+    ).join([leftOuterJoin(photos, photos.id.equalsExp(pieces.coverPhotoId))]);
 
     if (searchQuery != null && searchQuery.isNotEmpty) {
       final q = '%$searchQuery%';
@@ -57,12 +55,14 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
 
     pieceQuery.orderBy([OrderingTerm.desc(pieces.updatedAt)]);
 
-    return pieceQuery.watch().map((rows) => rows.map((row) {
-          return PieceWithCover(
-            piece: row.readTable(pieces),
-            coverPhoto: row.readTableOrNull(photos),
-          );
-        }).toList());
+    return pieceQuery.watch().map(
+      (rows) => rows.map((row) {
+        return PieceWithCover(
+          piece: row.readTable(pieces),
+          coverPhoto: row.readTableOrNull(photos),
+        );
+      }).toList(),
+    );
   }
 }
 

@@ -16,31 +16,37 @@ class FilterChips extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.md, vertical: AppSizes.sm),
+        horizontal: AppSizes.md,
+        vertical: AppSizes.sm,
+      ),
       child: Row(
         children: [
           ChoiceChip(
             label: Text(l10n.filterAll),
             selected: !archivedOnly,
             onSelected: (_) {
-                ref.read(analyticsProvider).logEvent(
-                  name: 'filter_changed',
-                  parameters: {'filter': 'active'},
-                );
-                ref.read(archivedFilterProvider.notifier).state = false;
-              },
+              ref
+                  .read(analyticsProvider)
+                  .logEvent(
+                    name: 'filter_changed',
+                    parameters: {'filter': 'active'},
+                  );
+              ref.read(archivedFilterProvider.notifier).state = false;
+            },
           ),
           const SizedBox(width: AppSizes.sm),
           ChoiceChip(
             label: Text(l10n.filterArchived),
             selected: archivedOnly,
             onSelected: (_) {
-                ref.read(analyticsProvider).logEvent(
-                  name: 'filter_changed',
-                  parameters: {'filter': 'archived'},
-                );
-                ref.read(archivedFilterProvider.notifier).state = true;
-              },
+              ref
+                  .read(analyticsProvider)
+                  .logEvent(
+                    name: 'filter_changed',
+                    parameters: {'filter': 'archived'},
+                  );
+              ref.read(archivedFilterProvider.notifier).state = true;
+            },
           ),
           const Spacer(),
           const ViewModeToggle(),

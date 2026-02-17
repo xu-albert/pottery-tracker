@@ -33,8 +33,8 @@ class ManageGlazesScreen extends ConsumerWidget {
               child: Text(
                 l10n.noGlazesYet,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             );
           }
@@ -95,8 +95,10 @@ class ManageGlazesScreen extends ConsumerWidget {
                         index: index,
                         child: const Padding(
                           padding: EdgeInsets.all(AppSizes.sm),
-                          child: Icon(Icons.drag_handle,
-                              color: AppColors.inputText),
+                          child: Icon(
+                            Icons.drag_handle,
+                            color: AppColors.inputText,
+                          ),
                         ),
                       ),
                       const SizedBox(width: AppSizes.sm),
@@ -130,7 +132,10 @@ class ManageGlazesScreen extends ConsumerWidget {
   }
 
   Future<void> _showAddDialog(
-      BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
     final controller = TextEditingController();
     final name = await showCupertinoDialog<String>(
       context: context,
@@ -167,8 +172,12 @@ class ManageGlazesScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _showEditDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, GlazeOption glaze) async {
+  Future<void> _showEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    GlazeOption glaze,
+  ) async {
     final controller = TextEditingController(text: glaze.name);
     final newName = await showCupertinoDialog<String>(
       context: context,
@@ -206,8 +215,12 @@ class ManageGlazesScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _showDeleteDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, GlazeOption glaze) async {
+  Future<void> _showDeleteDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    GlazeOption glaze,
+  ) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(

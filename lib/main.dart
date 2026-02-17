@@ -43,13 +43,12 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final savedMode = prefs.getString('view_mode');
-  final initialViewMode =
-      savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
+  final initialViewMode = savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
 
-  runApp(ProviderScope(
-    overrides: [
-      viewModeProvider.overrideWith((ref) => initialViewMode),
-    ],
-    child: const PotteryTrackerApp(),
-  ));
+  runApp(
+    ProviderScope(
+      overrides: [viewModeProvider.overrideWith((ref) => initialViewMode)],
+      child: const PotteryTrackerApp(),
+    ),
+  );
 }

@@ -53,12 +53,6 @@ Photo makePhoto({
   );
 }
 
-PieceWithCover makePieceWithCover({
-  Piece? piece,
-  Photo? coverPhoto,
-}) {
-  return PieceWithCover(
-    piece: piece ?? makePiece(),
-    coverPhoto: coverPhoto,
-  );
+PieceWithCover makePieceWithCover({Piece? piece, Photo? coverPhoto}) {
+  return PieceWithCover(piece: piece ?? makePiece(), coverPhoto: coverPhoto);
 }

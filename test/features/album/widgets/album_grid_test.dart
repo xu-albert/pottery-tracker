@@ -21,28 +21,36 @@ void main() {
   late MockFirebaseAnalytics mockAnalytics;
 
   setUpAll(() {
-    registerFallbackValue(PiecesCompanion(
-      id: const Value(''),
-      isArchived: const Value(false),
-      updatedAt: Value(DateTime.now()),
-    ));
+    registerFallbackValue(
+      PiecesCompanion(
+        id: const Value(''),
+        isArchived: const Value(false),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
   });
 
   setUp(() {
     mockPiecesDao = MockPiecesDao();
     when(() => mockPiecesDao.updatePiece(any())).thenAnswer((_) async {});
     mockAnalytics = MockFirebaseAnalytics();
-    when(() => mockAnalytics.logEvent(
-          name: any(named: 'name'),
-          parameters: any(named: 'parameters'),
-        )).thenAnswer((_) async {});
+    when(
+      () => mockAnalytics.logEvent(
+        name: any(named: 'name'),
+        parameters: any(named: 'parameters'),
+      ),
+    ).thenAnswer((_) async {});
   });
 
   group('AlbumGrid - Active view', () {
     testWidgets('renders list items (PieceRow)', (tester) async {
       final pieces = [
-        makePieceWithCover(piece: makePiece(id: 'p1', title: 'Bowl')),
-        makePieceWithCover(piece: makePiece(id: 'p2', title: 'Mug')),
+        makePieceWithCover(
+          piece: makePiece(id: 'p1', title: 'Bowl'),
+        ),
+        makePieceWithCover(
+          piece: makePiece(id: 'p2', title: 'Mug'),
+        ),
       ];
 
       await pumpApp(
@@ -52,10 +60,12 @@ void main() {
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
-          photosForPieceProvider('p1')
-              .overrideWith((ref) => Stream.value(<Photo>[])),
-          photosForPieceProvider('p2')
-              .overrideWith((ref) => Stream.value(<Photo>[])),
+          photosForPieceProvider(
+            'p1',
+          ).overrideWith((ref) => Stream.value(<Photo>[])),
+          photosForPieceProvider(
+            'p2',
+          ).overrideWith((ref) => Stream.value(<Photo>[])),
         ],
       );
 
@@ -64,10 +74,13 @@ void main() {
       expect(find.text('Mug'), findsOneWidget);
     });
 
-    testWidgets('swipe-to-archive calls dao.updatePiece and shows snackbar',
-        (tester) async {
+    testWidgets('swipe-to-archive calls dao.updatePiece and shows snackbar', (
+      tester,
+    ) async {
       final pieces = [
-        makePieceWithCover(piece: makePiece(id: 'p1', title: 'My Bowl')),
+        makePieceWithCover(
+          piece: makePiece(id: 'p1', title: 'My Bowl'),
+        ),
       ];
 
       await pumpApp(
@@ -77,8 +90,9 @@ void main() {
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
-          photosForPieceProvider('p1')
-              .overrideWith((ref) => Stream.value(<Photo>[])),
+          photosForPieceProvider(
+            'p1',
+          ).overrideWith((ref) => Stream.value(<Photo>[])),
         ],
       );
 
@@ -87,8 +101,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify dao was called with isArchived: true
-      final captured =
-          verify(() => mockPiecesDao.updatePiece(captureAny())).captured;
+      final captured = verify(
+        () => mockPiecesDao.updatePiece(captureAny()),
+      ).captured;
       expect(captured, hasLength(1));
       final companion = captured.first as PiecesCompanion;
       expect(companion.id.value, equals('p1'));
@@ -100,7 +115,9 @@ void main() {
 
     testWidgets('undo button reverses the archive', (tester) async {
       final pieces = [
-        makePieceWithCover(piece: makePiece(id: 'p1', title: 'My Bowl')),
+        makePieceWithCover(
+          piece: makePiece(id: 'p1', title: 'My Bowl'),
+        ),
       ];
 
       await pumpApp(
@@ -110,8 +127,9 @@ void main() {
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
-          photosForPieceProvider('p1')
-              .overrideWith((ref) => Stream.value(<Photo>[])),
+          photosForPieceProvider(
+            'p1',
+          ).overrideWith((ref) => Stream.value(<Photo>[])),
         ],
       );
 
@@ -123,8 +141,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Second call should set isArchived: false
-      final captured =
-          verify(() => mockPiecesDao.updatePiece(captureAny())).captured;
+      final captured = verify(
+        () => mockPiecesDao.updatePiece(captureAny()),
+      ).captured;
       expect(captured, hasLength(2));
       final undoCompanion = captured.last as PiecesCompanion;
       expect(undoCompanion.id.value, equals('p1'));
@@ -136,9 +155,11 @@ void main() {
     testWidgets('renders grid of ArchiveThumbnails', (tester) async {
       final pieces = [
         makePieceWithCover(
-            piece: makePiece(id: 'a1', title: 'Archived 1', isArchived: true)),
+          piece: makePiece(id: 'a1', title: 'Archived 1', isArchived: true),
+        ),
         makePieceWithCover(
-            piece: makePiece(id: 'a2', title: 'Archived 2', isArchived: true)),
+          piece: makePiece(id: 'a2', title: 'Archived 2', isArchived: true),
+        ),
       ];
 
       await pumpApp(

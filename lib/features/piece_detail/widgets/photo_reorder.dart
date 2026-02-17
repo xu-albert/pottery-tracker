@@ -136,7 +136,10 @@ class _PhotoReorderScreenState extends State<PhotoReorderScreen> {
                       index: index,
                       child: const Padding(
                         padding: EdgeInsets.all(AppSizes.sm),
-                        child: Icon(Icons.drag_handle, color: AppColors.inputText),
+                        child: Icon(
+                          Icons.drag_handle,
+                          color: AppColors.inputText,
+                        ),
                       ),
                     ),
                   ],

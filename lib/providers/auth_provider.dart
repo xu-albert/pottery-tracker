@@ -25,8 +25,7 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier()
-      : super(const AuthState(status: AuthStatus.unauthenticated)) {
+  AuthNotifier() : super(const AuthState(status: AuthStatus.unauthenticated)) {
     _init();
   }
 
@@ -56,8 +55,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         } catch (e) {
           debugPrint('Firebase user reload failed, signing out: $e');
           try {
-            await FirebaseAuth.instance.signOut()
-                .timeout(const Duration(seconds: 3));
+            await FirebaseAuth.instance.signOut().timeout(
+              const Duration(seconds: 3),
+            );
           } catch (_) {}
           final prefs = await SharedPreferences.getInstance();
           final completed = prefs.getBool(_onboardingKey) ?? false;

@@ -64,17 +64,17 @@ void main() {
           filteredPiecesProvider.overrideWith(
             (ref) => Stream.value([
               makePieceWithCover(
-                  piece: makePiece(id: 'p1', title: 'My Bowl')),
+                piece: makePiece(id: 'p1', title: 'My Bowl'),
+              ),
               makePieceWithCover(
-                  piece: makePiece(id: 'p2', title: 'My Cup')),
+                piece: makePiece(id: 'p2', title: 'My Cup'),
+              ),
             ]),
           ),
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
-          photosForPieceProvider('p1')
-              .overrideWith((ref) => Stream.value([])),
-          photosForPieceProvider('p2')
-              .overrideWith((ref) => Stream.value([])),
+          photosForPieceProvider('p1').overrideWith((ref) => Stream.value([])),
+          photosForPieceProvider('p2').overrideWith((ref) => Stream.value([])),
         ],
       );
 
