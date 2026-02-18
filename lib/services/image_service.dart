@@ -7,12 +7,13 @@ import 'package:path/path.dart' as p;
 import 'package:exif/exif.dart';
 import 'package:uuid/uuid.dart';
 
-typedef CompressFunction = Future<Uint8List> Function(
-  Uint8List input, {
-  int quality,
-  int minWidth,
-  int minHeight,
-});
+typedef CompressFunction =
+    Future<Uint8List> Function(
+      Uint8List input, {
+      int quality,
+      int minWidth,
+      int minHeight,
+    });
 
 class ImageResult {
   final String photoId;
@@ -34,7 +35,7 @@ class ImageService {
   final CompressFunction _compress;
 
   ImageService({CompressFunction? compress})
-      : _compress = compress ?? FlutterImageCompress.compressWithList;
+    : _compress = compress ?? FlutterImageCompress.compressWithList;
 
   Future<ImageResult?> pickAndProcessImage({
     required ImageSource source,
