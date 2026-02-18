@@ -21,6 +21,72 @@ class SyncService {
       _userDoc(uid).collection(name);
 
   // ════════════════════════════════════════════
+  // Delete all data (for testing)
+  // ════════════════════════════════════════════
+
+  Future<void> deleteAllData(String uid) async {
+    debugPrint('SyncService: deleting ALL data for user $uid');
+
+    // Delete all Firestore subcollections
+    for (final collection in [
+      'pieces', 'photos', 'clays', 'glazes', 'tags',
+      'pieceGlazes', 'pieceTags', 'meta',
+    ]) {
+      final snap = await _col(uid, collection).get();
+      for (final doc in snap.docs) {
+        await doc.reference.delete();
+      }
+      debugPrint('SyncService: deleted ${snap.docs.length} docs from $collection');
+    }
+
+    // Delete all Cloud Storage files
+    try {
+      final storageRef = _storage.ref('users/$uid');
+      final listResult = await storageRef.listAll();
+      for (final prefix in listResult.prefixes) {
+        final subList = await prefix.listAll();
+        for (final subPrefix in subList.prefixes) {
+          final files = await subPrefix.listAll();
+          for (final file in files.items) {
+            await file.delete();
+          }
+        }
+        for (final file in subList.items) {
+          await file.delete();
+        }
+      }
+      for (final file in listResult.items) {
+        await file.delete();
+      }
+      debugPrint('SyncService: deleted all Cloud Storage files');
+    } catch (e) {
+      debugPrint('SyncService: storage cleanup error: $e');
+    }
+
+    // Delete all local data
+    await _db.delete(_db.pieceTags).go();
+    await _db.delete(_db.pieceGlazes).go();
+    await _db.delete(_db.photos).go();
+    await _db.delete(_db.pieces).go();
+    await _db.delete(_db.clayOptions).go();
+    await _db.delete(_db.glazeOptions).go();
+    await _db.delete(_db.tagOptions).go();
+    debugPrint('SyncService: deleted all local data');
+
+    // Delete local photo files
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final photosDir = Directory('${appDir.path}/photos');
+      if (photosDir.existsSync()) {
+        photosDir.deleteSync(recursive: true);
+        debugPrint('SyncService: deleted local photo files');
+      }
+    } catch (e) {
+      debugPrint('SyncService: local file cleanup error: $e');
+    }
+  }
+
+  // ════════════════════════════════════════════
   // Push methods
   // ════════════════════════════════════════════
 
@@ -627,17 +693,51 @@ class SyncService {
   }
 
   // ════════════════════════════════════════════
+  // Photo upload retry (for photos with local files but null cloudUrl)
+  // ════════════════════════════════════════════
+
+  Future<void> retryMissingUploads(String uid) async {
+    final allPhotos = await _db.select(_db.photos).get();
+    final needUpload = allPhotos
+        .where((p) => p.cloudUrl == null && File(p.localPath).existsSync())
+        .toList();
+
+    if (needUpload.isEmpty) {
+      debugPrint('SyncService: no photos need upload retry');
+      return;
+    }
+    debugPrint(
+        'SyncService: ${needUpload.length} photos need upload (have local file, no cloudUrl)');
+
+    for (final photo in needUpload) {
+      try {
+        await uploadPhotoFile(uid, photo.id);
+        debugPrint('SyncService: uploaded missing photo ${photo.id}');
+      } catch (e) {
+        debugPrint('SyncService: upload retry failed for ${photo.id}: $e');
+      }
+    }
+  }
+
+  // ════════════════════════════════════════════
   // Photo download
   // ════════════════════════════════════════════
 
   Future<void> _downloadMissingPhotos(String uid) async {
     final allPhotos = await _db.select(_db.photos).get();
-    final missing = allPhotos
-        .where((p) =>
-            p.cloudUrl != null && !File(p.localPath).existsSync())
-        .toList();
+    final missingLocal =
+        allPhotos.where((p) => !File(p.localPath).existsSync()).toList();
+    final downloadable =
+        missingLocal.where((p) => p.cloudUrl != null).toList();
+    final unrecoverable =
+        missingLocal.where((p) => p.cloudUrl == null).toList();
 
-    debugPrint('SyncService: ${missing.length} photos to download');
+    debugPrint(
+        'SyncService: ${missingLocal.length} photos missing locally '
+        '(${downloadable.length} downloadable, '
+        '${unrecoverable.length} have no cloudUrl — need upload from source device)');
+
+    final missing = downloadable;
 
     // Download in batches of 5
     for (var i = 0; i < missing.length; i += 5) {
@@ -650,15 +750,23 @@ class SyncService {
 
   Future<void> _downloadPhoto(Photo photo) async {
     try {
+      debugPrint('SyncService: downloading photo ${photo.id} from ${photo.cloudUrl}');
       final file = File(photo.localPath);
       await file.parent.create(recursive: true);
 
-      // Download from cloud URL
+      // Download from cloud URL with timeout
       final ref = _storage.refFromURL(photo.cloudUrl!);
-      final data = await ref.getData();
+      final data = await ref.getData().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('SyncService: download timed out for ${photo.id}');
+          return null;
+        },
+      );
       if (data == null) return;
 
       await file.writeAsBytes(data);
+      debugPrint('SyncService: downloaded photo ${photo.id} (${data.length} bytes)');
 
       // Regenerate thumbnail
       final thumbnailPath =

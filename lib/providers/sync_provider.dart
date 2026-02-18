@@ -129,6 +129,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _syncService.pullChangedSince(uid, lastPulled);
       }
 
+      // Retry uploading photos that have local files but no cloudUrl
+      await _syncService.retryMissingUploads(uid);
+
       await _queue.clear();
       state = SyncState(
         status: SyncStatus.idle,
@@ -199,6 +202,28 @@ class SyncNotifier extends StateNotifier<SyncState> {
         final collection = entry.extraData ?? 'clays';
         await _syncService.pushDeletion(
             uid, collection, entry.entityId);
+    }
+  }
+
+  Future<void> deleteAllData() async {
+    final auth = _ref.read(authProvider);
+    if (!auth.isSignedIn || auth.uid == null) return;
+    if (_syncing) return;
+    _syncing = true;
+    state = state.copyWith(status: SyncStatus.syncing);
+
+    try {
+      await _syncService.deleteAllData(auth.uid!);
+      await _queue.clear();
+      state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
+    } catch (e) {
+      debugPrint('SyncNotifier: deleteAllData failed: $e');
+      state = state.copyWith(
+        status: SyncStatus.error,
+        errorMessage: e.toString(),
+      );
+    } finally {
+      _syncing = false;
     }
   }
 
