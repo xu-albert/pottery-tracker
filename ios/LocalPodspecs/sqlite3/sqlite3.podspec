@@ -11,18 +11,13 @@ Pod::Spec.new do |s|
   s.homepage     = 'https://sqlite.org'
   s.license      = { :type => 'Public Domain' }
   s.author       = 'SQLite Authors'
-  s.source       = { :path => '.' }
+  s.source       = { :git => '' }
 
   s.ios.deployment_target = '15.0'
   s.osx.deployment_target = '10.14'
 
   s.libraries = 'sqlite3'
-
-  # Empty source file so CocoaPods has something to compile.
-  # The actual SQLite comes from the system library linked above.
   s.source_files = 'dummy.c'
-  s.preserve_paths = 'dummy.c'
-  s.prepare_command = 'touch dummy.c'
 
   s.subspec 'common' do |ss|
     ss.libraries = 'sqlite3'

@@ -36,7 +36,7 @@ target 'Runner' do
   # Override the sqlite3 pod to use the system SQLite library instead of
   # downloading and compiling from source.
   if ENV['CI_XCODE_CLOUD']
-    pod 'sqlite3', :podspec => 'LocalPodspecs/sqlite3.podspec'
+    pod 'sqlite3', :path => 'LocalPodspecs/sqlite3'
   end
   target 'RunnerTests' do
     inherit! :search_paths
