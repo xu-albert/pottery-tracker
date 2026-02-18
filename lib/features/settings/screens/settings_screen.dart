@@ -410,6 +410,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('Test Crash'),
             onTap: () => FirebaseCrashlytics.instance.crash(),
           ),
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            title: const Text('Delete All Data',
+                style: TextStyle(color: Colors.red)),
+            subtitle: const Text('Deletes local + cloud data'),
+            onTap: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Delete All Data?'),
+                  content: const Text(
+                      'This will permanently delete ALL pieces, photos, and materials from this device AND the cloud. This cannot be undone.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style:
+                          TextButton.styleFrom(foregroundColor: Colors.red),
+                      child: const Text('Delete Everything'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed != true || !context.mounted) return;
+              await ref.read(syncStateProvider.notifier).deleteAllData();
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                    const SnackBar(content: Text('All data deleted')));
+            },
+          ),
         ],
       ),
     );
