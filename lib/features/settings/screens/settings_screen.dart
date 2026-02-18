@@ -412,8 +412,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text('Delete All Data',
-                style: TextStyle(color: Colors.red)),
+            title: const Text(
+              'Delete All Data',
+              style: TextStyle(color: Colors.red),
+            ),
             subtitle: const Text('Deletes local + cloud data'),
             onTap: () async {
               final confirmed = await showDialog<bool>(
@@ -421,7 +423,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 builder: (context) => AlertDialog(
                   title: const Text('Delete All Data?'),
                   content: const Text(
-                      'This will permanently delete ALL pieces, photos, and materials from this device AND the cloud. This cannot be undone.'),
+                    'This will permanently delete ALL pieces, photos, and materials from this device AND the cloud. This cannot be undone.',
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -429,8 +432,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     TextButton(
                       onPressed: () => Navigator.pop(context, true),
-                      style:
-                          TextButton.styleFrom(foregroundColor: Colors.red),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
                       child: const Text('Delete Everything'),
                     ),
                   ],
@@ -442,7 +444,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ScaffoldMessenger.of(context)
                 ..clearSnackBars()
                 ..showSnackBar(
-                    const SnackBar(content: Text('All data deleted')));
+                  const SnackBar(content: Text('All data deleted')),
+                );
             },
           ),
         ],

@@ -29,14 +29,22 @@ class SyncService {
 
     // Delete all Firestore subcollections
     for (final collection in [
-      'pieces', 'photos', 'clays', 'glazes', 'tags',
-      'pieceGlazes', 'pieceTags', 'meta',
+      'pieces',
+      'photos',
+      'clays',
+      'glazes',
+      'tags',
+      'pieceGlazes',
+      'pieceTags',
+      'meta',
     ]) {
       final snap = await _col(uid, collection).get();
       for (final doc in snap.docs) {
         await doc.reference.delete();
       }
-      debugPrint('SyncService: deleted ${snap.docs.length} docs from $collection');
+      debugPrint(
+        'SyncService: deleted ${snap.docs.length} docs from $collection',
+      );
     }
 
     // Delete all Cloud Storage files
@@ -717,7 +725,8 @@ class SyncService {
       return;
     }
     debugPrint(
-        'SyncService: ${needUpload.length} photos need upload (have local file, no cloudUrl)');
+      'SyncService: ${needUpload.length} photos need upload (have local file, no cloudUrl)',
+    );
 
     for (final photo in needUpload) {
       try {
@@ -735,17 +744,19 @@ class SyncService {
 
   Future<void> _downloadMissingPhotos(String uid) async {
     final allPhotos = await _db.select(_db.photos).get();
-    final missingLocal =
-        allPhotos.where((p) => !File(p.localPath).existsSync()).toList();
-    final downloadable =
-        missingLocal.where((p) => p.cloudUrl != null).toList();
-    final unrecoverable =
-        missingLocal.where((p) => p.cloudUrl == null).toList();
+    final missingLocal = allPhotos
+        .where((p) => !File(p.localPath).existsSync())
+        .toList();
+    final downloadable = missingLocal.where((p) => p.cloudUrl != null).toList();
+    final unrecoverable = missingLocal
+        .where((p) => p.cloudUrl == null)
+        .toList();
 
     debugPrint(
-        'SyncService: ${missingLocal.length} photos missing locally '
-        '(${downloadable.length} downloadable, '
-        '${unrecoverable.length} have no cloudUrl — need upload from source device)');
+      'SyncService: ${missingLocal.length} photos missing locally '
+      '(${downloadable.length} downloadable, '
+      '${unrecoverable.length} have no cloudUrl — need upload from source device)',
+    );
 
     final missing = downloadable;
 
@@ -761,7 +772,9 @@ class SyncService {
 
   Future<void> _downloadPhoto(Photo photo) async {
     try {
-      debugPrint('SyncService: downloading photo ${photo.id} from ${photo.cloudUrl}');
+      debugPrint(
+        'SyncService: downloading photo ${photo.id} from ${photo.cloudUrl}',
+      );
       final file = File(photo.localPath);
       await file.parent.create(recursive: true);
 
@@ -777,7 +790,9 @@ class SyncService {
       if (data == null) return;
 
       await file.writeAsBytes(data);
-      debugPrint('SyncService: downloaded photo ${photo.id} (${data.length} bytes)');
+      debugPrint(
+        'SyncService: downloaded photo ${photo.id} (${data.length} bytes)',
+      );
 
       // Regenerate thumbnail
       final thumbnailPath = photo.localPath.replaceAll('.jpg', '_thumb.jpg');
