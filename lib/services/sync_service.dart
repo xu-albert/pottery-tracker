@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 
@@ -384,10 +385,8 @@ class SyncService {
     // Download missing photo files
     await _downloadMissingPhotos(uid);
 
-    // Update lastPulledAt
-    await _userDoc(uid).collection('meta').doc('syncInfo').set({
-      'lastPulledAt': FieldValue.serverTimestamp(),
-    });
+    // Update lastPulledAt locally (per-device)
+    await _saveLastPulledAt(uid);
   }
 
   Future<void> pullChangedSince(String uid, DateTime since) async {
@@ -419,16 +418,23 @@ class SyncService {
 
     await _downloadMissingPhotos(uid);
 
-    await _userDoc(uid).collection('meta').doc('syncInfo').set({
-      'lastPulledAt': FieldValue.serverTimestamp(),
-    });
+    // Update lastPulledAt locally (per-device)
+    await _saveLastPulledAt(uid);
   }
 
   Future<DateTime?> getLastPulledAt(String uid) async {
-    final doc = await _userDoc(uid).collection('meta').doc('syncInfo').get();
-    if (!doc.exists) return null;
-    final ts = doc.data()?['lastPulledAt'] as Timestamp?;
-    return ts?.toDate();
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt('lastPulledAt_$uid');
+    if (ms == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> _saveLastPulledAt(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      'lastPulledAt_$uid',
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   // ════════════════════════════════════════════

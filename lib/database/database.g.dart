@@ -2727,6 +2727,374 @@ class PieceTagsCompanion extends UpdateCompanion<PieceTag> {
   }
 }
 
+class $DeletedJunctionsTable extends DeletedJunctions
+    with TableInfo<$DeletedJunctionsTable, DeletedJunction> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DeletedJunctionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _junctionTypeMeta = const VerificationMeta(
+    'junctionType',
+  );
+  @override
+  late final GeneratedColumn<String> junctionType = GeneratedColumn<String>(
+    'junction_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pieceIdMeta = const VerificationMeta(
+    'pieceId',
+  );
+  @override
+  late final GeneratedColumn<String> pieceId = GeneratedColumn<String>(
+    'piece_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _optionIdMeta = const VerificationMeta(
+    'optionId',
+  );
+  @override
+  late final GeneratedColumn<String> optionId = GeneratedColumn<String>(
+    'option_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    junctionType,
+    pieceId,
+    optionId,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'deleted_junctions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DeletedJunction> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('junction_type')) {
+      context.handle(
+        _junctionTypeMeta,
+        junctionType.isAcceptableOrUnknown(
+          data['junction_type']!,
+          _junctionTypeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_junctionTypeMeta);
+    }
+    if (data.containsKey('piece_id')) {
+      context.handle(
+        _pieceIdMeta,
+        pieceId.isAcceptableOrUnknown(data['piece_id']!, _pieceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pieceIdMeta);
+    }
+    if (data.containsKey('option_id')) {
+      context.handle(
+        _optionIdMeta,
+        optionId.isAcceptableOrUnknown(data['option_id']!, _optionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_optionIdMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DeletedJunction map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DeletedJunction(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      junctionType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}junction_type'],
+      )!,
+      pieceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}piece_id'],
+      )!,
+      optionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}option_id'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DeletedJunctionsTable createAlias(String alias) {
+    return $DeletedJunctionsTable(attachedDatabase, alias);
+  }
+}
+
+class DeletedJunction extends DataClass implements Insertable<DeletedJunction> {
+  final String id;
+  final String junctionType;
+  final String pieceId;
+  final String optionId;
+  final DateTime deletedAt;
+  const DeletedJunction({
+    required this.id,
+    required this.junctionType,
+    required this.pieceId,
+    required this.optionId,
+    required this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['junction_type'] = Variable<String>(junctionType);
+    map['piece_id'] = Variable<String>(pieceId);
+    map['option_id'] = Variable<String>(optionId);
+    map['deleted_at'] = Variable<DateTime>(deletedAt);
+    return map;
+  }
+
+  DeletedJunctionsCompanion toCompanion(bool nullToAbsent) {
+    return DeletedJunctionsCompanion(
+      id: Value(id),
+      junctionType: Value(junctionType),
+      pieceId: Value(pieceId),
+      optionId: Value(optionId),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory DeletedJunction.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DeletedJunction(
+      id: serializer.fromJson<String>(json['id']),
+      junctionType: serializer.fromJson<String>(json['junctionType']),
+      pieceId: serializer.fromJson<String>(json['pieceId']),
+      optionId: serializer.fromJson<String>(json['optionId']),
+      deletedAt: serializer.fromJson<DateTime>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'junctionType': serializer.toJson<String>(junctionType),
+      'pieceId': serializer.toJson<String>(pieceId),
+      'optionId': serializer.toJson<String>(optionId),
+      'deletedAt': serializer.toJson<DateTime>(deletedAt),
+    };
+  }
+
+  DeletedJunction copyWith({
+    String? id,
+    String? junctionType,
+    String? pieceId,
+    String? optionId,
+    DateTime? deletedAt,
+  }) => DeletedJunction(
+    id: id ?? this.id,
+    junctionType: junctionType ?? this.junctionType,
+    pieceId: pieceId ?? this.pieceId,
+    optionId: optionId ?? this.optionId,
+    deletedAt: deletedAt ?? this.deletedAt,
+  );
+  DeletedJunction copyWithCompanion(DeletedJunctionsCompanion data) {
+    return DeletedJunction(
+      id: data.id.present ? data.id.value : this.id,
+      junctionType: data.junctionType.present
+          ? data.junctionType.value
+          : this.junctionType,
+      pieceId: data.pieceId.present ? data.pieceId.value : this.pieceId,
+      optionId: data.optionId.present ? data.optionId.value : this.optionId,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeletedJunction(')
+          ..write('id: $id, ')
+          ..write('junctionType: $junctionType, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('optionId: $optionId, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, junctionType, pieceId, optionId, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DeletedJunction &&
+          other.id == this.id &&
+          other.junctionType == this.junctionType &&
+          other.pieceId == this.pieceId &&
+          other.optionId == this.optionId &&
+          other.deletedAt == this.deletedAt);
+}
+
+class DeletedJunctionsCompanion extends UpdateCompanion<DeletedJunction> {
+  final Value<String> id;
+  final Value<String> junctionType;
+  final Value<String> pieceId;
+  final Value<String> optionId;
+  final Value<DateTime> deletedAt;
+  final Value<int> rowid;
+  const DeletedJunctionsCompanion({
+    this.id = const Value.absent(),
+    this.junctionType = const Value.absent(),
+    this.pieceId = const Value.absent(),
+    this.optionId = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DeletedJunctionsCompanion.insert({
+    required String id,
+    required String junctionType,
+    required String pieceId,
+    required String optionId,
+    required DateTime deletedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       junctionType = Value(junctionType),
+       pieceId = Value(pieceId),
+       optionId = Value(optionId),
+       deletedAt = Value(deletedAt);
+  static Insertable<DeletedJunction> custom({
+    Expression<String>? id,
+    Expression<String>? junctionType,
+    Expression<String>? pieceId,
+    Expression<String>? optionId,
+    Expression<DateTime>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (junctionType != null) 'junction_type': junctionType,
+      if (pieceId != null) 'piece_id': pieceId,
+      if (optionId != null) 'option_id': optionId,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DeletedJunctionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? junctionType,
+    Value<String>? pieceId,
+    Value<String>? optionId,
+    Value<DateTime>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return DeletedJunctionsCompanion(
+      id: id ?? this.id,
+      junctionType: junctionType ?? this.junctionType,
+      pieceId: pieceId ?? this.pieceId,
+      optionId: optionId ?? this.optionId,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (junctionType.present) {
+      map['junction_type'] = Variable<String>(junctionType.value);
+    }
+    if (pieceId.present) {
+      map['piece_id'] = Variable<String>(pieceId.value);
+    }
+    if (optionId.present) {
+      map['option_id'] = Variable<String>(optionId.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeletedJunctionsCompanion(')
+          ..write('id: $id, ')
+          ..write('junctionType: $junctionType, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('optionId: $optionId, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2737,6 +3105,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PieceGlazesTable pieceGlazes = $PieceGlazesTable(this);
   late final $TagOptionsTable tagOptions = $TagOptionsTable(this);
   late final $PieceTagsTable pieceTags = $PieceTagsTable(this);
+  late final $DeletedJunctionsTable deletedJunctions = $DeletedJunctionsTable(
+    this,
+  );
   late final PiecesDao piecesDao = PiecesDao(this as AppDatabase);
   late final PhotosDao photosDao = PhotosDao(this as AppDatabase);
   late final MaterialsDao materialsDao = MaterialsDao(this as AppDatabase);
@@ -2752,6 +3123,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     pieceGlazes,
     tagOptions,
     pieceTags,
+    deletedJunctions,
   ];
 }
 
@@ -4441,6 +4813,214 @@ typedef $$PieceTagsTableProcessedTableManager =
       PieceTag,
       PrefetchHooks Function()
     >;
+typedef $$DeletedJunctionsTableCreateCompanionBuilder =
+    DeletedJunctionsCompanion Function({
+      required String id,
+      required String junctionType,
+      required String pieceId,
+      required String optionId,
+      required DateTime deletedAt,
+      Value<int> rowid,
+    });
+typedef $$DeletedJunctionsTableUpdateCompanionBuilder =
+    DeletedJunctionsCompanion Function({
+      Value<String> id,
+      Value<String> junctionType,
+      Value<String> pieceId,
+      Value<String> optionId,
+      Value<DateTime> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$DeletedJunctionsTableFilterComposer
+    extends Composer<_$AppDatabase, $DeletedJunctionsTable> {
+  $$DeletedJunctionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get junctionType => $composableBuilder(
+    column: $table.junctionType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get optionId => $composableBuilder(
+    column: $table.optionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DeletedJunctionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DeletedJunctionsTable> {
+  $$DeletedJunctionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get junctionType => $composableBuilder(
+    column: $table.junctionType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get optionId => $composableBuilder(
+    column: $table.optionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DeletedJunctionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DeletedJunctionsTable> {
+  $$DeletedJunctionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get junctionType => $composableBuilder(
+    column: $table.junctionType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get pieceId =>
+      $composableBuilder(column: $table.pieceId, builder: (column) => column);
+
+  GeneratedColumn<String> get optionId =>
+      $composableBuilder(column: $table.optionId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$DeletedJunctionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DeletedJunctionsTable,
+          DeletedJunction,
+          $$DeletedJunctionsTableFilterComposer,
+          $$DeletedJunctionsTableOrderingComposer,
+          $$DeletedJunctionsTableAnnotationComposer,
+          $$DeletedJunctionsTableCreateCompanionBuilder,
+          $$DeletedJunctionsTableUpdateCompanionBuilder,
+          (
+            DeletedJunction,
+            BaseReferences<
+              _$AppDatabase,
+              $DeletedJunctionsTable,
+              DeletedJunction
+            >,
+          ),
+          DeletedJunction,
+          PrefetchHooks Function()
+        > {
+  $$DeletedJunctionsTableTableManager(
+    _$AppDatabase db,
+    $DeletedJunctionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DeletedJunctionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DeletedJunctionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DeletedJunctionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> junctionType = const Value.absent(),
+                Value<String> pieceId = const Value.absent(),
+                Value<String> optionId = const Value.absent(),
+                Value<DateTime> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DeletedJunctionsCompanion(
+                id: id,
+                junctionType: junctionType,
+                pieceId: pieceId,
+                optionId: optionId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String junctionType,
+                required String pieceId,
+                required String optionId,
+                required DateTime deletedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => DeletedJunctionsCompanion.insert(
+                id: id,
+                junctionType: junctionType,
+                pieceId: pieceId,
+                optionId: optionId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DeletedJunctionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DeletedJunctionsTable,
+      DeletedJunction,
+      $$DeletedJunctionsTableFilterComposer,
+      $$DeletedJunctionsTableOrderingComposer,
+      $$DeletedJunctionsTableAnnotationComposer,
+      $$DeletedJunctionsTableCreateCompanionBuilder,
+      $$DeletedJunctionsTableUpdateCompanionBuilder,
+      (
+        DeletedJunction,
+        BaseReferences<_$AppDatabase, $DeletedJunctionsTable, DeletedJunction>,
+      ),
+      DeletedJunction,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4459,4 +5039,6 @@ class $AppDatabaseManager {
       $$TagOptionsTableTableManager(_db, _db.tagOptions);
   $$PieceTagsTableTableManager get pieceTags =>
       $$PieceTagsTableTableManager(_db, _db.pieceTags);
+  $$DeletedJunctionsTableTableManager get deletedJunctions =>
+      $$DeletedJunctionsTableTableManager(_db, _db.deletedJunctions);
 }

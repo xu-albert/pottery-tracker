@@ -8,6 +8,7 @@ import 'tables/glaze_options_table.dart';
 import 'tables/piece_glazes_table.dart';
 import 'tables/tag_options_table.dart';
 import 'tables/piece_tags_table.dart';
+import 'tables/deleted_junctions_table.dart';
 import 'daos/pieces_dao.dart';
 import 'daos/photos_dao.dart';
 import 'daos/materials_dao.dart';
@@ -23,14 +24,17 @@ part 'database.g.dart';
     PieceGlazes,
     TagOptions,
     PieceTags,
+    DeletedJunctions,
   ],
   daos: [PiecesDao, PhotosDao, MaterialsDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  AppDatabase.forTesting(super.executor);
+
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -146,6 +150,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 7) {
         await migrator.addColumn(tagOptions, tagOptions.color);
+      }
+      if (from < 8) {
+        await migrator.createTable(deletedJunctions);
       }
     },
   );

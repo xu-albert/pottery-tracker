@@ -8,6 +8,7 @@ import '../tables/piece_glazes_table.dart';
 import '../tables/tag_options_table.dart';
 import '../tables/piece_tags_table.dart';
 import '../tables/pieces_table.dart';
+import '../tables/deleted_junctions_table.dart';
 
 part 'materials_dao.g.dart';
 
@@ -19,6 +20,7 @@ part 'materials_dao.g.dart';
     TagOptions,
     PieceTags,
     Pieces,
+    DeletedJunctions,
   ],
 )
 class MaterialsDao extends DatabaseAccessor<AppDatabase>
@@ -238,6 +240,27 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     String pieceId,
     List<String> glazeOptionIds,
   ) async {
+    // Find existing junction rows to detect removals
+    final existing = await (select(pieceGlazes)
+          ..where((pg) => pg.pieceId.equals(pieceId)))
+        .get();
+    final existingIds = existing.map((e) => e.glazeOptionId).toSet();
+    final newIds = glazeOptionIds.toSet();
+    final removedIds = existingIds.difference(newIds);
+
+    // Record removed glazes in DeletedJunctions for sync
+    for (final optionId in removedIds) {
+      await into(deletedJunctions).insert(
+        DeletedJunctionsCompanion.insert(
+          id: const Uuid().v4(),
+          junctionType: 'pieceGlazes',
+          pieceId: pieceId,
+          optionId: optionId,
+          deletedAt: DateTime.now(),
+        ),
+      );
+    }
+
     // Delete existing junction rows
     await (delete(pieceGlazes)..where((pg) => pg.pieceId.equals(pieceId))).go();
 
@@ -387,6 +410,27 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     String pieceId,
     List<String> tagOptionIds,
   ) async {
+    // Find existing junction rows to detect removals
+    final existing = await (select(pieceTags)
+          ..where((pt) => pt.pieceId.equals(pieceId)))
+        .get();
+    final existingIds = existing.map((e) => e.tagOptionId).toSet();
+    final newIds = tagOptionIds.toSet();
+    final removedIds = existingIds.difference(newIds);
+
+    // Record removed tags in DeletedJunctions for sync
+    for (final optionId in removedIds) {
+      await into(deletedJunctions).insert(
+        DeletedJunctionsCompanion.insert(
+          id: const Uuid().v4(),
+          junctionType: 'pieceTags',
+          pieceId: pieceId,
+          optionId: optionId,
+          deletedAt: DateTime.now(),
+        ),
+      );
+    }
+
     await (delete(pieceTags)..where((pt) => pt.pieceId.equals(pieceId))).go();
 
     for (var i = 0; i < tagOptionIds.length; i++) {
@@ -400,6 +444,39 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     }
 
     await _rebuildDenormalizedTagsForPiece(pieceId);
+  }
+
+  // ── Deleted junctions methods ──
+
+  Future<List<DeletedJunction>> getDeletedJunctions({
+    required String junctionType,
+    required String pieceId,
+  }) {
+    return (select(deletedJunctions)
+          ..where(
+            (d) =>
+                d.junctionType.equals(junctionType) &
+                d.pieceId.equals(pieceId),
+          ))
+        .get();
+  }
+
+  Future<void> cleanupDeletedJunctions(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await (delete(deletedJunctions)..where((d) => d.id.isIn(ids))).go();
+  }
+
+  Future<void> cleanupDeletedJunctionsForPiece({
+    required String junctionType,
+    required String pieceId,
+  }) {
+    return (delete(deletedJunctions)
+          ..where(
+            (d) =>
+                d.junctionType.equals(junctionType) &
+                d.pieceId.equals(pieceId),
+          ))
+        .go();
   }
 
   // ── Private helpers ──
