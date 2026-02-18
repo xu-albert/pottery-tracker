@@ -16,6 +16,13 @@ abstract final class AppSizes {
   // Touch targets (accessibility minimums)
   static const double minTouchTarget = 48;
 
+  // Max text field lengths
+  static const int maxTitleLength = 100;
+  static const int maxClayNameLength = 50;
+  static const int maxGlazeNameLength = 50;
+  static const int maxTagNameLength = 30;
+  static const int maxNotesLength = 1000;
+
   // Album grid
   static const int albumColumns = 3;
   static const double albumSpacing = 2;
