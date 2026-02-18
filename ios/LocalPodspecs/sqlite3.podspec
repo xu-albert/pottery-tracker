@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.homepage     = 'https://sqlite.org'
   s.license      = { :type => 'Public Domain' }
   s.author       = 'SQLite Authors'
-  s.source       = { :git => 'https://github.com/nicklockwood/sqlite3.git', :tag => s.version.to_s }
+  s.source       = { :path => '.' }
 
   s.ios.deployment_target = '15.0'
   s.osx.deployment_target = '10.14'
