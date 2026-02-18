@@ -30,6 +30,7 @@ class PieceDetailScreen extends ConsumerStatefulWidget {
 class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   final _formKey = GlobalKey<MetadataFormState>();
   late final TextEditingController _titleCtrl;
+  late final FocusNode _titleFocus;
   String? _titleHint;
   Piece? _piece;
 
@@ -37,13 +38,23 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController();
+    _titleFocus = FocusNode();
+    _titleFocus.addListener(_onTitleFocusChange);
     _loadPiece();
   }
 
   @override
   void dispose() {
+    _titleFocus.removeListener(_onTitleFocusChange);
+    _titleFocus.dispose();
     _titleCtrl.dispose();
     super.dispose();
+  }
+
+  void _onTitleFocusChange() {
+    if (!_titleFocus.hasFocus && _titleCtrl.text.isNotEmpty) {
+      _updateField(title: _titleCtrl.text);
+    }
   }
 
   Future<void> _loadPiece() async {
@@ -501,6 +512,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: TextField(
                         controller: _titleCtrl,
+                        focusNode: _titleFocus,
                         style: Theme.of(context).textTheme.titleLarge,
                         autocorrect: false,
                         textCapitalization: TextCapitalization.sentences,
