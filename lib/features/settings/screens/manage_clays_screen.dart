@@ -242,7 +242,9 @@ class ManageClaysScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteClay(clay.id);
-      await ref.read(syncTriggerProvider).afterMaterialDeletion('clays', clay.id);
+      await ref
+          .read(syncTriggerProvider)
+          .afterMaterialDeletion('clays', clay.id);
     }
   }
 }

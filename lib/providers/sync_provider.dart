@@ -47,7 +47,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Timer? _processTimer;
 
   SyncNotifier(this._ref, this._queue, this._syncService)
-      : super(const SyncState()) {
+    : super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.isSignedIn && prev?.uid != next.uid) {
         _onAuthChanged(next.uid!);
@@ -158,12 +158,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
           success = true;
           break;
         } catch (e) {
-          debugPrint(
-              'SyncNotifier: retry $attempt for ${entry.operation}: $e');
+          debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
           if (isBestEffort) break;
           if (attempt < 2) {
-            await Future.delayed(
-                Duration(seconds: 1 << attempt));
+            await Future.delayed(Duration(seconds: 1 << attempt));
           }
         }
       }
@@ -197,8 +195,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _syncService.pushDeletion(uid, 'photos', entry.entityId);
       case SyncOperation.deleteMaterial:
         final collection = entry.extraData ?? 'clays';
-        await _syncService.pushDeletion(
-            uid, collection, entry.entityId);
+        await _syncService.pushDeletion(uid, collection, entry.entityId);
     }
   }
 
@@ -215,22 +212,18 @@ final syncQueueProvider = Provider<SyncQueue>((ref) {
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
-  return SyncService(
-    db,
-    FirebaseFirestore.instance,
-    FirebaseStorage.instance,
-  );
+  return SyncService(db, FirebaseFirestore.instance, FirebaseStorage.instance);
 });
 
 final syncTriggerProvider = Provider<SyncTrigger>((ref) {
   return SyncTrigger(
     ref.watch(syncQueueProvider),
-    onEnqueue: () => ref.read(syncStateProvider.notifier).scheduleProcessQueue(),
+    onEnqueue: () =>
+        ref.read(syncStateProvider.notifier).scheduleProcessQueue(),
   );
 });
 
-final syncStateProvider =
-    StateNotifierProvider<SyncNotifier, SyncState>((ref) {
+final syncStateProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
   return SyncNotifier(
     ref,
     ref.watch(syncQueueProvider),

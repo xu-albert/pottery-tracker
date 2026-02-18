@@ -218,7 +218,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildSyncTile(
-      BuildContext context, WidgetRef ref, AppLocalizations l10n, AuthState auth) {
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    AuthState auth,
+  ) {
     if (!auth.isSignedIn) {
       return ListTile(
         leading: const Icon(Icons.cloud_off),
@@ -252,7 +256,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         }
         if (syncState.lastSyncedAt != null) {
           subtitle = l10n.syncLastSynced(
-              DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!));
+            DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!),
+          );
         }
         trailing = GestureDetector(
           onLongPress: () =>
@@ -282,7 +287,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis) : null,
+      subtitle: subtitle != null
+          ? Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis)
+          : null,
       trailing: trailing,
     );
   }

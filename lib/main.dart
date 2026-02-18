@@ -17,18 +17,19 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     debugPrint('Firebase initialized successfully');
-    FirebaseFirestore.instance.settings =
-        const Settings(persistenceEnabled: false);
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+    );
   } catch (e) {
     debugPrint('Firebase init failed: $e');
   }
 
   try {
     await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-      appleProvider:
-          kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+      androidProvider: kDebugMode
+          ? AndroidProvider.debug
+          : AndroidProvider.playIntegrity,
+      appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
     );
   } catch (e) {
     debugPrint('App Check activation failed (non-fatal): $e');

@@ -167,7 +167,9 @@ class ManageGlazesScreen extends ConsumerWidget {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      final glaze = await ref.read(materialsDaoProvider).findOrCreateGlaze(name);
+      final glaze = await ref
+          .read(materialsDaoProvider)
+          .findOrCreateGlaze(name);
       await ref.read(syncTriggerProvider).afterGlazeWrite(glaze.id);
     }
   }
@@ -242,7 +244,9 @@ class ManageGlazesScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteGlaze(glaze.id);
-      await ref.read(syncTriggerProvider).afterMaterialDeletion('glazes', glaze.id);
+      await ref
+          .read(syncTriggerProvider)
+          .afterMaterialDeletion('glazes', glaze.id);
     }
   }
 }

@@ -227,7 +227,9 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     await imageService.deletePhotos(widget.pieceId);
     HapticFeedback.mediumImpact();
     ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
-    await ref.read(syncTriggerProvider).afterPieceDeletion(widget.pieceId, photoIds);
+    await ref
+        .read(syncTriggerProvider)
+        .afterPieceDeletion(widget.pieceId, photoIds);
 
     if (mounted) context.go('/');
   }

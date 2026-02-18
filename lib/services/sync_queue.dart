@@ -27,10 +27,10 @@ class SyncQueueEntry {
   });
 
   Map<String, dynamic> toJson() => {
-        'op': operation.name,
-        'id': entityId,
-        if (extraData != null) 'extra': extraData,
-      };
+    'op': operation.name,
+    'id': entityId,
+    if (extraData != null) 'extra': extraData,
+  };
 
   factory SyncQueueEntry.fromJson(Map<String, dynamic> json) {
     return SyncQueueEntry(
@@ -67,8 +67,10 @@ class SyncQueue {
     final raw = prefs.getStringList(_key);
     if (raw == null) return [];
     return raw
-        .map((s) => SyncQueueEntry.fromJson(
-            json.decode(s) as Map<String, dynamic>))
+        .map(
+          (s) =>
+              SyncQueueEntry.fromJson(json.decode(s) as Map<String, dynamic>),
+        )
         .toList();
   }
 

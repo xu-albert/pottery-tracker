@@ -58,17 +58,15 @@ class SyncService {
     final file = File(photo.localPath);
     if (!file.existsSync()) return;
 
-    final storagePath =
-        'users/$uid/photos/${photo.pieceId}/$photoId.jpg';
+    final storagePath = 'users/$uid/photos/${photo.pieceId}/$photoId.jpg';
     final ref = _storage.ref(storagePath);
     await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
     final url = await ref.getDownloadURL();
 
     // Update local DB with cloud URL
-    await _db.photosDao.updatePhoto(PhotosCompanion(
-      id: Value(photoId),
-      cloudUrl: Value(url),
-    ));
+    await _db.photosDao.updatePhoto(
+      PhotosCompanion(id: Value(photoId), cloudUrl: Value(url)),
+    );
 
     // Update Firestore photo doc with URL
     await _col(uid, 'photos').doc(photoId).update({'cloudUrl': url});
@@ -114,8 +112,7 @@ class SyncService {
   Future<void> pushPieceGlazes(String uid, String pieceId) async {
     final col = _col(uid, 'pieceGlazes');
     // Delete existing remote junction rows for this piece
-    final existing =
-        await col.where('pieceId', isEqualTo: pieceId).get();
+    final existing = await col.where('pieceId', isEqualTo: pieceId).get();
     for (final doc in existing.docs) {
       await doc.reference.delete();
     }
@@ -133,8 +130,7 @@ class SyncService {
 
   Future<void> pushPieceTags(String uid, String pieceId) async {
     final col = _col(uid, 'pieceTags');
-    final existing =
-        await col.where('pieceId', isEqualTo: pieceId).get();
+    final existing = await col.where('pieceId', isEqualTo: pieceId).get();
     for (final doc in existing.docs) {
       await doc.reference.delete();
     }
@@ -149,8 +145,7 @@ class SyncService {
     }
   }
 
-  Future<void> pushDeletion(
-      String uid, String collection, String docId) async {
+  Future<void> pushDeletion(String uid, String collection, String docId) async {
     await _col(uid, collection).doc(docId).set({
       'deletedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -160,9 +155,10 @@ class SyncService {
   Future<void> pushPieceDeletion(String uid, String pieceId) async {
     await pushDeletion(uid, 'pieces', pieceId);
     // Also mark photos and junctions as deleted
-    final photoDocs = await _col(uid, 'photos')
-        .where('pieceId', isEqualTo: pieceId)
-        .get();
+    final photoDocs = await _col(
+      uid,
+      'photos',
+    ).where('pieceId', isEqualTo: pieceId).get();
     for (final doc in photoDocs.docs) {
       await doc.reference.set({
         'deletedAt': FieldValue.serverTimestamp(),
@@ -170,21 +166,22 @@ class SyncService {
       }, SetOptions(merge: true));
       // Delete photo file from storage
       try {
-        final storagePath =
-            'users/$uid/photos/$pieceId/${doc.id}.jpg';
+        final storagePath = 'users/$uid/photos/$pieceId/${doc.id}.jpg';
         await _storage.ref(storagePath).delete();
       } catch (_) {}
     }
     // Delete junction rows
-    final glazeDocs = await _col(uid, 'pieceGlazes')
-        .where('pieceId', isEqualTo: pieceId)
-        .get();
+    final glazeDocs = await _col(
+      uid,
+      'pieceGlazes',
+    ).where('pieceId', isEqualTo: pieceId).get();
     for (final doc in glazeDocs.docs) {
       await doc.reference.delete();
     }
-    final tagDocs = await _col(uid, 'pieceTags')
-        .where('pieceId', isEqualTo: pieceId)
-        .get();
+    final tagDocs = await _col(
+      uid,
+      'pieceTags',
+    ).where('pieceId', isEqualTo: pieceId).get();
     for (final doc in tagDocs.docs) {
       await doc.reference.delete();
     }
@@ -252,13 +249,11 @@ class SyncService {
       collection: 'pieces',
       insert: (doc) => _insertPieceFromRemote(doc),
       update: (doc) => _updatePieceFromRemote(doc),
-      existsLocally: (id) async =>
-          await _db.piecesDao.getPieceById(id) != null,
+      existsLocally: (id) async => await _db.piecesDao.getPieceById(id) != null,
       isRemoteNewer: (doc, id) async {
         final local = await _db.piecesDao.getPieceById(id);
         if (local == null) return true;
-        final remoteUpdated =
-            (doc['updatedAt'] as Timestamp).toDate();
+        final remoteUpdated = (doc['updatedAt'] as Timestamp).toDate();
         return remoteUpdated.isAfter(local.updatedAt);
       },
     );
@@ -268,8 +263,7 @@ class SyncService {
       collection: 'photos',
       insert: (doc) => _insertPhotoFromRemote(doc),
       update: (doc) => _updatePhotoFromRemote(doc),
-      existsLocally: (id) async =>
-          await _db.photosDao.getPhotoById(id) != null,
+      existsLocally: (id) async => await _db.photosDao.getPhotoById(id) != null,
       isRemoteNewer: (doc, id) async => true,
     );
 
@@ -317,10 +311,9 @@ class SyncService {
     await _downloadMissingPhotos(uid);
 
     // Update lastPulledAt
-    await _userDoc(uid)
-        .collection('meta')
-        .doc('syncInfo')
-        .set({'lastPulledAt': FieldValue.serverTimestamp()});
+    await _userDoc(uid).collection('meta').doc('syncInfo').set({
+      'lastPulledAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> pullChangedSince(String uid, DateTime since) async {
@@ -328,9 +321,10 @@ class SyncService {
     final sinceTs = Timestamp.fromDate(since);
 
     for (final collection in ['pieces', 'photos', 'clays', 'glazes', 'tags']) {
-      final snap = await _col(uid, collection)
-          .where('updatedAt', isGreaterThan: sinceTs)
-          .get();
+      final snap = await _col(
+        uid,
+        collection,
+      ).where('updatedAt', isGreaterThan: sinceTs).get();
 
       for (final doc in snap.docs) {
         final data = doc.data() as Map<String, dynamic>?;
@@ -351,15 +345,13 @@ class SyncService {
 
     await _downloadMissingPhotos(uid);
 
-    await _userDoc(uid)
-        .collection('meta')
-        .doc('syncInfo')
-        .set({'lastPulledAt': FieldValue.serverTimestamp()});
+    await _userDoc(uid).collection('meta').doc('syncInfo').set({
+      'lastPulledAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<DateTime?> getLastPulledAt(String uid) async {
-    final doc =
-        await _userDoc(uid).collection('meta').doc('syncInfo').get();
+    final doc = await _userDoc(uid).collection('meta').doc('syncInfo').get();
     if (!doc.exists) return null;
     final ts = doc.data()?['lastPulledAt'] as Timestamp?;
     return ts?.toDate();
@@ -375,9 +367,8 @@ class SyncService {
     required Future<void> Function(QueryDocumentSnapshot) insert,
     required Future<void> Function(QueryDocumentSnapshot) update,
     required Future<bool> Function(String id) existsLocally,
-    required Future<bool> Function(
-            QueryDocumentSnapshot doc, String id)
-        isRemoteNewer,
+    required Future<bool> Function(QueryDocumentSnapshot doc, String id)
+    isRemoteNewer,
   }) async {
     final snap = await _col(uid, collection).get();
     for (final doc in snap.docs) {
@@ -401,7 +392,7 @@ class SyncService {
     String uid,
     String collection,
     Future<void> Function(String pieceId, List<QueryDocumentSnapshot> docs)
-        mergeFn,
+    mergeFn,
   ) async {
     final snap = await _col(uid, collection).get();
     final byPiece = <String, List<QueryDocumentSnapshot>>{};
@@ -421,7 +412,9 @@ class SyncService {
   // ════════════════════════════════════════════
 
   Future<void> _mergeRemoteDoc(
-      String collection, QueryDocumentSnapshot doc) async {
+    String collection,
+    QueryDocumentSnapshot doc,
+  ) async {
     switch (collection) {
       case 'pieces':
         final exists = await _db.piecesDao.getPieceById(doc.id) != null;
@@ -446,8 +439,7 @@ class SyncService {
     }
   }
 
-  Future<void> _handleRemoteDeletion(
-      String collection, String docId) async {
+  Future<void> _handleRemoteDeletion(String collection, String docId) async {
     switch (collection) {
       case 'pieces':
         await _db.photosDao.deletePhotosForPiece(docId);
@@ -469,31 +461,35 @@ class SyncService {
 
   Future<void> _insertPieceFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
-    await _db.piecesDao.insertPiece(PiecesCompanion(
-      id: Value(doc.id),
-      title: Value(d['title'] as String?),
-      stage: Value(d['stage'] as String?),
-      clayType: Value(d['clayType'] as String?),
-      notes: Value(d['notes'] as String?),
-      coverPhotoId: Value(d['coverPhotoId'] as String?),
-      isArchived: Value(d['isArchived'] as bool? ?? false),
-      createdAt: Value((d['createdAt'] as Timestamp).toDate()),
-      updatedAt: Value((d['updatedAt'] as Timestamp).toDate()),
-    ));
+    await _db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: Value(doc.id),
+        title: Value(d['title'] as String?),
+        stage: Value(d['stage'] as String?),
+        clayType: Value(d['clayType'] as String?),
+        notes: Value(d['notes'] as String?),
+        coverPhotoId: Value(d['coverPhotoId'] as String?),
+        isArchived: Value(d['isArchived'] as bool? ?? false),
+        createdAt: Value((d['createdAt'] as Timestamp).toDate()),
+        updatedAt: Value((d['updatedAt'] as Timestamp).toDate()),
+      ),
+    );
   }
 
   Future<void> _updatePieceFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
-    await _db.piecesDao.updatePiece(PiecesCompanion(
-      id: Value(doc.id),
-      title: Value(d['title'] as String?),
-      stage: Value(d['stage'] as String?),
-      clayType: Value(d['clayType'] as String?),
-      notes: Value(d['notes'] as String?),
-      coverPhotoId: Value(d['coverPhotoId'] as String?),
-      isArchived: Value(d['isArchived'] as bool? ?? false),
-      updatedAt: Value((d['updatedAt'] as Timestamp).toDate()),
-    ));
+    await _db.piecesDao.updatePiece(
+      PiecesCompanion(
+        id: Value(doc.id),
+        title: Value(d['title'] as String?),
+        stage: Value(d['stage'] as String?),
+        clayType: Value(d['clayType'] as String?),
+        notes: Value(d['notes'] as String?),
+        coverPhotoId: Value(d['coverPhotoId'] as String?),
+        isArchived: Value(d['isArchived'] as bool? ?? false),
+        updatedAt: Value((d['updatedAt'] as Timestamp).toDate()),
+      ),
+    );
   }
 
   Future<void> _insertPhotoFromRemote(QueryDocumentSnapshot doc) async {
@@ -502,41 +498,46 @@ class SyncService {
     // Use a placeholder path — actual file will be downloaded later
     final appDir = await getApplicationDocumentsDirectory();
     final pieceId = d['pieceId'] as String;
-    final localPath =
-        '${appDir.path}/photos/$pieceId/${doc.id}.jpg';
+    final localPath = '${appDir.path}/photos/$pieceId/${doc.id}.jpg';
 
-    await _db.photosDao.insertPhoto(PhotosCompanion(
-      id: Value(doc.id),
-      pieceId: Value(pieceId),
-      localPath: Value(localPath),
-      cloudUrl: Value(cloudUrl),
-      dateTaken: Value((d['dateTaken'] as Timestamp).toDate()),
-      createdAt: Value((d['createdAt'] as Timestamp).toDate()),
-      sortOrder: Value(d['sortOrder'] as int? ?? 0),
-    ));
+    await _db.photosDao.insertPhoto(
+      PhotosCompanion(
+        id: Value(doc.id),
+        pieceId: Value(pieceId),
+        localPath: Value(localPath),
+        cloudUrl: Value(cloudUrl),
+        dateTaken: Value((d['dateTaken'] as Timestamp).toDate()),
+        createdAt: Value((d['createdAt'] as Timestamp).toDate()),
+        sortOrder: Value(d['sortOrder'] as int? ?? 0),
+      ),
+    );
   }
 
   Future<void> _updatePhotoFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
-    await _db.photosDao.updatePhoto(PhotosCompanion(
-      id: Value(doc.id),
-      cloudUrl: Value(d['cloudUrl'] as String?),
-      sortOrder: Value(d['sortOrder'] as int? ?? 0),
-    ));
+    await _db.photosDao.updatePhoto(
+      PhotosCompanion(
+        id: Value(doc.id),
+        cloudUrl: Value(d['cloudUrl'] as String?),
+        sortOrder: Value(d['sortOrder'] as int? ?? 0),
+      ),
+    );
   }
 
   Future<void> _insertClayFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
     try {
-      await _db.into(_db.clayOptions).insert(
-        ClayOptionsCompanion.insert(
-          id: doc.id,
-          name: d['name'] as String,
-          sortOrder: Value(d['sortOrder'] as int? ?? 0),
-          createdAt: (d['createdAt'] as Timestamp).toDate(),
-        ),
-        mode: InsertMode.insertOrReplace,
-      );
+      await _db
+          .into(_db.clayOptions)
+          .insert(
+            ClayOptionsCompanion.insert(
+              id: doc.id,
+              name: d['name'] as String,
+              sortOrder: Value(d['sortOrder'] as int? ?? 0),
+              createdAt: (d['createdAt'] as Timestamp).toDate(),
+            ),
+            mode: InsertMode.insertOrReplace,
+          );
     } catch (e) {
       debugPrint('SyncService: clay insert failed: $e');
     }
@@ -549,15 +550,17 @@ class SyncService {
   Future<void> _insertGlazeFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
     try {
-      await _db.into(_db.glazeOptions).insert(
-        GlazeOptionsCompanion.insert(
-          id: doc.id,
-          name: d['name'] as String,
-          sortOrder: Value(d['sortOrder'] as int? ?? 0),
-          createdAt: (d['createdAt'] as Timestamp).toDate(),
-        ),
-        mode: InsertMode.insertOrReplace,
-      );
+      await _db
+          .into(_db.glazeOptions)
+          .insert(
+            GlazeOptionsCompanion.insert(
+              id: doc.id,
+              name: d['name'] as String,
+              sortOrder: Value(d['sortOrder'] as int? ?? 0),
+              createdAt: (d['createdAt'] as Timestamp).toDate(),
+            ),
+            mode: InsertMode.insertOrReplace,
+          );
     } catch (e) {
       debugPrint('SyncService: glaze insert failed: $e');
     }
@@ -570,16 +573,18 @@ class SyncService {
   Future<void> _insertTagFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
     try {
-      await _db.into(_db.tagOptions).insert(
-        TagOptionsCompanion.insert(
-          id: doc.id,
-          name: d['name'] as String,
-          color: Value(d['color'] as String?),
-          sortOrder: Value(d['sortOrder'] as int? ?? 0),
-          createdAt: (d['createdAt'] as Timestamp).toDate(),
-        ),
-        mode: InsertMode.insertOrReplace,
-      );
+      await _db
+          .into(_db.tagOptions)
+          .insert(
+            TagOptionsCompanion.insert(
+              id: doc.id,
+              name: d['name'] as String,
+              color: Value(d['color'] as String?),
+              sortOrder: Value(d['sortOrder'] as int? ?? 0),
+              createdAt: (d['createdAt'] as Timestamp).toDate(),
+            ),
+            mode: InsertMode.insertOrReplace,
+          );
     } catch (e) {
       debugPrint('SyncService: tag insert failed: $e');
     }
@@ -594,14 +599,17 @@ class SyncService {
   // ════════════════════════════════════════════
 
   Future<void> _mergeRemotePieceGlazes(
-      String pieceId, List<QueryDocumentSnapshot> docs) async {
+    String pieceId,
+    List<QueryDocumentSnapshot> docs,
+  ) async {
     final glazeIds = <String>[];
     // Sort by sortOrder
     docs.sort((a, b) {
       final aData = a.data() as Map<String, dynamic>;
       final bData = b.data() as Map<String, dynamic>;
-      return (aData['sortOrder'] as int? ?? 0)
-          .compareTo(bData['sortOrder'] as int? ?? 0);
+      return (aData['sortOrder'] as int? ?? 0).compareTo(
+        bData['sortOrder'] as int? ?? 0,
+      );
     });
     for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
@@ -614,7 +622,9 @@ class SyncService {
   }
 
   Future<void> _mergeRemotePieceTags(
-      String pieceId, List<QueryDocumentSnapshot> docs) async {
+    String pieceId,
+    List<QueryDocumentSnapshot> docs,
+  ) async {
     final tagIds = <String>[];
     for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
@@ -633,18 +643,18 @@ class SyncService {
   Future<void> _downloadMissingPhotos(String uid) async {
     final allPhotos = await _db.select(_db.photos).get();
     final missing = allPhotos
-        .where((p) =>
-            p.cloudUrl != null && !File(p.localPath).existsSync())
+        .where((p) => p.cloudUrl != null && !File(p.localPath).existsSync())
         .toList();
 
     debugPrint('SyncService: ${missing.length} photos to download');
 
     // Download in batches of 5
     for (var i = 0; i < missing.length; i += 5) {
-      final batch =
-          missing.sublist(i, i + 5 > missing.length ? missing.length : i + 5);
-      await Future.wait(
-          batch.map((photo) => _downloadPhoto(photo)));
+      final batch = missing.sublist(
+        i,
+        i + 5 > missing.length ? missing.length : i + 5,
+      );
+      await Future.wait(batch.map((photo) => _downloadPhoto(photo)));
     }
   }
 
@@ -661,8 +671,7 @@ class SyncService {
       await file.writeAsBytes(data);
 
       // Regenerate thumbnail
-      final thumbnailPath =
-          photo.localPath.replaceAll('.jpg', '_thumb.jpg');
+      final thumbnailPath = photo.localPath.replaceAll('.jpg', '_thumb.jpg');
       final thumbBytes = await FlutterImageCompress.compressWithList(
         data,
         minWidth: 300,
@@ -671,10 +680,12 @@ class SyncService {
       );
       await File(thumbnailPath).writeAsBytes(thumbBytes);
 
-      await _db.photosDao.updatePhoto(PhotosCompanion(
-        id: Value(photo.id),
-        thumbnailPath: Value(thumbnailPath),
-      ));
+      await _db.photosDao.updatePhoto(
+        PhotosCompanion(
+          id: Value(photo.id),
+          thumbnailPath: Value(thumbnailPath),
+        ),
+      );
     } catch (e) {
       debugPrint('SyncService: download failed for ${photo.id}: $e');
     }
