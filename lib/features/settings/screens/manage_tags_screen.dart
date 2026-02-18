@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -119,6 +120,8 @@ class ManageTagsScreen extends ConsumerWidget {
                         child: Text(
                           tag.name,
                           style: Theme.of(context).textTheme.bodyLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       IconButton(
@@ -232,6 +235,9 @@ class ManageTagsScreen extends ConsumerWidget {
             placeholder: l10n.enterTagName,
             textCapitalization: TextCapitalization.sentences,
             autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxTagNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),
@@ -273,6 +279,9 @@ class ManageTagsScreen extends ConsumerWidget {
             autofocus: true,
             textCapitalization: TextCapitalization.sentences,
             autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxTagNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),

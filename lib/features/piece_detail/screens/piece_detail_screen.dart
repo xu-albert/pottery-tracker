@@ -13,6 +13,7 @@ import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../core/constants/app_sizes.dart';
 import '../widgets/photo_gallery.dart';
 import '../widgets/metadata_form.dart';
 import '../widgets/photo_timeline.dart' show LastUpdatedInfo;
@@ -544,9 +545,11 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                         style: Theme.of(context).textTheme.titleLarge,
                         autocorrect: false,
                         textCapitalization: TextCapitalization.sentences,
+                        maxLength: AppSizes.maxTitleLength,
                         decoration: InputDecoration(
                           hintText: _titleHint ?? l10n.untitledPiece,
                           border: InputBorder.none,
+                          counterText: '',
                         ),
                         onEditingComplete: () {
                           if (_titleCtrl.text.isNotEmpty) {
@@ -573,6 +576,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       key: _formKey,
                       piece: _piece!,
                       materialsDao: ref.read(materialsDaoProvider),
+                      syncTrigger: ref.read(syncTriggerProvider),
                       selectedGlazes: selectedGlazes,
                       selectedTags: selectedTags,
                       onUpdateField: _updateField,

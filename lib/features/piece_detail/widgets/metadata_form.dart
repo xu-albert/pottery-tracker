@@ -1,5 +1,3 @@
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/materials_dao.dart';
@@ -7,6 +5,7 @@ import '../../../models/piece_stage.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../services/sync_trigger.dart';
 
 class MetadataForm extends StatefulWidget {
   final Piece piece;
@@ -23,6 +22,7 @@ class MetadataForm extends StatefulWidget {
   onUpdateField;
   final void Function(List<String> glazeOptionIds) onUpdateGlazes;
   final void Function(List<String> tagOptionIds) onUpdateTags;
+  final SyncTrigger syncTrigger;
 
   const MetadataForm({
     super.key,
@@ -33,6 +33,7 @@ class MetadataForm extends StatefulWidget {
     required this.onUpdateField,
     required this.onUpdateGlazes,
     required this.onUpdateTags,
+    required this.syncTrigger,
   });
 
   @override
@@ -41,11 +42,20 @@ class MetadataForm extends StatefulWidget {
 
 class MetadataFormState extends State<MetadataForm> {
   late final TextEditingController _notesCtrl;
+  late final TextEditingController _clayCtrl;
+  late final FocusNode _clayFocus;
+  List<ClayOption> _allClays = [];
+  String _lastSavedClay = '';
 
   @override
   void initState() {
     super.initState();
     _notesCtrl = TextEditingController(text: widget.piece.notes ?? '');
+    _clayCtrl = TextEditingController(text: widget.piece.clayType ?? '');
+    _lastSavedClay = widget.piece.clayType ?? '';
+    _clayFocus = FocusNode();
+    _clayFocus.addListener(_onClayFocusChange);
+    _loadClays();
   }
 
   @override
@@ -53,13 +63,45 @@ class MetadataFormState extends State<MetadataForm> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.piece.id != widget.piece.id) {
       _notesCtrl.text = widget.piece.notes ?? '';
+      _clayCtrl.text = widget.piece.clayType ?? '';
+      _lastSavedClay = widget.piece.clayType ?? '';
+      _loadClays();
     }
   }
 
   @override
   void dispose() {
+    _clayFocus.removeListener(_onClayFocusChange);
+    _clayFocus.dispose();
+    _clayCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadClays() async {
+    _allClays = await widget.materialsDao.getAllClays();
+    if (mounted) setState(() {});
+  }
+
+  void _onClayFocusChange() {
+    if (!_clayFocus.hasFocus) {
+      _saveClay();
+    }
+  }
+
+  Future<void> _saveClay() async {
+    final text = _clayCtrl.text.trim();
+    if (text == _lastSavedClay) return;
+    _lastSavedClay = text;
+    if (text.isNotEmpty) {
+      final clay = await widget.materialsDao.findOrCreateClay(text);
+      await widget.syncTrigger.afterClayWrite(clay.id);
+      await _loadClays();
+    }
+    widget.onUpdateField(clayType: text);
+    if (_clayCtrl.text != text) {
+      _clayCtrl.text = text;
+    }
   }
 
   PieceStage? get _currentStage {
@@ -69,435 +111,18 @@ class MetadataFormState extends State<MetadataForm> {
   }
 
   void saveAll() {
-    widget.onUpdateField(
-      clayType: widget.piece.clayType,
-      notes: _notesCtrl.text,
-    );
-  }
-
-  Future<void> _showClayPicker() async {
-    final l10n = AppLocalizations.of(context)!;
-    final clays = await widget.materialsDao.getAllClays();
-
-    if (!mounted) return;
-
-    final result = await showCupertinoModalPopup<String>(
-      context: context,
-      builder: (ctx) => CupertinoActionSheet(
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.of(ctx).pop(''),
-            child: Text(l10n.stageNone),
-          ),
-          ...clays.map(
-            (c) => CupertinoActionSheetAction(
-              onPressed: () => Navigator.of(ctx).pop(c.name),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(c.name),
-                  if (c.name == widget.piece.clayType) ...[
-                    const SizedBox(width: 8),
-                    const Icon(CupertinoIcons.checkmark_alt, size: 18),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.of(ctx).pop('__add_new__'),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(CupertinoIcons.add, size: 18),
-                const SizedBox(width: 8),
-                Text(l10n.addNew),
-              ],
-            ),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: Text(l10n.cancel),
-        ),
-      ),
-    );
-
-    if (!mounted || result == null) return;
-    if (result == '__add_new__') {
-      await _showAddClayDialog();
-    } else {
-      widget.onUpdateField(clayType: result);
+    final clayText = _clayCtrl.text.trim();
+    widget.onUpdateField(clayType: clayText, notes: _notesCtrl.text);
+    if (clayText.isNotEmpty) {
+      widget.materialsDao
+          .findOrCreateClay(clayText)
+          .then((clay) => widget.syncTrigger.afterClayWrite(clay.id));
     }
-  }
-
-  Future<void> _showAddClayDialog() async {
-    final l10n = AppLocalizations.of(context)!;
-    final controller = TextEditingController();
-    final name = await showCupertinoDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return CupertinoAlertDialog(
-          title: Text(l10n.addNew),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: CupertinoTextField(
-              controller: controller,
-              autofocus: true,
-              placeholder: l10n.enterClayName,
-              textCapitalization: TextCapitalization.sentences,
-              autocorrect: false,
-              onSubmitted: (value) => Navigator.of(ctx).pop(value),
-            ),
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.cancel),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: Text(l10n.create),
-            ),
-          ],
-        );
-      },
-    );
-    // Don't dispose controller here — the dialog's TextField may still be
-    // animating out and referencing it, which triggers _dependents.isEmpty.
-    // The controller is a local variable and will be GC'd.
-
-    if (!mounted) return;
-    if (name != null && name.trim().isNotEmpty) {
-      await widget.materialsDao.findOrCreateClay(name);
-      FirebaseAnalytics.instance.logEvent(
-        name: 'material_created',
-        parameters: {'type': 'clay'},
-      );
-      if (!mounted) return;
-      widget.onUpdateField(clayType: name.trim());
-    }
-  }
-
-  Future<void> _showGlazePicker() async {
-    final l10n = AppLocalizations.of(context)!;
-    final allGlazes = await widget.materialsDao.getAllGlazes();
-
-    if (!mounted) return;
-
-    // Track selected IDs locally in the bottom sheet
-    final selectedIds = widget.selectedGlazes.map((g) => g.id).toSet();
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          l10n.selectGlazes,
-                          style: Theme.of(ctx).textTheme.titleMedium,
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          child: Text(l10n.done),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  // "None" option
-                  CheckboxListTile(
-                    title: Text(l10n.glazesNone),
-                    value: selectedIds.isEmpty,
-                    onChanged: (_) {
-                      setSheetState(() => selectedIds.clear());
-                    },
-                  ),
-                  // Glaze options
-                  ...allGlazes.map(
-                    (glaze) => CheckboxListTile(
-                      title: Text(glaze.name),
-                      value: selectedIds.contains(glaze.id),
-                      onChanged: (checked) {
-                        setSheetState(() {
-                          if (checked == true) {
-                            selectedIds.add(glaze.id);
-                          } else {
-                            selectedIds.remove(glaze.id);
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  // Add new
-                  ListTile(
-                    leading: const Icon(CupertinoIcons.add),
-                    title: Text(l10n.addNew),
-                    onTap: () async {
-                      final newGlaze = await _showAddGlazeDialog();
-                      if (newGlaze != null) {
-                        // Refresh the list and add the new glaze to selection
-                        final refreshed = await widget.materialsDao
-                            .getAllGlazes();
-                        setSheetState(() {
-                          allGlazes
-                            ..clear()
-                            ..addAll(refreshed);
-                          selectedIds.add(newGlaze.id);
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-
-    // Save on any dismiss (Done button, tap outside, back gesture)
-    if (mounted) {
-      widget.onUpdateGlazes(selectedIds.toList());
-    }
-  }
-
-  Future<GlazeOption?> _showAddGlazeDialog() async {
-    final l10n = AppLocalizations.of(context)!;
-    final controller = TextEditingController();
-    final name = await showCupertinoDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return CupertinoAlertDialog(
-          title: Text(l10n.addNew),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: CupertinoTextField(
-              controller: controller,
-              autofocus: true,
-              placeholder: l10n.enterGlazeName,
-              textCapitalization: TextCapitalization.sentences,
-              autocorrect: false,
-              onSubmitted: (value) => Navigator.of(ctx).pop(value),
-            ),
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.cancel),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: Text(l10n.create),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted) return null;
-    if (name != null && name.trim().isNotEmpty) {
-      final glaze = await widget.materialsDao.findOrCreateGlaze(name);
-      FirebaseAnalytics.instance.logEvent(
-        name: 'material_created',
-        parameters: {'type': 'glaze'},
-      );
-      return glaze;
-    }
-    return null;
-  }
-
-  Future<void> _showTagPicker() async {
-    final l10n = AppLocalizations.of(context)!;
-    final allTags = await widget.materialsDao.getAllTags();
-
-    if (!mounted) return;
-
-    final selectedIds = widget.selectedTags.map((t) => t.id).toSet();
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          l10n.selectTags,
-                          style: Theme.of(ctx).textTheme.titleMedium,
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          child: Text(l10n.done),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  CheckboxListTile(
-                    title: Text(l10n.tagsNone),
-                    value: selectedIds.isEmpty,
-                    onChanged: (_) {
-                      setSheetState(() => selectedIds.clear());
-                    },
-                  ),
-                  ...allTags.map(
-                    (tag) => CheckboxListTile(
-                      title: Row(
-                        children: [
-                          if (tag.color != null) ...[
-                            Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: TagColorPresets.hexToColor(tag.color!),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppColors.divider,
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          Text(tag.name),
-                        ],
-                      ),
-                      value: selectedIds.contains(tag.id),
-                      onChanged: (checked) {
-                        setSheetState(() {
-                          if (checked == true) {
-                            selectedIds.add(tag.id);
-                          } else {
-                            selectedIds.remove(tag.id);
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(CupertinoIcons.add),
-                    title: Text(l10n.addNew),
-                    onTap: () async {
-                      final newTag = await _showAddTagDialog();
-                      if (newTag != null) {
-                        final refreshed = await widget.materialsDao
-                            .getAllTags();
-                        setSheetState(() {
-                          allTags
-                            ..clear()
-                            ..addAll(refreshed);
-                          selectedIds.add(newTag.id);
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-
-    // Save on any dismiss (Done button, tap outside, back gesture)
-    if (mounted) {
-      widget.onUpdateTags(selectedIds.toList());
-    }
-  }
-
-  Future<TagOption?> _showAddTagDialog() async {
-    final l10n = AppLocalizations.of(context)!;
-    final controller = TextEditingController();
-    final name = await showCupertinoDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return CupertinoAlertDialog(
-          title: Text(l10n.addNew),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: CupertinoTextField(
-              controller: controller,
-              autofocus: true,
-              placeholder: l10n.enterTagName,
-              textCapitalization: TextCapitalization.sentences,
-              autocorrect: false,
-              onSubmitted: (value) => Navigator.of(ctx).pop(value),
-            ),
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.cancel),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: Text(l10n.create),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted) return null;
-    if (name != null && name.trim().isNotEmpty) {
-      final tag = await widget.materialsDao.findOrCreateTag(name);
-      FirebaseAnalytics.instance.logEvent(
-        name: 'material_created',
-        parameters: {'type': 'tag'},
-      );
-      return tag;
-    }
-    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final currentClay = widget.piece.clayType;
-    final clayDisplay = (currentClay != null && currentClay.isNotEmpty)
-        ? currentClay
-        : l10n.stageNone;
-
-    final glazeDisplay = widget.selectedGlazes.isNotEmpty
-        ? widget.selectedGlazes.map((g) => g.name).join(', ')
-        : l10n.glazesNone;
-
-    final tagDisplay = widget.selectedTags.isNotEmpty
-        ? widget.selectedTags.map((t) => t.name).join(', ')
-        : l10n.tagsNone;
 
     return Padding(
       padding: const EdgeInsets.all(AppSizes.md),
@@ -527,51 +152,114 @@ class MetadataFormState extends State<MetadataForm> {
           ),
           const SizedBox(height: AppSizes.md),
 
-          // Clay picker
-          GestureDetector(
-            onTap: _showClayPicker,
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: l10n.clayTypeLabel,
-                suffixIcon: const Icon(Icons.arrow_drop_down),
-              ),
-              child: Text(
-                clayDisplay,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
+          // Clay autocomplete text field
+          RawAutocomplete<ClayOption>(
+            textEditingController: _clayCtrl,
+            focusNode: _clayFocus,
+            optionsBuilder: (textEditingValue) {
+              final query = textEditingValue.text.toLowerCase().trim();
+              if (query.isEmpty) return Iterable<ClayOption>.empty();
+              return _allClays.where(
+                (c) => c.name.toLowerCase().contains(query),
+              );
+            },
+            displayStringForOption: (option) => option.name,
+            onSelected: (clay) => _saveClay(),
+            fieldViewBuilder:
+                (context, controller, focusNode, onFieldSubmitted) {
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: InputDecoration(
+                      labelText: l10n.clayTypeLabel,
+                      hintText: l10n.enterClayName,
+                      counterText: '',
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                    autocorrect: false,
+                    maxLength: AppSizes.maxClayNameLength,
+                    onSubmitted: (_) {
+                      _saveClay();
+                    },
+                  );
+                },
+            optionsViewBuilder: (context, onSelected, options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(8),
+                  clipBehavior: Clip.antiAlias,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: 200,
+                      maxWidth:
+                          MediaQuery.of(context).size.width - AppSizes.md * 2,
+                    ),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final option = options.elementAt(index);
+                        return ListTile(
+                          title: Text(option.name),
+                          onTap: () => onSelected(option),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: AppSizes.md),
 
-          // Glazes multi-select picker
-          GestureDetector(
-            onTap: _showGlazePicker,
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: l10n.glazesLabel,
-                suffixIcon: const Icon(Icons.arrow_drop_down),
-              ),
-              child: Text(
-                glazeDisplay,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
+          // Glazes chip input
+          _ChipInputField<GlazeOption>(
+            selectedItems: widget.selectedGlazes,
+            labelBuilder: (g) => g.name,
+            allOptionsLoader: widget.materialsDao.getAllGlazes,
+            onCreateNew: (name) async {
+              final glaze = await widget.materialsDao.findOrCreateGlaze(name);
+              await widget.syncTrigger.afterGlazeWrite(glaze.id);
+              return glaze;
+            },
+            onChanged: widget.onUpdateGlazes,
+            idGetter: (g) => g.id,
+            label: l10n.glazesLabel,
+            hintText: l10n.enterGlazeName,
+            maxInputLength: AppSizes.maxGlazeNameLength,
           ),
           const SizedBox(height: AppSizes.md),
 
-          // Tags multi-select picker
-          GestureDetector(
-            onTap: _showTagPicker,
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: l10n.tagsLabel,
-                suffixIcon: const Icon(Icons.arrow_drop_down),
-              ),
-              child: Text(
-                tagDisplay,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
+          // Tags chip input
+          _ChipInputField<TagOption>(
+            selectedItems: widget.selectedTags,
+            labelBuilder: (t) => t.name,
+            leadingBuilder: (t) => t.color != null
+                ? Container(
+                    width: 12,
+                    height: 12,
+                    margin: const EdgeInsets.only(right: 4),
+                    decoration: BoxDecoration(
+                      color: TagColorPresets.hexToColor(t.color!),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.divider, width: 1),
+                    ),
+                  )
+                : null,
+            allOptionsLoader: widget.materialsDao.getAllTags,
+            onCreateNew: (name) async {
+              final tag = await widget.materialsDao.findOrCreateTag(name);
+              await widget.syncTrigger.afterTagWrite(tag.id);
+              return tag;
+            },
+            onChanged: widget.onUpdateTags,
+            idGetter: (t) => t.id,
+            label: l10n.tagsLabel,
+            hintText: l10n.enterTagName,
+            maxInputLength: AppSizes.maxTagNameLength,
           ),
           const SizedBox(height: AppSizes.md),
 
@@ -580,12 +268,226 @@ class MetadataFormState extends State<MetadataForm> {
             controller: _notesCtrl,
             decoration: InputDecoration(labelText: l10n.notesLabel),
             maxLines: 3,
+            maxLength: AppSizes.maxNotesLength,
             autocorrect: false,
             onEditingComplete: () =>
                 widget.onUpdateField(notes: _notesCtrl.text),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ChipInputField<T extends Object> extends StatefulWidget {
+  final List<T> selectedItems;
+  final String Function(T) labelBuilder;
+  final Widget? Function(T)? leadingBuilder;
+  final Future<List<T>> Function() allOptionsLoader;
+  final Future<T> Function(String name) onCreateNew;
+  final void Function(List<String> ids) onChanged;
+  final String Function(T) idGetter;
+  final String label;
+  final String hintText;
+  final int? maxInputLength;
+
+  const _ChipInputField({
+    super.key,
+    required this.selectedItems,
+    required this.labelBuilder,
+    this.leadingBuilder,
+    required this.allOptionsLoader,
+    required this.onCreateNew,
+    required this.onChanged,
+    required this.idGetter,
+    required this.label,
+    required this.hintText,
+    this.maxInputLength,
+  });
+
+  @override
+  State<_ChipInputField<T>> createState() => _ChipInputFieldState<T>();
+}
+
+class _ChipInputFieldState<T extends Object> extends State<_ChipInputField<T>> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  List<T> _allOptions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+    _loadOptions();
+  }
+
+  @override
+  void didUpdateWidget(_ChipInputField<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _loadOptions();
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_focusNode.hasFocus) {
+      _loadOptions();
+    }
+  }
+
+  Future<void> _loadOptions() async {
+    _allOptions = await widget.allOptionsLoader();
+    if (mounted) setState(() {});
+  }
+
+  void _removeItem(T item) {
+    final ids = widget.selectedItems
+        .where((i) => widget.idGetter(i) != widget.idGetter(item))
+        .map((i) => widget.idGetter(i))
+        .toList();
+    widget.onChanged(ids);
+  }
+
+  void _addItem(T item) {
+    final selectedIds = widget.selectedItems.map(widget.idGetter).toSet();
+    if (selectedIds.contains(widget.idGetter(item))) {
+      _controller.clear();
+      return;
+    }
+    final ids = widget.selectedItems.map((i) => widget.idGetter(i)).toList()
+      ..add(widget.idGetter(item));
+    widget.onChanged(ids);
+    _controller.clear();
+    _focusNode.requestFocus();
+  }
+
+  Future<void> _submitText() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    _controller.clear();
+    final item = await widget.onCreateNew(text);
+    await _loadOptions();
+    _addItem(item);
+  }
+
+  Iterable<T> _filterOptions(TextEditingValue value) {
+    final query = value.text.toLowerCase().trim();
+    if (query.isEmpty) return <T>[];
+    final selectedIds = widget.selectedItems.map(widget.idGetter).toSet();
+    return _allOptions.where(
+      (o) =>
+          !selectedIds.contains(widget.idGetter(o)) &&
+          widget.labelBuilder(o).toLowerCase().contains(query),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<T>(
+      textEditingController: _controller,
+      focusNode: _focusNode,
+      optionsBuilder: _filterOptions,
+      displayStringForOption: widget.labelBuilder,
+      onSelected: _addItem,
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return InputDecorator(
+          decoration: InputDecoration(labelText: widget.label),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                focusNode: focusNode,
+                maxLength: widget.maxInputLength,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                  hintText: widget.hintText,
+                  counterText: '',
+                ),
+                textCapitalization: TextCapitalization.sentences,
+                autocorrect: false,
+                onEditingComplete: () {},
+                onSubmitted: (_) {
+                  _submitText();
+                  _focusNode.requestFocus();
+                },
+              ),
+              if (widget.selectedItems.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: widget.selectedItems.map((item) {
+                      final leading = widget.leadingBuilder?.call(item);
+                      return ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth:
+                              MediaQuery.of(context).size.width -
+                              AppSizes.md * 4,
+                        ),
+                        child: InputChip(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ?leading,
+                              Flexible(
+                                child: Text(
+                                  widget.labelBuilder(item),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          onDeleted: () => _removeItem(item),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: 200,
+                maxWidth: MediaQuery.of(context).size.width - AppSizes.md * 2,
+              ),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options.elementAt(index);
+                  final leading = widget.leadingBuilder?.call(option);
+                  return ListTile(
+                    leading: leading,
+                    title: Text(widget.labelBuilder(option)),
+                    onTap: () => onSelected(option),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -106,6 +107,8 @@ class ManageClaysScreen extends ConsumerWidget {
                         child: Text(
                           clay.name,
                           style: Theme.of(context).textTheme.bodyLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       IconButton(
@@ -149,6 +152,9 @@ class ManageClaysScreen extends ConsumerWidget {
             placeholder: l10n.enterClayName,
             textCapitalization: TextCapitalization.sentences,
             autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxClayNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),
@@ -190,6 +196,9 @@ class ManageClaysScreen extends ConsumerWidget {
             autofocus: true,
             textCapitalization: TextCapitalization.sentences,
             autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxClayNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),

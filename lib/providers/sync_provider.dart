@@ -153,7 +153,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _processQueueInternal(String uid) async {
     final entries = await _queue.getAll();
     for (final entry in entries) {
-      final isBestEffort = entry.operation == SyncOperation.pushPhotoFile;
       var success = false;
       for (var attempt = 0; attempt < 3; attempt++) {
         try {
@@ -162,13 +161,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
           break;
         } catch (e) {
           debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
-          if (isBestEffort) break;
           if (attempt < 2) {
             await Future.delayed(Duration(seconds: 1 << attempt));
           }
         }
       }
-      if (success || isBestEffort) {
+      if (success) {
         await _queue.remove(entry);
       }
     }
