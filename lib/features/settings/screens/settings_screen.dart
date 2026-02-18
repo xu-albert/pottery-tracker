@@ -365,10 +365,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // Cloud Backup section
           _SectionHeader(title: l10n.syncStatus),
-          ListTile(
-            leading: const Icon(Icons.cloud_outlined),
-            title: Text(l10n.syncComingSoon),
-          ),
+          _buildSyncTile(context, ref, l10n, auth),
           const Divider(),
 
           // Support
