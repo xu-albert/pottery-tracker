@@ -91,15 +91,7 @@ class PieceRow extends ConsumerWidget {
               ),
               if (metadataChips.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _interleave(
-                      metadataChips,
-                      const SizedBox(width: 4),
-                    ),
-                  ),
-                ),
+                Wrap(spacing: 4, runSpacing: 4, children: metadataChips),
               ],
             ],
           ),
@@ -137,7 +129,12 @@ class PieceRow extends ConsumerWidget {
       lines.add(
         Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text('Clay: $clay', style: textStyle),
+          child: Text(
+            'Clay: $clay',
+            style: textStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       );
     }
@@ -189,34 +186,36 @@ class PieceRow extends ConsumerWidget {
       bgColor = defaults.$1.withValues(alpha: 0.18);
       textColor = defaults.$2;
     }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '#',
-            style: textStyle?.copyWith(color: textColor.withValues(alpha: 0.5)),
-          ),
-          const SizedBox(width: 2),
-          Text(tag, style: textStyle?.copyWith(color: textColor)),
-        ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 150),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '#',
+              style: textStyle?.copyWith(
+                color: textColor.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Flexible(
+              child: Text(
+                tag,
+                style: textStyle?.copyWith(color: textColor),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
-  }
-
-  static List<Widget> _interleave(List<Widget> widgets, Widget separator) {
-    if (widgets.length <= 1) return widgets;
-    return [
-      for (int i = 0; i < widgets.length; i++) ...[
-        if (i > 0) separator,
-        widgets[i],
-      ],
-    ];
   }
 
   Widget _buildPhotoRow(BuildContext context, List<Photo> photos) {
