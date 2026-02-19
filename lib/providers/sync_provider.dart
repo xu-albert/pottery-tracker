@@ -153,6 +153,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _processQueueInternal(String uid) async {
     final entries = await _queue.getAll();
     for (final entry in entries) {
+      // Photo file uploads are best-effort: try once, always remove.
+      // retryMissingUploads() catches any failures on the next full sync.
+      if (entry.operation == SyncOperation.pushPhotoFile) {
+        try {
+          await _processEntry(uid, entry);
+        } catch (e) {
+          debugPrint('SyncNotifier: photo file upload failed (best-effort): $e');
+        }
+        await _queue.remove(entry);
+        continue;
+      }
+
       var success = false;
       for (var attempt = 0; attempt < 3; attempt++) {
         try {

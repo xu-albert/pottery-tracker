@@ -19,17 +19,20 @@ class SyncQueueEntry {
   final SyncOperation operation;
   final String entityId;
   final String? extraData;
+  final List<String>? changedFields;
 
   const SyncQueueEntry({
     required this.operation,
     required this.entityId,
     this.extraData,
+    this.changedFields,
   });
 
   Map<String, dynamic> toJson() => {
     'op': operation.name,
     'id': entityId,
     if (extraData != null) 'extra': extraData,
+    if (changedFields != null) 'changedFields': changedFields,
   };
 
   factory SyncQueueEntry.fromJson(Map<String, dynamic> json) {
@@ -37,6 +40,22 @@ class SyncQueueEntry {
       operation: SyncOperation.values.byName(json['op'] as String),
       entityId: json['id'] as String,
       extraData: json['extra'] as String?,
+      changedFields: (json['changedFields'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+    );
+  }
+
+  SyncQueueEntry mergeWith(SyncQueueEntry other) {
+    List<String>? merged;
+    if (changedFields != null && other.changedFields != null) {
+      merged = {...changedFields!, ...other.changedFields!}.toList();
+    }
+    return SyncQueueEntry(
+      operation: operation,
+      entityId: entityId,
+      extraData: extraData,
+      changedFields: merged,
     );
   }
 
@@ -57,8 +76,12 @@ class SyncQueue {
 
   Future<void> enqueue(SyncQueueEntry entry) async {
     final entries = await getAll();
-    if (entries.contains(entry)) return;
-    entries.add(entry);
+    final existingIndex = entries.indexWhere((e) => e == entry);
+    if (existingIndex != -1) {
+      entries[existingIndex] = entries[existingIndex].mergeWith(entry);
+    } else {
+      entries.add(entry);
+    }
     await _save(entries);
   }
 

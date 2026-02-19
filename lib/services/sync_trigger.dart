@@ -7,9 +7,16 @@ class SyncTrigger {
   SyncTrigger(this._queue, {void Function()? onEnqueue})
     : _onEnqueue = onEnqueue;
 
-  Future<void> afterPieceWrite(String pieceId) async {
+  Future<void> afterPieceWrite(
+    String pieceId, {
+    List<String>? changedFields,
+  }) async {
     await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: pieceId),
+      SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: pieceId,
+        changedFields: changedFields,
+      ),
     );
     _onEnqueue?.call();
   }
