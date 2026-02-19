@@ -1,6 +1,14 @@
+import 'dart:ffi';
+import 'dart:io';
+
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
+import 'package:drift/native.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqlite3/open.dart' as sqlite_open;
 import 'package:uuid/uuid.dart';
+
+import '../services/encryption_key_service.dart';
 import 'tables/pieces_table.dart';
 import 'tables/photos_table.dart';
 import 'tables/clay_options_table.dart';
@@ -29,9 +37,37 @@ part 'database.g.dart';
   daos: [PiecesDao, PhotosDao, MaterialsDao],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase(super.executor);
 
   AppDatabase.forTesting(super.executor);
+
+  static Future<AppDatabase> open() async {
+    // Ensure SQLCipher library is used instead of system/bundled SQLite
+    if (Platform.isAndroid) {
+      sqlite_open.open.overrideFor(
+        sqlite_open.OperatingSystem.android,
+        () => DynamicLibrary.open('libsqlcipher.so'),
+      );
+    } else if (Platform.isIOS) {
+      sqlite_open.open.overrideFor(
+        sqlite_open.OperatingSystem.iOS,
+        () => DynamicLibrary.open('SQLCipher.framework/SQLCipher'),
+      );
+    }
+
+    final key = await EncryptionKeyService().getOrCreateKey();
+    final dbDir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dbDir.path, 'pottery_tracker.db'));
+
+    final executor = NativeDatabase(
+      file,
+      setup: (rawDb) {
+        rawDb.execute("PRAGMA key = '$key'");
+      },
+    );
+
+    return AppDatabase(executor);
+  }
 
   @override
   int get schemaVersion => 8;
@@ -156,8 +192,4 @@ class AppDatabase extends _$AppDatabase {
       }
     },
   );
-
-  static QueryExecutor _openConnection() {
-    return driftDatabase(name: 'pottery_tracker');
-  }
 }

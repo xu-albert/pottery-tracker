@@ -18,8 +18,7 @@ dependencies:
 
   # Database
   drift: ^2.22.1
-  drift_flutter: ^0.2.4
-  sqlite3_flutter_libs: ^0.5.28
+  sqlcipher_flutter_libs: ^0.5.1
 
   # Routing
   go_router: ^15.1.2
@@ -35,6 +34,8 @@ dependencies:
   path_provider_foundation: 2.5.1
   path: ^1.9.1
   shared_preferences: ^2.3.4
+  flutter_secure_storage: ^9.2.4
+  sqlite3: ^2.9.4
   intl: ^0.20.2
 
   # Auth
