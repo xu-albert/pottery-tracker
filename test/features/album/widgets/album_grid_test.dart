@@ -11,6 +11,7 @@ import 'package:pottery_tracker/providers/database_provider.dart';
 import 'package:pottery_tracker/providers/materials_provider.dart';
 import 'package:pottery_tracker/providers/photos_provider.dart';
 import 'package:pottery_tracker/providers/pieces_provider.dart';
+import 'package:pottery_tracker/providers/sync_provider.dart';
 
 import '../../../helpers/fixtures.dart';
 import '../../../helpers/mock_providers.dart';
@@ -19,6 +20,7 @@ import '../../../helpers/test_helpers.dart';
 void main() {
   late MockPiecesDao mockPiecesDao;
   late MockFirebaseAnalytics mockAnalytics;
+  late MockSyncTrigger mockSyncTrigger;
 
   setUpAll(() {
     registerFallbackValue(
@@ -40,6 +42,10 @@ void main() {
         parameters: any(named: 'parameters'),
       ),
     ).thenAnswer((_) async {});
+    mockSyncTrigger = MockSyncTrigger();
+    when(
+      () => mockSyncTrigger.afterPieceWrite(any()),
+    ).thenAnswer((_) async {});
   });
 
   group('AlbumGrid - Active view', () {
@@ -59,6 +65,7 @@ void main() {
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
+          syncTriggerProvider.overrideWithValue(mockSyncTrigger),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
           photosForPieceProvider(
             'p1',
@@ -89,6 +96,7 @@ void main() {
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
+          syncTriggerProvider.overrideWithValue(mockSyncTrigger),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
           photosForPieceProvider(
             'p1',
@@ -109,6 +117,9 @@ void main() {
       expect(companion.id.value, equals('p1'));
       expect(companion.isArchived.value, isTrue);
 
+      // Verify sync trigger was called
+      verify(() => mockSyncTrigger.afterPieceWrite('p1')).called(1);
+
       // Verify snackbar text
       expect(find.text('My Bowl archived'), findsOneWidget);
     });
@@ -126,6 +137,7 @@ void main() {
         overrides: [
           piecesDaoProvider.overrideWithValue(mockPiecesDao),
           analyticsProvider.overrideWithValue(mockAnalytics),
+          syncTriggerProvider.overrideWithValue(mockSyncTrigger),
           tagColorMapProvider.overrideWithValue(<String, Color>{}),
           photosForPieceProvider(
             'p1',
@@ -148,6 +160,9 @@ void main() {
       final undoCompanion = captured.last as PiecesCompanion;
       expect(undoCompanion.id.value, equals('p1'));
       expect(undoCompanion.isArchived.value, isFalse);
+
+      // Verify sync trigger called for both archive and undo
+      verify(() => mockSyncTrigger.afterPieceWrite('p1')).called(2);
     });
   });
 

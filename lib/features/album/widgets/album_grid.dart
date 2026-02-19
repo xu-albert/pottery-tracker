@@ -11,6 +11,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/pieces_provider.dart';
+import '../../../providers/sync_provider.dart';
 import 'archive_thumbnail.dart';
 import 'piece_row.dart';
 
@@ -50,6 +51,7 @@ class AlbumGrid extends ConsumerWidget {
 
     final l10n = AppLocalizations.of(context)!;
     final piecesDao = ref.read(piecesDaoProvider);
+    final syncTrigger = ref.read(syncTriggerProvider);
 
     return ListView.separated(
       itemCount: pieces.length,
@@ -102,6 +104,7 @@ class AlbumGrid extends ConsumerWidget {
                 updatedAt: Value(DateTime.now()),
               ),
             );
+            syncTrigger.afterPieceWrite(pieceId);
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
               ..showSnackBar(
@@ -122,6 +125,7 @@ class AlbumGrid extends ConsumerWidget {
                           updatedAt: Value(DateTime.now()),
                         ),
                       );
+                      syncTrigger.afterPieceWrite(pieceId);
                       ref
                           .read(analyticsProvider)
                           .logEvent(name: 'piece_unarchived');
