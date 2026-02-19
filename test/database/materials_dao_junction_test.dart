@@ -14,29 +14,41 @@ void main() {
   });
 
   Future<String> createPiece(String id) async {
-    await db.into(db.pieces).insert(PiecesCompanion.insert(
-      id: id,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ));
+    await db
+        .into(db.pieces)
+        .insert(
+          PiecesCompanion.insert(
+            id: id,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ),
+        );
     return id;
   }
 
   Future<String> createGlaze(String id, String name) async {
-    await db.into(db.glazeOptions).insert(GlazeOptionsCompanion.insert(
-      id: id,
-      name: name,
-      createdAt: DateTime.now(),
-    ));
+    await db
+        .into(db.glazeOptions)
+        .insert(
+          GlazeOptionsCompanion.insert(
+            id: id,
+            name: name,
+            createdAt: DateTime.now(),
+          ),
+        );
     return id;
   }
 
   Future<String> createTag(String id, String name) async {
-    await db.into(db.tagOptions).insert(TagOptionsCompanion.insert(
-      id: id,
-      name: name,
-      createdAt: DateTime.now(),
-    ));
+    await db
+        .into(db.tagOptions)
+        .insert(
+          TagOptionsCompanion.insert(
+            id: id,
+            name: name,
+            createdAt: DateTime.now(),
+          ),
+        );
     return id;
   }
 
@@ -80,25 +92,27 @@ void main() {
       expect(deletions, isEmpty);
     });
 
-    test('records only the removed glaze when set is partially changed',
-        () async {
-      final pieceId = await createPiece('p1');
-      await createGlaze('g1', 'Clear');
-      await createGlaze('g2', 'Matte Black');
-      await createGlaze('g3', 'Celadon');
+    test(
+      'records only the removed glaze when set is partially changed',
+      () async {
+        final pieceId = await createPiece('p1');
+        await createGlaze('g1', 'Clear');
+        await createGlaze('g2', 'Matte Black');
+        await createGlaze('g3', 'Celadon');
 
-      await db.materialsDao.setGlazesForPiece(pieceId, ['g1', 'g2']);
+        await db.materialsDao.setGlazesForPiece(pieceId, ['g1', 'g2']);
 
-      // Replace g2 with g3 (g2 removed, g3 added)
-      await db.materialsDao.setGlazesForPiece(pieceId, ['g1', 'g3']);
+        // Replace g2 with g3 (g2 removed, g3 added)
+        await db.materialsDao.setGlazesForPiece(pieceId, ['g1', 'g3']);
 
-      final deletions = await db.materialsDao.getDeletedJunctions(
-        junctionType: 'pieceGlazes',
-        pieceId: pieceId,
-      );
-      expect(deletions, hasLength(1));
-      expect(deletions.first.optionId, 'g2');
-    });
+        final deletions = await db.materialsDao.getDeletedJunctions(
+          junctionType: 'pieceGlazes',
+          pieceId: pieceId,
+        );
+        expect(deletions, hasLength(1));
+        expect(deletions.first.optionId, 'g2');
+      },
+    );
   });
 
   group('MaterialsDao setTagsForPiece', () {
@@ -137,23 +151,25 @@ void main() {
       expect(deletions, isEmpty);
     });
 
-    test('records only the removed tag when set is partially changed',
-        () async {
-      final pieceId = await createPiece('p1');
-      await createTag('t1', 'Gift');
-      await createTag('t2', 'Sale');
-      await createTag('t3', 'Personal');
+    test(
+      'records only the removed tag when set is partially changed',
+      () async {
+        final pieceId = await createPiece('p1');
+        await createTag('t1', 'Gift');
+        await createTag('t2', 'Sale');
+        await createTag('t3', 'Personal');
 
-      await db.materialsDao.setTagsForPiece(pieceId, ['t1', 't2']);
-      await db.materialsDao.setTagsForPiece(pieceId, ['t1', 't3']);
+        await db.materialsDao.setTagsForPiece(pieceId, ['t1', 't2']);
+        await db.materialsDao.setTagsForPiece(pieceId, ['t1', 't3']);
 
-      final deletions = await db.materialsDao.getDeletedJunctions(
-        junctionType: 'pieceTags',
-        pieceId: pieceId,
-      );
-      expect(deletions, hasLength(1));
-      expect(deletions.first.optionId, 't2');
-    });
+        final deletions = await db.materialsDao.getDeletedJunctions(
+          junctionType: 'pieceTags',
+          pieceId: pieceId,
+        );
+        expect(deletions, hasLength(1));
+        expect(deletions.first.optionId, 't2');
+      },
+    );
   });
 
   group('MaterialsDao getDeletedJunctions', () {

@@ -42,67 +42,73 @@ void main() {
       expect(all, hasLength(2));
     });
 
-    test('merges entry with same operation+entityId — unions changedFields',
-        () async {
-      final queue = SyncQueue();
-      const entry1 = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-        changedFields: ['title', 'stage'],
-      );
-      const entry2 = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-        changedFields: ['stage', 'notes'],
-      );
+    test(
+      'merges entry with same operation+entityId — unions changedFields',
+      () async {
+        final queue = SyncQueue();
+        const entry1 = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title', 'stage'],
+        );
+        const entry2 = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['stage', 'notes'],
+        );
 
-      await queue.enqueue(entry1);
-      await queue.enqueue(entry2);
-      final all = await queue.getAll();
+        await queue.enqueue(entry1);
+        await queue.enqueue(entry2);
+        final all = await queue.getAll();
 
-      expect(all, hasLength(1));
-      expect(all.first.changedFields!.toSet(), {'title', 'stage', 'notes'});
-    });
+        expect(all, hasLength(1));
+        expect(all.first.changedFields!.toSet(), {'title', 'stage', 'notes'});
+      },
+    );
 
-    test('does not merge entries with same entityId but different operation',
-        () async {
-      final queue = SyncQueue();
-      const entry1 = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-      );
-      const entry2 = SyncQueueEntry(
-        operation: SyncOperation.deletePiece,
-        entityId: 'p1',
-      );
+    test(
+      'does not merge entries with same entityId but different operation',
+      () async {
+        final queue = SyncQueue();
+        const entry1 = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        );
+        const entry2 = SyncQueueEntry(
+          operation: SyncOperation.deletePiece,
+          entityId: 'p1',
+        );
 
-      await queue.enqueue(entry1);
-      await queue.enqueue(entry2);
-      final all = await queue.getAll();
+        await queue.enqueue(entry1);
+        await queue.enqueue(entry2);
+        final all = await queue.getAll();
 
-      expect(all, hasLength(2));
-    });
+        expect(all, hasLength(2));
+      },
+    );
 
-    test('merged entry preserves null changedFields (push-all semantics)',
-        () async {
-      final queue = SyncQueue();
-      const entry1 = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-      );
-      const entry2 = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-        changedFields: ['title'],
-      );
+    test(
+      'merged entry preserves null changedFields (push-all semantics)',
+      () async {
+        final queue = SyncQueue();
+        const entry1 = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        );
+        const entry2 = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
 
-      await queue.enqueue(entry1);
-      await queue.enqueue(entry2);
-      final all = await queue.getAll();
+        await queue.enqueue(entry1);
+        await queue.enqueue(entry2);
+        final all = await queue.getAll();
 
-      expect(all, hasLength(1));
-      expect(all.first.changedFields, isNull);
-    });
+        expect(all, hasLength(1));
+        expect(all.first.changedFields, isNull);
+      },
+    );
   });
 
   group('SyncQueue getAll / remove / clear / pendingCount', () {

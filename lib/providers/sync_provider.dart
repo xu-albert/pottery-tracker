@@ -159,7 +159,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
         try {
           await _processEntry(uid, entry);
         } catch (e) {
-          debugPrint('SyncNotifier: photo file upload failed (best-effort): $e');
+          debugPrint(
+            'SyncNotifier: photo file upload failed (best-effort): $e',
+          );
         }
         await _queue.remove(entry);
         continue;

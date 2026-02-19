@@ -55,16 +55,18 @@ void main() {
       expect(all.first.entityId, 'photo-1');
     });
 
-    test('enqueues both pushPhoto and pushPhotoFile when includeFile is true',
-        () async {
-      final trigger = makeTrigger();
-      await trigger.afterPhotoWrite('photo-1', includeFile: true);
+    test(
+      'enqueues both pushPhoto and pushPhotoFile when includeFile is true',
+      () async {
+        final trigger = makeTrigger();
+        await trigger.afterPhotoWrite('photo-1', includeFile: true);
 
-      final all = await queue.getAll();
-      expect(all, hasLength(2));
-      expect(all[0].operation, SyncOperation.pushPhoto);
-      expect(all[1].operation, SyncOperation.pushPhotoFile);
-    });
+        final all = await queue.getAll();
+        expect(all, hasLength(2));
+        expect(all[0].operation, SyncOperation.pushPhoto);
+        expect(all[1].operation, SyncOperation.pushPhotoFile);
+      },
+    );
   });
 
   group('SyncTrigger afterClayWrite', () {
@@ -163,17 +165,19 @@ void main() {
   });
 
   group('SyncTrigger afterMaterialDeletion', () {
-    test('enqueues deleteMaterial with entityId and collection as extraData',
-        () async {
-      final trigger = makeTrigger();
-      await trigger.afterMaterialDeletion('clays', 'clay-1');
+    test(
+      'enqueues deleteMaterial with entityId and collection as extraData',
+      () async {
+        final trigger = makeTrigger();
+        await trigger.afterMaterialDeletion('clays', 'clay-1');
 
-      final all = await queue.getAll();
-      expect(all, hasLength(1));
-      expect(all.first.operation, SyncOperation.deleteMaterial);
-      expect(all.first.entityId, 'clay-1');
-      expect(all.first.extraData, 'clays');
-      expect(callbackCount, 1);
-    });
+        final all = await queue.getAll();
+        expect(all, hasLength(1));
+        expect(all.first.operation, SyncOperation.deleteMaterial);
+        expect(all.first.entityId, 'clay-1');
+        expect(all.first.extraData, 'clays');
+        expect(callbackCount, 1);
+      },
+    );
   });
 }

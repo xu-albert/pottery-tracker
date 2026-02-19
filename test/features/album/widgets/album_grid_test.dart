@@ -43,9 +43,7 @@ void main() {
       ),
     ).thenAnswer((_) async {});
     mockSyncTrigger = MockSyncTrigger();
-    when(
-      () => mockSyncTrigger.afterPieceWrite(any()),
-    ).thenAnswer((_) async {});
+    when(() => mockSyncTrigger.afterPieceWrite(any())).thenAnswer((_) async {});
   });
 
   group('AlbumGrid - Active view', () {

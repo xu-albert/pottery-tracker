@@ -241,9 +241,9 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     List<String> glazeOptionIds,
   ) async {
     // Find existing junction rows to detect removals
-    final existing = await (select(pieceGlazes)
-          ..where((pg) => pg.pieceId.equals(pieceId)))
-        .get();
+    final existing = await (select(
+      pieceGlazes,
+    )..where((pg) => pg.pieceId.equals(pieceId))).get();
     final existingIds = existing.map((e) => e.glazeOptionId).toSet();
     final newIds = glazeOptionIds.toSet();
     final removedIds = existingIds.difference(newIds);
@@ -411,9 +411,9 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     List<String> tagOptionIds,
   ) async {
     // Find existing junction rows to detect removals
-    final existing = await (select(pieceTags)
-          ..where((pt) => pt.pieceId.equals(pieceId)))
-        .get();
+    final existing = await (select(
+      pieceTags,
+    )..where((pt) => pt.pieceId.equals(pieceId))).get();
     final existingIds = existing.map((e) => e.tagOptionId).toSet();
     final newIds = tagOptionIds.toSet();
     final removedIds = existingIds.difference(newIds);
@@ -452,12 +452,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     required String junctionType,
     required String pieceId,
   }) {
-    return (select(deletedJunctions)
-          ..where(
-            (d) =>
-                d.junctionType.equals(junctionType) &
-                d.pieceId.equals(pieceId),
-          ))
+    return (select(deletedJunctions)..where(
+          (d) =>
+              d.junctionType.equals(junctionType) & d.pieceId.equals(pieceId),
+        ))
         .get();
   }
 
@@ -470,12 +468,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     required String junctionType,
     required String pieceId,
   }) {
-    return (delete(deletedJunctions)
-          ..where(
-            (d) =>
-                d.junctionType.equals(junctionType) &
-                d.pieceId.equals(pieceId),
-          ))
+    return (delete(deletedJunctions)..where(
+          (d) =>
+              d.junctionType.equals(junctionType) & d.pieceId.equals(pieceId),
+        ))
         .go();
   }
 
