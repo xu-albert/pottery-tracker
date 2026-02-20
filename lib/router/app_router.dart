@@ -11,6 +11,7 @@ import '../features/settings/screens/manage_glazes_screen.dart';
 import '../features/settings/screens/manage_tags_screen.dart';
 import '../features/create_piece/screens/create_piece_screen.dart';
 import '../features/piece_detail/screens/piece_detail_screen.dart';
+import '../features/piece_detail/screens/archived_piece_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authStatus = ref.watch(authProvider.select((s) => s.status));
@@ -74,8 +75,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/piece/:id',
-        builder: (context, state) =>
-            PieceDetailScreen(pieceId: state.pathParameters['id']!),
+        builder: (context, state) {
+          final pieceId = state.pathParameters['id']!;
+          final isArchived = state.uri.queryParameters['archived'] == 'true';
+          if (isArchived) {
+            return ArchivedPieceDetailScreen(pieceId: pieceId);
+          }
+          return PieceDetailScreen(pieceId: pieceId);
+        },
       ),
     ],
   );

@@ -10,22 +10,24 @@ import 'photo_fullscreen.dart';
 
 class PhotoGallery extends StatelessWidget {
   final List<Photo> photos;
-  final ValueChanged<Photo> onDelete;
+  final ValueChanged<Photo>? onDelete;
   final ValueChanged<Photo>? onEditDate;
   final VoidCallback? onAddPhoto;
+  final EdgeInsets padding;
 
   const PhotoGallery({
     super.key,
     required this.photos,
-    required this.onDelete,
+    this.onDelete,
     this.onEditDate,
     this.onAddPhoto,
+    this.padding = const EdgeInsets.symmetric(horizontal: 32),
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: padding,
       child: GridView.builder(
         shrinkWrap: true,
         padding: EdgeInsets.zero,
@@ -72,7 +74,7 @@ class PhotoGallery extends StatelessWidget {
                 ),
               );
             },
-            onLongPress: photos.length > 1
+            onLongPress: photos.length > 1 && onDelete != null
                 ? () => _showPhotoActions(context, photo)
                 : null,
             child: ClipRRect(
@@ -138,7 +140,7 @@ class PhotoGallery extends StatelessWidget {
             isDestructiveAction: true,
             onPressed: () {
               Navigator.pop(ctx);
-              onDelete(photo);
+              onDelete?.call(photo);
             },
             child: const Text('Delete Photo'),
           ),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_sizes.dart';
 import '../../../providers/pieces_provider.dart';
 import '../widgets/album_grid.dart';
 import '../widgets/search_bar.dart' as app;
@@ -21,6 +23,24 @@ class AlbumScreen extends ConsumerWidget {
         children: [
           app.PiecesSearchBar(isArchived: ref.watch(archivedFilterProvider)),
           const FilterChips(),
+          if (ref.watch(archivedFilterProvider))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSizes.md,
+                  AppSizes.xs,
+                  AppSizes.md,
+                  0,
+                ),
+                child: Text(
+                  'Archived pieces are read-only.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.charcoal.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: piecesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),

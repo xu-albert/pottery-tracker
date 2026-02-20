@@ -44,7 +44,11 @@ class AlbumGrid extends ConsumerWidget {
           final item = pieces[index];
           return ArchiveThumbnail(
             piece: item,
-            onTap: () => context.push('/piece/${item.piece.id}'),
+            onTap: () => context.push(
+              isArchived
+                  ? '/piece/${item.piece.id}?archived=true'
+                  : '/piece/${item.piece.id}',
+            ),
           );
         },
       );
@@ -67,7 +71,11 @@ class AlbumGrid extends ConsumerWidget {
         final item = pieces[index];
         final child = PieceRow(
           piece: item,
-          onTap: () => context.push('/piece/${item.piece.id}'),
+          onTap: () => context.push(
+            isArchived
+                ? '/piece/${item.piece.id}?archived=true'
+                : '/piece/${item.piece.id}',
+          ),
         );
 
         return Dismissible(
