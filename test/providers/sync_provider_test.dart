@@ -1,6 +1,7 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
@@ -50,6 +51,8 @@ _setup({AuthState auth = _signedOut}) {
   ).thenAnswer((_) async {});
   when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
   when(() => syncService.deleteAllData(any())).thenAnswer((_) async {});
+  when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
+  when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
@@ -92,6 +95,8 @@ _setup({AuthState auth = _signedOut}) {
 
 void main() {
   setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
     registerFallbackValue(
       const SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: ''),
     );
@@ -505,29 +510,31 @@ void main() {
   });
 
   group('deleteAllData', () {
-    test('calls syncService.deleteAllData and clears queue', () async {
+    test('deletes cloud and local data when signed in', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
 
       await s.notifier.deleteAllData();
 
-      verify(() => s.syncService.deleteAllData('user-1')).called(1);
+      verify(() => s.syncService.deleteCloudData('user-1')).called(1);
+      verify(() => s.syncService.deleteLocalData()).called(1);
       // called(2): once from the constructor's auto-sync, once from deleteAllData
       verify(() => s.queue.clear()).called(2);
 
       final state = s.container.read(syncStateProvider);
-      expect(state.status, SyncStatus.idle);
+      expect(state.status, SyncStatus.disabled);
       expect(state.pendingCount, 0);
     });
 
-    test('does nothing when not signed in', () async {
+    test('deletes only local data when not signed in', () async {
       final s = _setup(auth: _signedOut);
       addTearDown(s.container.dispose);
 
       await s.notifier.deleteAllData();
 
-      verifyNever(() => s.syncService.deleteAllData(any()));
+      verifyNever(() => s.syncService.deleteCloudData(any()));
+      verify(() => s.syncService.deleteLocalData()).called(1);
     });
 
     test('sets error state on failure', () async {
@@ -536,7 +543,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       when(
-        () => s.syncService.deleteAllData(any()),
+        () => s.syncService.deleteLocalData(),
       ).thenThrow(Exception('permission denied'));
 
       await s.notifier.deleteAllData();

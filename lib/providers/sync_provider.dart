@@ -216,23 +216,28 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   Future<void> deleteAllData() async {
-    final auth = _ref.read(authProvider);
-    if (!auth.isSignedIn || auth.uid == null) return;
     if (_syncing) return;
     _syncing = true;
     state = state.copyWith(status: SyncStatus.syncing);
 
     try {
-      await _syncService.deleteAllData(auth.uid!);
-      await _queue.clear();
+      final auth = _ref.read(authProvider);
 
-      // Delete the Firebase Auth account
-      try {
-        await FirebaseAuth.instance.currentUser?.delete();
-      } catch (e) {
-        debugPrint('SyncNotifier: Firebase account deletion failed: $e');
-        // If requires-recent-login, data is already deleted — sign out anyway
+      // Delete cloud data and account only if signed in
+      if (auth.isSignedIn && auth.uid != null) {
+        await _syncService.deleteCloudData(auth.uid!);
+
+        // Delete the Firebase Auth account
+        try {
+          await FirebaseAuth.instance.currentUser?.delete();
+        } catch (e) {
+          debugPrint('SyncNotifier: Firebase account deletion failed: $e');
+        }
       }
+
+      // Always delete local data
+      await _syncService.deleteLocalData();
+      await _queue.clear();
 
       // Sign out locally
       await _ref.read(authProvider.notifier).signOut();

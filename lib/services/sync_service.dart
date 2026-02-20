@@ -25,8 +25,8 @@ class SyncService {
   // Delete all data (for testing)
   // ════════════════════════════════════════════
 
-  Future<void> deleteAllData(String uid) async {
-    debugPrint('SyncService: deleting ALL data for user $uid');
+  Future<void> deleteCloudData(String uid) async {
+    debugPrint('SyncService: deleting cloud data for user $uid');
 
     // Delete all Firestore subcollections
     for (final collection in [
@@ -71,8 +71,11 @@ class SyncService {
     } catch (e) {
       debugPrint('SyncService: storage cleanup error: $e');
     }
+  }
 
-    // Delete all local data
+  Future<void> deleteLocalData() async {
+    debugPrint('SyncService: deleting all local data');
+
     await _db.delete(_db.pieceTags).go();
     await _db.delete(_db.pieceGlazes).go();
     await _db.delete(_db.photos).go();
@@ -80,9 +83,7 @@ class SyncService {
     await _db.delete(_db.clayOptions).go();
     await _db.delete(_db.glazeOptions).go();
     await _db.delete(_db.tagOptions).go();
-    debugPrint('SyncService: deleted all local data');
 
-    // Delete local photo files
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${appDir.path}/photos');
@@ -93,6 +94,11 @@ class SyncService {
     } catch (e) {
       debugPrint('SyncService: local file cleanup error: $e');
     }
+  }
+
+  Future<void> deleteAllData(String uid) async {
+    await deleteCloudData(uid);
+    await deleteLocalData();
   }
 
   // ════════════════════════════════════════════
