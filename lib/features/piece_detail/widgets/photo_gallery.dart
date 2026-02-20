@@ -71,7 +71,9 @@ class PhotoGallery extends StatelessWidget {
                 ),
               );
             },
-            onLongPress: () => _showPhotoActions(context, photo),
+            onLongPress: photos.length > 1
+                ? () => _showPhotoActions(context, photo)
+                : null,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppSizes.radiusSm),
               child: Stack(

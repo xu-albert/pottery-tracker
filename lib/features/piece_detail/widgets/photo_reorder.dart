@@ -120,7 +120,9 @@ class _PhotoReorderScreenState extends State<PhotoReorderScreen> {
               final path = photo.thumbnailPath ?? photo.localPath;
               return Dismissible(
                 key: ValueKey(photo.id),
-                direction: DismissDirection.endToStart,
+                direction: _photos.length > 1
+                    ? DismissDirection.endToStart
+                    : DismissDirection.none,
                 onDismissed: (_) {
                   final deletedIndex = index;
                   setState(() {
