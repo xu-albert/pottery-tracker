@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -67,19 +68,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }) async {
     if (_isLinking) return;
     final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => CupertinoAlertDialog(
         title: Text(l10n.disconnectConfirmTitle(providerName)),
         content: Text(l10n.disconnectConfirmMessage),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: Text(l10n.disconnect),
           ),
         ],
@@ -135,19 +136,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _confirmSignOut() async {
     final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => CupertinoAlertDialog(
         title: Text(l10n.signOutConfirmTitle),
         content: Text(l10n.signOutConfirmMessage),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: Text(l10n.signOut),
           ),
         ],
@@ -417,21 +418,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               'Permanently deletes your account and all data',
             ),
             onTap: () async {
-              final confirmed = await showDialog<bool>(
+              final confirmed = await showCupertinoDialog<bool>(
                 context: context,
-                builder: (context) => AlertDialog(
+                builder: (context) => CupertinoAlertDialog(
                   title: const Text('Delete Account & Data?'),
                   content: const Text(
                     'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.',
                   ),
                   actions: [
-                    TextButton(
+                    CupertinoDialogAction(
                       onPressed: () => Navigator.pop(context, false),
                       child: const Text('Cancel'),
                     ),
-                    TextButton(
+                    CupertinoDialogAction(
+                      isDestructiveAction: true,
                       onPressed: () => Navigator.pop(context, true),
-                      style: TextButton.styleFrom(foregroundColor: Colors.red),
                       child: const Text('Delete Everything'),
                     ),
                   ],
