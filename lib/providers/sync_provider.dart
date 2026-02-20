@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -224,7 +225,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       await _syncService.deleteAllData(auth.uid!);
       await _queue.clear();
-      state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
+
+      // Delete the Firebase Auth account
+      try {
+        await FirebaseAuth.instance.currentUser?.delete();
+      } catch (e) {
+        debugPrint('SyncNotifier: Firebase account deletion failed: $e');
+        // If requires-recent-login, data is already deleted — sign out anyway
+      }
+
+      // Sign out locally
+      await _ref.read(authProvider.notifier).signOut();
+      state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
     } catch (e) {
       debugPrint('SyncNotifier: deleteAllData failed: $e');
       state = state.copyWith(

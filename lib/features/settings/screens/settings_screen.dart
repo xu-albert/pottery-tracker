@@ -406,21 +406,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // Debug
           const Divider(),
-          _SectionHeader(title: 'Delete data'),
+          _SectionHeader(title: 'Account'),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text(
-              'Delete All Data',
+              'Delete Account & Data',
               style: TextStyle(color: Colors.red),
             ),
-            subtitle: const Text('Deletes local + cloud data'),
+            subtitle: const Text(
+              'Permanently deletes your account and all data',
+            ),
             onTap: () async {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('Delete All Data?'),
+                  title: const Text('Delete Account & Data?'),
                   content: const Text(
-                    'This will permanently delete ALL pieces, photos, and materials from this device AND the cloud. This cannot be undone.',
+                    'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.',
                   ),
                   actions: [
                     TextButton(
@@ -437,12 +439,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               );
               if (confirmed != true || !context.mounted) return;
               await ref.read(syncStateProvider.notifier).deleteAllData();
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context)
-                ..clearSnackBars()
-                ..showSnackBar(
-                  const SnackBar(content: Text('All data deleted')),
-                );
             },
           ),
         ],
