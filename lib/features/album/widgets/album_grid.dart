@@ -43,7 +43,11 @@ class AlbumGrid extends ConsumerWidget {
           final item = pieces[index];
           return ArchiveThumbnail(
             piece: item,
-            onTap: () => context.push('/piece/${item.piece.id}'),
+            onTap: () => context.push(
+              isArchived
+                  ? '/piece/${item.piece.id}?archived=true'
+                  : '/piece/${item.piece.id}',
+            ),
           );
         },
       );
@@ -66,21 +70,93 @@ class AlbumGrid extends ConsumerWidget {
         final item = pieces[index];
         final child = PieceRow(
           piece: item,
-          onTap: () => context.push('/piece/${item.piece.id}'),
+          onTap: () => context.push(
+            isArchived
+                ? '/piece/${item.piece.id}?archived=true'
+                : '/piece/${item.piece.id}',
+          ),
         );
 
-        if (isArchived) return child;
+        if (isArchived) {
+          return Dismissible(
+            key: ValueKey(item.piece.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: AppSizes.lg),
+              color: AppColors.teal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    l10n.unarchivePiece,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: AppSizes.xs),
+                  const Icon(Icons.unarchive_outlined, color: Colors.white),
+                ],
+              ),
+            ),
+            onDismissed: (_) {
+              HapticFeedback.lightImpact();
+              ref.read(analyticsProvider).logEvent(name: 'piece_unarchived');
+              final pieceId = item.piece.id;
+              piecesDao.updatePiece(
+                PiecesCompanion(
+                  id: Value(pieceId),
+                  isArchived: const Value(false),
+                  updatedAt: Value(DateTime.now()),
+                ),
+              );
+              syncTrigger.afterPieceWrite(pieceId);
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      l10n.pieceUnarchivedWithTitle(
+                        item.piece.title ?? 'Untitled Piece',
+                      ),
+                    ),
+                    duration: const Duration(seconds: 2),
+                    action: SnackBarAction(
+                      label: l10n.undo,
+                      onPressed: () {
+                        piecesDao.updatePiece(
+                          PiecesCompanion(
+                            id: Value(pieceId),
+                            isArchived: const Value(true),
+                            updatedAt: Value(DateTime.now()),
+                          ),
+                        );
+                        syncTrigger.afterPieceWrite(pieceId);
+                        ref
+                            .read(analyticsProvider)
+                            .logEvent(name: 'piece_archived');
+                      },
+                    ),
+                  ),
+                );
+            },
+            child: child,
+          );
+        }
 
         return Dismissible(
           key: ValueKey(item.piece.id),
-          direction: DismissDirection.endToStart,
+          direction: DismissDirection.startToEnd,
           background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: AppSizes.lg),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.only(left: AppSizes.lg),
             color: AppColors.teal,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
+                const Icon(Icons.archive_outlined, color: Colors.white),
+                const SizedBox(width: AppSizes.xs),
                 Text(
                   l10n.archivePiece,
                   style: const TextStyle(
@@ -88,8 +164,6 @@ class AlbumGrid extends ConsumerWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: AppSizes.xs),
-                const Icon(Icons.archive_outlined, color: Colors.white),
               ],
             ),
           ),
