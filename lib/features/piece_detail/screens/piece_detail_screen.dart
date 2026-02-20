@@ -531,28 +531,28 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
   void _showAddPhotoSheet() {
     final l10n = AppLocalizations.of(context)!;
-    showModalBottomSheet(
+    showCupertinoModalPopup(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: Text(l10n.camera),
-              onTap: () {
-                Navigator.pop(ctx);
-                _addPhoto(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: Text(l10n.photoLibrary),
-              onTap: () {
-                Navigator.pop(ctx);
-                _addMultiplePhotos();
-              },
-            ),
-          ],
+      builder: (ctx) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _addPhoto(ImageSource.camera);
+            },
+            child: Text(l10n.camera),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _addMultiplePhotos();
+            },
+            child: Text(l10n.photoLibrary),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(l10n.cancel),
         ),
       ),
     );
@@ -787,11 +787,11 @@ class _BatchProgressDialogState extends State<_BatchProgressDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    return AlertDialog(
+    return CupertinoAlertDialog(
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
+          const CupertinoActivityIndicator(),
           const SizedBox(height: 16),
           Text(l10n.processingPhotos(_current, widget.total)),
         ],

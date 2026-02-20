@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' hide Column;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,22 +33,22 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
   Future<void> _showSourcePicker() async {
     final l10n = AppLocalizations.of(context)!;
     // Use a string to distinguish camera vs gallery (multi-select)
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showCupertinoModalPopup<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: Text(l10n.camera),
-              onTap: () => Navigator.pop(ctx, 'camera'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: Text(l10n.photoLibrary),
-              onTap: () => Navigator.pop(ctx, 'gallery'),
-            ),
-          ],
+      builder: (ctx) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(ctx, 'camera'),
+            child: Text(l10n.camera),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(ctx, 'gallery'),
+            child: Text(l10n.photoLibrary),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(l10n.cancel),
         ),
       ),
     );

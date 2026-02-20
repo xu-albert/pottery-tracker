@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
@@ -129,23 +130,22 @@ class PhotoGallery extends StatelessWidget {
   }
 
   void _showPhotoActions(BuildContext context, Photo photo) {
-    showModalBottomSheet(
+    showCupertinoModalPopup(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
-                'Delete photo',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                onDelete(photo);
-              },
-            ),
-          ],
+      builder: (ctx) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.pop(ctx);
+              onDelete(photo);
+            },
+            child: const Text('Delete Photo'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
         ),
       ),
     );
