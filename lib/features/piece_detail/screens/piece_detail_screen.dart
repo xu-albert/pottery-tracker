@@ -306,19 +306,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     );
     if (date == null || !mounted) return;
 
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(current),
-    );
-    if (!mounted) return;
-
-    final newDate = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time?.hour ?? current.hour,
-      time?.minute ?? current.minute,
-    );
+    final newDate = DateTime(date.year, date.month, date.day);
 
     final dao = ref.read(piecesDaoProvider);
     await dao.updatePiece(
@@ -352,19 +340,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     );
     if (date == null || !mounted) return;
 
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(photo.dateTaken),
-    );
-    if (!mounted) return;
-
-    final newDate = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time?.hour ?? photo.dateTaken.hour,
-      time?.minute ?? photo.dateTaken.minute,
-    );
+    final newDate = DateTime(date.year, date.month, date.day);
 
     final photosDao = ref.read(photosDaoProvider);
     await photosDao.updatePhoto(

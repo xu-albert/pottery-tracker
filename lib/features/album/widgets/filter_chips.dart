@@ -23,6 +23,7 @@ class FilterChips extends ConsumerWidget {
         children: [
           ChoiceChip(
             label: Text(l10n.filterAll),
+            showCheckmark: false,
             selected: !archivedOnly,
             onSelected: (_) {
               ref
@@ -37,6 +38,7 @@ class FilterChips extends ConsumerWidget {
           const SizedBox(width: AppSizes.sm),
           ChoiceChip(
             label: Text(l10n.filterArchived),
+            showCheckmark: false,
             selected: archivedOnly,
             onSelected: (_) {
               ref

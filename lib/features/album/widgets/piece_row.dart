@@ -76,11 +76,24 @@ class PieceRow extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 2),
-              Text(
-                DateFormat.yMMMd().format(piece.piece.updatedAt),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.charcoal.withValues(alpha: 0.5),
-                ),
+              photosAsync.when(
+                loading: () => const SizedBox.shrink(),
+                error: (_, _) => const SizedBox.shrink(),
+                data: (photos) {
+                  final displayDate = piece.piece.displayDate ??
+                      (photos.isNotEmpty
+                          ? photos
+                              .map((p) => p.dateTaken)
+                              .reduce((a, b) => a.isAfter(b) ? a : b)
+                          : null) ??
+                      piece.piece.createdAt;
+                  return Text(
+                    DateFormat.yMMMd().format(displayDate),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.charcoal.withValues(alpha: 0.5),
+                    ),
+                  );
+                },
               ),
               ..._buildClayGlazeLines(context),
               const SizedBox(height: AppSizes.sm),

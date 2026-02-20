@@ -11,7 +11,7 @@ class LastUpdatedInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat.yMMMd().add_jm();
+    final dateFormat = DateFormat.yMMMd();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
