@@ -99,6 +99,17 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _displayDateMeta = const VerificationMeta(
+    'displayDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> displayDate = GeneratedColumn<DateTime>(
+    'display_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -132,6 +143,7 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     notes,
     coverPhotoId,
     isArchived,
+    displayDate,
     createdAt,
     updatedAt,
   ];
@@ -203,6 +215,15 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
       );
     }
+    if (data.containsKey('display_date')) {
+      context.handle(
+        _displayDateMeta,
+        displayDate.isAcceptableOrUnknown(
+          data['display_date']!,
+          _displayDateMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -264,6 +285,10 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_archived'],
       )!,
+      displayDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}display_date'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -291,6 +316,7 @@ class Piece extends DataClass implements Insertable<Piece> {
   final String? notes;
   final String? coverPhotoId;
   final bool isArchived;
+  final DateTime? displayDate;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Piece({
@@ -303,6 +329,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     this.notes,
     this.coverPhotoId,
     required this.isArchived,
+    this.displayDate,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -332,6 +359,9 @@ class Piece extends DataClass implements Insertable<Piece> {
       map['cover_photo_id'] = Variable<String>(coverPhotoId);
     }
     map['is_archived'] = Variable<bool>(isArchived);
+    if (!nullToAbsent || displayDate != null) {
+      map['display_date'] = Variable<DateTime>(displayDate);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -360,6 +390,9 @@ class Piece extends DataClass implements Insertable<Piece> {
           ? const Value.absent()
           : Value(coverPhotoId),
       isArchived: Value(isArchived),
+      displayDate: displayDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayDate),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -380,6 +413,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       notes: serializer.fromJson<String?>(json['notes']),
       coverPhotoId: serializer.fromJson<String?>(json['coverPhotoId']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
+      displayDate: serializer.fromJson<DateTime?>(json['displayDate']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -397,6 +431,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       'notes': serializer.toJson<String?>(notes),
       'coverPhotoId': serializer.toJson<String?>(coverPhotoId),
       'isArchived': serializer.toJson<bool>(isArchived),
+      'displayDate': serializer.toJson<DateTime?>(displayDate),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -412,6 +447,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     Value<String?> notes = const Value.absent(),
     Value<String?> coverPhotoId = const Value.absent(),
     bool? isArchived,
+    Value<DateTime?> displayDate = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Piece(
@@ -424,6 +460,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     notes: notes.present ? notes.value : this.notes,
     coverPhotoId: coverPhotoId.present ? coverPhotoId.value : this.coverPhotoId,
     isArchived: isArchived ?? this.isArchived,
+    displayDate: displayDate.present ? displayDate.value : this.displayDate,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -442,6 +479,9 @@ class Piece extends DataClass implements Insertable<Piece> {
       isArchived: data.isArchived.present
           ? data.isArchived.value
           : this.isArchived,
+      displayDate: data.displayDate.present
+          ? data.displayDate.value
+          : this.displayDate,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -459,6 +499,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
           ..write('isArchived: $isArchived, ')
+          ..write('displayDate: $displayDate, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -476,6 +517,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     notes,
     coverPhotoId,
     isArchived,
+    displayDate,
     createdAt,
     updatedAt,
   );
@@ -492,6 +534,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           other.notes == this.notes &&
           other.coverPhotoId == this.coverPhotoId &&
           other.isArchived == this.isArchived &&
+          other.displayDate == this.displayDate &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -506,6 +549,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
   final Value<String?> notes;
   final Value<String?> coverPhotoId;
   final Value<bool> isArchived;
+  final Value<DateTime?> displayDate;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -519,6 +563,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.displayDate = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -533,6 +578,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.displayDate = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -549,6 +595,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Expression<String>? notes,
     Expression<String>? coverPhotoId,
     Expression<bool>? isArchived,
+    Expression<DateTime>? displayDate,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -563,6 +610,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       if (notes != null) 'notes': notes,
       if (coverPhotoId != null) 'cover_photo_id': coverPhotoId,
       if (isArchived != null) 'is_archived': isArchived,
+      if (displayDate != null) 'display_date': displayDate,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -579,6 +627,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Value<String?>? notes,
     Value<String?>? coverPhotoId,
     Value<bool>? isArchived,
+    Value<DateTime?>? displayDate,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -593,6 +642,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       notes: notes ?? this.notes,
       coverPhotoId: coverPhotoId ?? this.coverPhotoId,
       isArchived: isArchived ?? this.isArchived,
+      displayDate: displayDate ?? this.displayDate,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -629,6 +679,9 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     if (isArchived.present) {
       map['is_archived'] = Variable<bool>(isArchived.value);
     }
+    if (displayDate.present) {
+      map['display_date'] = Variable<DateTime>(displayDate.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -653,6 +706,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
           ..write('isArchived: $isArchived, ')
+          ..write('displayDate: $displayDate, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -3138,6 +3192,7 @@ typedef $$PiecesTableCreateCompanionBuilder =
       Value<String?> notes,
       Value<String?> coverPhotoId,
       Value<bool> isArchived,
+      Value<DateTime?> displayDate,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -3153,6 +3208,7 @@ typedef $$PiecesTableUpdateCompanionBuilder =
       Value<String?> notes,
       Value<String?> coverPhotoId,
       Value<bool> isArchived,
+      Value<DateTime?> displayDate,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -3233,6 +3289,11 @@ class $$PiecesTableFilterComposer
 
   ColumnFilters<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get displayDate => $composableBuilder(
+    column: $table.displayDate,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3326,6 +3387,11 @@ class $$PiecesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get displayDate => $composableBuilder(
+    column: $table.displayDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -3374,6 +3440,11 @@ class $$PiecesTableAnnotationComposer
 
   GeneratedColumn<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get displayDate => $composableBuilder(
+    column: $table.displayDate,
     builder: (column) => column,
   );
 
@@ -3446,6 +3517,7 @@ class $$PiecesTableTableManager
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> displayDate = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3459,6 +3531,7 @@ class $$PiecesTableTableManager
                 notes: notes,
                 coverPhotoId: coverPhotoId,
                 isArchived: isArchived,
+                displayDate: displayDate,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -3474,6 +3547,7 @@ class $$PiecesTableTableManager
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> displayDate = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -3487,6 +3561,7 @@ class $$PiecesTableTableManager
                 notes: notes,
                 coverPhotoId: coverPhotoId,
                 isArchived: isArchived,
+                displayDate: displayDate,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

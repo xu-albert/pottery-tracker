@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -379,7 +378,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.favorite_outline),
             title: Text(l10n.supportDeveloper),
-            subtitle: Text(l10n.comingSoon),
+            onTap: () => launchUrl(
+              Uri.parse('https://ko-fi.com/albertxu451'),
+              mode: LaunchMode.externalApplication,
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.mail_outline),
@@ -404,12 +406,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // Debug
           const Divider(),
-          _SectionHeader(title: 'Debug'),
-          ListTile(
-            leading: const Icon(Icons.bug_report),
-            title: const Text('Test Crash'),
-            onTap: () => FirebaseCrashlytics.instance.crash(),
-          ),
+          _SectionHeader(title: 'Delete data'),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text(

@@ -297,7 +297,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   Future<void> _pickUpdatedDate() async {
-    final current = _piece!.updatedAt;
+    final current = _resolveDisplayDate();
     final date = await showDatePicker(
       context: context,
       initialDate: current,
@@ -322,10 +322,55 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
     final dao = ref.read(piecesDaoProvider);
     await dao.updatePiece(
-      PiecesCompanion(id: Value(widget.pieceId), updatedAt: Value(newDate)),
+      PiecesCompanion(
+        id: Value(widget.pieceId),
+        displayDate: Value(newDate),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
     await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     _loadPiece();
+  }
+
+  DateTime _resolveDisplayDate() {
+    if (_piece!.displayDate != null) return _piece!.displayDate!;
+    final photos = ref.read(photosForPieceProvider(widget.pieceId)).valueOrNull;
+    if (photos != null && photos.isNotEmpty) {
+      return photos
+          .map((p) => p.dateTaken)
+          .reduce((a, b) => a.isAfter(b) ? a : b);
+    }
+    return _piece!.createdAt;
+  }
+
+  Future<void> _editPhotoDate(Photo photo) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: photo.dateTaken,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(photo.dateTaken),
+    );
+    if (!mounted) return;
+
+    final newDate = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time?.hour ?? photo.dateTaken.hour,
+      time?.minute ?? photo.dateTaken.minute,
+    );
+
+    final photosDao = ref.read(photosDaoProvider);
+    await photosDao.updatePhoto(
+      PhotosCompanion(id: Value(photo.id), dateTaken: Value(newDate)),
+    );
+    await ref.read(syncTriggerProvider).afterPhotoWrite(photo.id);
   }
 
   Future<void> _addMultiplePhotos() async {
@@ -559,7 +604,11 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       ),
                     ),
                     if (photos.isNotEmpty)
-                      PhotoGallery(photos: photos, onDelete: _deletePhoto),
+                      PhotoGallery(
+                        photos: photos,
+                        onDelete: _deletePhoto,
+                        onEditDate: _editPhotoDate,
+                      ),
                     if (photos.length >= 2)
                       Align(
                         alignment: Alignment.centerRight,
@@ -583,7 +632,10 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       onUpdateGlazes: _updateGlazes,
                       onUpdateTags: _updateTags,
                     ),
-                    LastUpdatedInfo(piece: _piece!, onTap: _pickUpdatedDate),
+                    LastUpdatedInfo(
+                      displayDate: _resolveDisplayDate(),
+                      onTap: _pickUpdatedDate,
+                    ),
                     const SizedBox(height: 16),
                   ],
                 ),

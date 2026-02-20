@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../../database/database.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_colors.dart';
 
 class LastUpdatedInfo extends StatelessWidget {
-  final Piece piece;
+  final DateTime displayDate;
   final VoidCallback? onTap;
 
-  const LastUpdatedInfo({super.key, required this.piece, this.onTap});
+  const LastUpdatedInfo({super.key, required this.displayDate, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +30,7 @@ class LastUpdatedInfo extends StatelessWidget {
               const SizedBox(width: AppSizes.xs),
               Expanded(
                 child: Text(
-                  'Last updated ${dateFormat.format(piece.updatedAt)}',
+                  dateFormat.format(displayDate),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppColors.charcoal.withValues(alpha: 0.5),
                   ),

@@ -36,6 +36,7 @@ void main() {
     String? stage,
     String? clayType,
     String? notes,
+    DateTime? displayDate,
   }) async {
     final now = DateTime.now();
     await db.piecesDao.insertPiece(
@@ -45,6 +46,7 @@ void main() {
         stage: Value(stage),
         clayType: Value(clayType),
         notes: Value(notes),
+        displayDate: Value(displayDate),
         createdAt: Value(now),
         updatedAt: Value(now),
       ),
@@ -158,6 +160,31 @@ void main() {
       expect(data['isArchived'], false);
       expect(data['createdAt'], isA<Timestamp>());
       expect(data['updatedAt'], isA<Timestamp>());
+    });
+
+    test('pushes displayDate when set', () async {
+      final displayDate = DateTime(2025, 3, 15, 10, 30);
+      await insertPiece(id: 'p2', title: 'Vase', displayDate: displayDate);
+
+      await syncService.pushPiece(_uid, 'p2');
+
+      final doc = await col('pieces').doc('p2').get();
+      final data = doc.data() as Map<String, dynamic>;
+      expect(data['displayDate'], isA<Timestamp>());
+      expect(
+        (data['displayDate'] as Timestamp).toDate(),
+        displayDate,
+      );
+    });
+
+    test('pushes null displayDate when not set', () async {
+      await insertPiece(id: 'p3', title: 'Cup');
+
+      await syncService.pushPiece(_uid, 'p3');
+
+      final doc = await col('pieces').doc('p3').get();
+      final data = doc.data() as Map<String, dynamic>;
+      expect(data['displayDate'], isNull);
     });
 
     test('no-ops when piece does not exist locally', () async {
@@ -360,6 +387,79 @@ void main() {
       expect(piece!.title, 'Remote Bowl');
       expect(piece.stage, 'glazed');
       expect(piece.clayType, 'Stoneware');
+    });
+
+    test('pulls displayDate from remote piece', () async {
+      final displayDate = DateTime(2025, 5, 20, 14, 0);
+      final now = DateTime(2025, 6, 1);
+      await col('pieces').doc('p-dd').set({
+        'title': 'Bowl with date',
+        'stage': null,
+        'clayType': null,
+        'notes': null,
+        'coverPhotoId': null,
+        'isArchived': false,
+        'displayDate': Timestamp.fromDate(displayDate),
+        'createdAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
+      });
+
+      await syncService.pullAll(_uid);
+
+      final piece = await db.piecesDao.getPieceById('p-dd');
+      expect(piece, isNotNull);
+      expect(piece!.displayDate, displayDate);
+    });
+
+    test('pulls piece with null displayDate', () async {
+      final now = DateTime(2025, 6, 1);
+      await col('pieces').doc('p-nd').set({
+        'title': 'No display date',
+        'stage': null,
+        'clayType': null,
+        'notes': null,
+        'coverPhotoId': null,
+        'isArchived': false,
+        'createdAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
+      });
+
+      await syncService.pullAll(_uid);
+
+      final piece = await db.piecesDao.getPieceById('p-nd');
+      expect(piece, isNotNull);
+      expect(piece!.displayDate, isNull);
+    });
+
+    test('updates displayDate when remote is newer', () async {
+      final oldTime = DateTime(2025, 1, 1);
+      await db.piecesDao.insertPiece(
+        PiecesCompanion(
+          id: const Value('p-upd'),
+          title: const Value('Old'),
+          createdAt: Value(oldTime),
+          updatedAt: Value(oldTime),
+        ),
+      );
+
+      final newTime = DateTime(2025, 6, 1);
+      final displayDate = DateTime(2025, 4, 10);
+      await col('pieces').doc('p-upd').set({
+        'title': 'Updated',
+        'stage': null,
+        'clayType': null,
+        'notes': null,
+        'coverPhotoId': null,
+        'isArchived': false,
+        'displayDate': Timestamp.fromDate(displayDate),
+        'createdAt': Timestamp.fromDate(oldTime),
+        'updatedAt': Timestamp.fromDate(newTime),
+      });
+
+      await syncService.pullAll(_uid);
+
+      final piece = await db.piecesDao.getPieceById('p-upd');
+      expect(piece!.displayDate, displayDate);
     });
 
     test('inserts remote clays, glazes, and tags into local DB', () async {

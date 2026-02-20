@@ -49,7 +49,7 @@ class ImageService {
   }
 
   Future<List<XFile>?> pickMultipleImages() async {
-    final picked = await _picker.pickMultiImage(requestFullMetadata: false);
+    final picked = await _picker.pickMultiImage(requestFullMetadata: true);
     if (picked.isEmpty) return null;
     return picked;
   }
@@ -59,7 +59,7 @@ class ImageService {
     required String pieceId,
   }) async {
     final photoId = _uuid.v4();
-    final dateTaken = _extractDateFromBytes(bytes);
+    final dateTaken = await _extractDateFromBytes(bytes);
 
     final appDir = await getApplicationDocumentsDirectory();
     final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
@@ -122,9 +122,9 @@ class ImageService {
     return bytes;
   }
 
-  DateTime _extractDateFromBytes(Uint8List bytes) {
+  Future<DateTime> _extractDateFromBytes(Uint8List bytes) async {
     try {
-      final tags = readExifFromBytes(bytes) as Map<String, IfdTag>;
+      final tags = await readExifFromBytes(bytes);
       final dateTag =
           tags['EXIF DateTimeOriginal']?.toString() ??
           tags['Image DateTime']?.toString();

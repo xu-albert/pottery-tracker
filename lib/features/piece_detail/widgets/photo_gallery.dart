@@ -10,8 +10,14 @@ import 'photo_fullscreen.dart';
 class PhotoGallery extends StatefulWidget {
   final List<Photo> photos;
   final ValueChanged<Photo> onDelete;
+  final ValueChanged<Photo>? onEditDate;
 
-  const PhotoGallery({super.key, required this.photos, required this.onDelete});
+  const PhotoGallery({
+    super.key,
+    required this.photos,
+    required this.onDelete,
+    this.onEditDate,
+  });
 
   @override
   State<PhotoGallery> createState() => _PhotoGalleryState();
@@ -122,12 +128,17 @@ class _PhotoGalleryState extends State<PhotoGallery> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      DateFormat.yMMMd().format(photo.dateTaken),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.charcoal.withValues(alpha: 0.6),
+                    GestureDetector(
+                      onTap: widget.onEditDate != null
+                          ? () => widget.onEditDate!(photo)
+                          : null,
+                      child: Text(
+                        DateFormat.yMMMd().format(photo.dateTaken),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.charcoal.withValues(alpha: 0.6),
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),

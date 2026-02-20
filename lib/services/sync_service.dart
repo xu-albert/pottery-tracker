@@ -109,6 +109,9 @@ class SyncService {
       'notes': piece.notes,
       'coverPhotoId': piece.coverPhotoId,
       'isArchived': piece.isArchived,
+      'displayDate': piece.displayDate != null
+          ? Timestamp.fromDate(piece.displayDate!)
+          : null,
       'createdAt': Timestamp.fromDate(piece.createdAt),
       'updatedAt': Timestamp.fromDate(piece.updatedAt),
     }, SetOptions(merge: true));
@@ -541,6 +544,7 @@ class SyncService {
 
   Future<void> _insertPieceFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
+    final displayDateTs = d['displayDate'] as Timestamp?;
     await _db.piecesDao.insertPiece(
       PiecesCompanion(
         id: Value(doc.id),
@@ -550,6 +554,7 @@ class SyncService {
         notes: Value(d['notes'] as String?),
         coverPhotoId: Value(d['coverPhotoId'] as String?),
         isArchived: Value(d['isArchived'] as bool? ?? false),
+        displayDate: Value(displayDateTs?.toDate()),
         createdAt: Value((d['createdAt'] as Timestamp).toDate()),
         updatedAt: Value((d['updatedAt'] as Timestamp).toDate()),
       ),
@@ -558,6 +563,7 @@ class SyncService {
 
   Future<void> _updatePieceFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
+    final displayDateTs = d['displayDate'] as Timestamp?;
     await _db.piecesDao.updatePiece(
       PiecesCompanion(
         id: Value(doc.id),
@@ -567,6 +573,7 @@ class SyncService {
         notes: Value(d['notes'] as String?),
         coverPhotoId: Value(d['coverPhotoId'] as String?),
         isArchived: Value(d['isArchived'] as bool? ?? false),
+        displayDate: Value(displayDateTs?.toDate()),
         updatedAt: Value((d['updatedAt'] as Timestamp).toDate()),
       ),
     );
@@ -781,7 +788,15 @@ class SyncService {
       debugPrint(
         'SyncService: downloading photo ${photo.id} from ${photo.cloudUrl}',
       );
-      final file = File(photo.localPath);
+
+      // Use current app directory (container UUID changes on reinstall)
+      final appDir = await getApplicationDocumentsDirectory();
+      final localPath =
+          '${appDir.path}/photos/${photo.pieceId}/${photo.id}.jpg';
+      final thumbnailPath =
+          '${appDir.path}/photos/${photo.pieceId}/${photo.id}_thumb.jpg';
+
+      final file = File(localPath);
       await file.parent.create(recursive: true);
 
       // Download from cloud URL with timeout
@@ -801,7 +816,6 @@ class SyncService {
       );
 
       // Regenerate thumbnail
-      final thumbnailPath = photo.localPath.replaceAll('.jpg', '_thumb.jpg');
       final thumbBytes = await FlutterImageCompress.compressWithList(
         data,
         minWidth: 300,
@@ -810,9 +824,11 @@ class SyncService {
       );
       await File(thumbnailPath).writeAsBytes(thumbBytes);
 
+      // Update DB with current paths
       await _db.photosDao.updatePhoto(
         PhotosCompanion(
           id: Value(photo.id),
+          localPath: Value(localPath),
           thumbnailPath: Value(thumbnailPath),
         ),
       );
