@@ -171,10 +171,7 @@ void main() {
       final doc = await col('pieces').doc('p2').get();
       final data = doc.data() as Map<String, dynamic>;
       expect(data['displayDate'], isA<Timestamp>());
-      expect(
-        (data['displayDate'] as Timestamp).toDate(),
-        displayDate,
-      );
+      expect((data['displayDate'] as Timestamp).toDate(), displayDate);
     });
 
     test('pushes null displayDate when not set', () async {
