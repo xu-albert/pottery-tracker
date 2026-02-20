@@ -7,192 +7,126 @@ import '../../../database/database.dart';
 import '../../../core/constants/app_sizes.dart';
 import 'photo_fullscreen.dart';
 
-class PhotoGallery extends StatefulWidget {
+class PhotoGallery extends StatelessWidget {
   final List<Photo> photos;
   final ValueChanged<Photo> onDelete;
   final ValueChanged<Photo>? onEditDate;
+  final VoidCallback? onAddPhoto;
 
   const PhotoGallery({
     super.key,
     required this.photos,
     required this.onDelete,
     this.onEditDate,
+    this.onAddPhoto,
   });
 
   @override
-  State<PhotoGallery> createState() => _PhotoGalleryState();
-}
-
-class _PhotoGalleryState extends State<PhotoGallery> {
-  final _scrollController = ScrollController();
-  bool _showLeftGradient = false;
-  bool _showRightGradient = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
-  }
-
-  @override
-  void didUpdateWidget(PhotoGallery oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.photos.length != widget.photos.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _checkOverflow() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    setState(() {
-      _showRightGradient = maxScroll > 0;
-      _showLeftGradient = _scrollController.position.pixels > 0;
-    });
-  }
-
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final pos = _scrollController.position;
-    final atStart = pos.pixels <= 0;
-    final atEnd = pos.pixels >= pos.maxScrollExtent - 1;
-    if (_showLeftGradient != !atStart || _showRightGradient != !atEnd) {
-      setState(() {
-        _showLeftGradient = !atStart;
-        _showRightGradient = !atEnd;
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final photoSize = screenWidth * 0.72;
-    final sidePadding = (screenWidth - photoSize) / 2;
-    final bgColor = Theme.of(context).scaffoldBackgroundColor;
-    final gradientWidth = photoSize * 0.3;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: GridView.builder(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: AppSizes.sm,
+          mainAxisSpacing: AppSizes.sm,
+          childAspectRatio: 1.0,
+        ),
+        itemCount: photos.length + (onAddPhoto != null ? 1 : 0),
+        itemBuilder: (context, index) {
+          // "+" add photo button as last item
+          if (index == photos.length) {
+            return GestureDetector(
+              onTap: onAddPhoto,
+              child: CustomPaint(
+                painter: _DashedBorderPainter(
+                  color: AppColors.charcoal.withValues(alpha: 0.3),
+                  borderRadius: AppSizes.radiusSm,
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.add,
+                    size: 32,
+                    color: AppColors.charcoal.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+            );
+          }
 
-    const dateLabelHeight = 24.0;
-
-    return SizedBox(
-      height: photoSize + dateLabelHeight,
-      child: Stack(
-        children: [
-          ListView.separated(
-            controller: _scrollController,
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.symmetric(horizontal: sidePadding),
-            itemCount: widget.photos.length,
-            separatorBuilder: (_, _) => const SizedBox(width: AppSizes.md),
-            itemBuilder: (context, index) {
-              final photo = widget.photos[index];
-              return SizedBox(
-                width: photoSize,
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        FirebaseAnalytics.instance.logEvent(
-                          name: 'photo_viewed_fullscreen',
-                        );
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                PhotoFullscreen(photoPath: photo.localPath),
-                          ),
-                        );
-                      },
-                      onLongPress: () => _showPhotoActions(photo),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-                        child: SizedBox(
-                          width: photoSize,
-                          height: photoSize,
-                          child: Image.file(
-                            File(photo.localPath),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const Center(
-                              child: Icon(Icons.broken_image, size: 48),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    GestureDetector(
-                      onTap: widget.onEditDate != null
-                          ? () => widget.onEditDate!(photo)
-                          : null,
-                      child: Text(
-                        DateFormat.yMMMd().format(photo.dateTaken),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.charcoal.withValues(alpha: 0.6),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
+          final photo = photos[index];
+          final path = photo.thumbnailPath ?? photo.localPath;
+          return GestureDetector(
+            onTap: () {
+              FirebaseAnalytics.instance.logEvent(
+                name: 'photo_viewed_fullscreen',
+              );
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoFullscreen(photoPath: photo.localPath),
                 ),
               );
             },
-          ),
-          if (_showLeftGradient)
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: gradientWidth,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerRight,
-                      end: Alignment.centerLeft,
-                      colors: [
-                        bgColor.withValues(alpha: 0),
-                        bgColor.withValues(alpha: 0.8),
-                      ],
+            onLongPress: () => _showPhotoActions(context, photo),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(
+                    File(path),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        const Center(child: Icon(Icons.broken_image, size: 32)),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: GestureDetector(
+                      onTap: onEditDate != null
+                          ? () => onEditDate!(photo)
+                          : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 3,
+                          horizontal: 4,
+                        ),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Color.fromRGBO(0, 0, 0, 0.45),
+                            ],
+                          ),
+                        ),
+                        child: Text(
+                          DateFormat.yMMMd().format(photo.dateTaken),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-          if (_showRightGradient)
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: gradientWidth,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        bgColor.withValues(alpha: 0),
-                        bgColor.withValues(alpha: 0.8),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  void _showPhotoActions(Photo photo) {
+  void _showPhotoActions(BuildContext context, Photo photo) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -206,7 +140,7 @@ class _PhotoGalleryState extends State<PhotoGallery> {
               ),
               onTap: () {
                 Navigator.pop(ctx);
-                widget.onDelete(photo);
+                onDelete(photo);
               },
             ),
           ],
@@ -214,4 +148,42 @@ class _PhotoGalleryState extends State<PhotoGallery> {
       ),
     );
   }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  final double borderRadius;
+
+  _DashedBorderPainter({required this.color, required this.borderRadius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(borderRadius),
+    );
+
+    final path = Path()..addRRect(rrect);
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+
+    final metrics = path.computeMetrics();
+    for (final metric in metrics) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + dashWidth).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
+      color != oldDelegate.color || borderRadius != oldDelegate.borderRadius;
 }

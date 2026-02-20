@@ -433,7 +433,7 @@ abstract class AppLocalizations {
   /// Reorder photos button
   ///
   /// In en, this message translates to:
-  /// **'Reorder'**
+  /// **'Reorder photos'**
   String get reorderPhotos;
 
   /// Add new option to dropdown

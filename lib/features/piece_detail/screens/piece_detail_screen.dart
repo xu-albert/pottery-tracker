@@ -1,9 +1,11 @@
 import 'package:drift/drift.dart' hide Column;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
 import '../../../models/piece_stage.dart';
@@ -34,6 +36,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   late final FocusNode _titleFocus;
   String? _titleHint;
   Piece? _piece;
+  bool _showDateHint = false;
 
   @override
   void initState() {
@@ -42,6 +45,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     _titleFocus = FocusNode();
     _titleFocus.addListener(_onTitleFocusChange);
     _loadPiece();
+    _checkDateHint();
   }
 
   @override
@@ -50,6 +54,20 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     _titleFocus.dispose();
     _titleCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkDateHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dismissed = prefs.getBool('date_hint_dismissed') ?? false;
+    if (!dismissed && mounted) {
+      setState(() => _showDateHint = true);
+    }
+  }
+
+  Future<void> _dismissDateHint() async {
+    setState(() => _showDateHint = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('date_hint_dismissed', true);
   }
 
   void _onTitleFocusChange() {
@@ -123,27 +141,6 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   Future<void> _deletePhoto(Photo photo) async {
-    final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.deletePhotoConfirmTitle),
-        content: Text(l10n.deletePhotoConfirmMessage),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
     final photosDao = ref.read(photosDaoProvider);
     final imageService = ref.read(imageServiceProvider);
 
@@ -298,21 +295,14 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
   Future<void> _pickUpdatedDate() async {
     final current = _resolveDisplayDate();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: current,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
+    final date = await _showCupertinoDatePicker(current);
     if (date == null || !mounted) return;
-
-    final newDate = DateTime(date.year, date.month, date.day);
 
     final dao = ref.read(piecesDaoProvider);
     await dao.updatePiece(
       PiecesCompanion(
         id: Value(widget.pieceId),
-        displayDate: Value(newDate),
+        displayDate: Value(date),
         updatedAt: Value(DateTime.now()),
       ),
     );
@@ -332,21 +322,50 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   Future<void> _editPhotoDate(Photo photo) async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: photo.dateTaken,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
+    final date = await _showCupertinoDatePicker(photo.dateTaken);
     if (date == null || !mounted) return;
-
-    final newDate = DateTime(date.year, date.month, date.day);
 
     final photosDao = ref.read(photosDaoProvider);
     await photosDao.updatePhoto(
-      PhotosCompanion(id: Value(photo.id), dateTaken: Value(newDate)),
+      PhotosCompanion(id: Value(photo.id), dateTaken: Value(date)),
     );
     await ref.read(syncTriggerProvider).afterPhotoWrite(photo.id);
+  }
+
+  Future<DateTime?> _showCupertinoDatePicker(DateTime initial) async {
+    DateTime selected = initial;
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      builder: (ctx) => SizedBox(
+        height: 300,
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                CupertinoButton(
+                  child: const Text('Cancel'),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+                CupertinoButton(
+                  child: const Text('Done'),
+                  onPressed: () => Navigator.pop(ctx, selected),
+                ),
+              ],
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.date,
+                initialDateTime: initial,
+                maximumDate: DateTime.now(),
+                minimumDate: DateTime(2000),
+                onDateTimeChanged: (date) => selected = date,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _addMultiplePhotos() async {
@@ -453,29 +472,59 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   Future<void> _reorderPhotos(List<Photo> photos) async {
-    final result = await Navigator.push<List<Photo>>(
+    final result = await Navigator.push<PhotoReorderResult>(
       context,
       MaterialPageRoute(builder: (_) => PhotoReorderScreen(photos: photos)),
     );
     if (result == null) return;
-    ref
-        .read(analyticsProvider)
-        .logEvent(
-          name: 'photo_reorder_saved',
-          parameters: {'photo_count': result.length},
-        );
-
-    // Assign new sort orders: first in list = highest sortOrder (newest first display)
-    final updates = <({String id, int sortOrder})>[];
-    for (var i = 0; i < result.length; i++) {
-      updates.add((id: result[i].id, sortOrder: result.length - 1 - i));
-    }
 
     final photosDao = ref.read(photosDaoProvider);
-    await photosDao.updateSortOrders(updates);
+    final imageService = ref.read(imageServiceProvider);
     final trigger = ref.read(syncTriggerProvider);
-    for (final update in updates) {
-      await trigger.afterPhotoWrite(update.id);
+
+    // Process deletions
+    for (final deletedId in result.deletedIds) {
+      await photosDao.deletePhoto(deletedId);
+      await imageService.deletePhotoFiles(widget.pieceId, deletedId);
+      await trigger.afterPhotoDeletion(deletedId);
+    }
+
+    // Update cover photo if deleted
+    if (result.deletedIds.contains(_piece?.coverPhotoId)) {
+      final remaining = result.reordered;
+      final piecesDao = ref.read(piecesDaoProvider);
+      await piecesDao.updatePiece(
+        PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+      await trigger.afterPieceWrite(widget.pieceId);
+      _loadPiece();
+    }
+
+    // Assign new sort orders
+    if (result.reordered.isNotEmpty) {
+      ref
+          .read(analyticsProvider)
+          .logEvent(
+            name: 'photo_reorder_saved',
+            parameters: {'photo_count': result.reordered.length},
+          );
+
+      final updates = <({String id, int sortOrder})>[];
+      for (var i = 0; i < result.reordered.length; i++) {
+        updates.add((
+          id: result.reordered[i].id,
+          sortOrder: result.reordered.length - 1 - i,
+        ));
+      }
+
+      await photosDao.updateSortOrders(updates);
+      for (final update in updates) {
+        await trigger.afterPhotoWrite(update.id);
+      }
     }
   }
 
@@ -524,11 +573,6 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_a_photo),
-            tooltip: l10n.addPhoto,
-            onPressed: _showAddPhotoSheet,
-          ),
           IconButton(
             icon: Icon(
               _piece!.isArchived
@@ -579,21 +623,85 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                         },
                       ),
                     ),
-                    if (photos.isNotEmpty)
-                      PhotoGallery(
-                        photos: photos,
-                        onDelete: _deletePhoto,
-                        onEditDate: _editPhotoDate,
+                    if (_showDateHint && photos.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer
+                                .withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(
+                              AppSizes.radiusSm,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.info_outline,
+                                size: 18,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Tap the date on a photo to change the photo\'s date',
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: Colors.grey.shade700),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: _dismissDateHint,
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                    PhotoGallery(
+                      photos: photos,
+                      onDelete: _deletePhoto,
+                      onEditDate: _editPhotoDate,
+                      onAddPhoto: _showAddPhotoSheet,
+                    ),
                     if (photos.length >= 2)
                       Align(
                         alignment: Alignment.centerRight,
                         child: Padding(
-                          padding: const EdgeInsets.only(right: 16),
-                          child: TextButton.icon(
-                            onPressed: () => _reorderPhotos(photos),
-                            icon: const Icon(Icons.swap_vert, size: 18),
-                            label: Text(l10n.reorderPhotos),
+                          padding: const EdgeInsets.only(
+                            right: 16,
+                            top: AppSizes.sm,
+                          ),
+                          child: GestureDetector(
+                            onTap: () => _reorderPhotos(photos),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.swap_vert,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  l10n.reorderPhotos,
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -624,12 +732,12 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       if (_titleCtrl.text.isNotEmpty) {
                         _updateField(title: _titleCtrl.text);
                       }
-                      _formKey.currentState?.saveAll();
-                      context.go('/');
+                      await _formKey.currentState?.saveAll();
+                      if (context.mounted) context.go('/');
                     },
                     child: const Text('Done'),
                   ),

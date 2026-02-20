@@ -80,11 +80,12 @@ class PieceRow extends ConsumerWidget {
                 loading: () => const SizedBox.shrink(),
                 error: (_, _) => const SizedBox.shrink(),
                 data: (photos) {
-                  final displayDate = piece.piece.displayDate ??
+                  final displayDate =
+                      piece.piece.displayDate ??
                       (photos.isNotEmpty
                           ? photos
-                              .map((p) => p.dateTaken)
-                              .reduce((a, b) => a.isAfter(b) ? a : b)
+                                .map((p) => p.dateTaken)
+                                .reduce((a, b) => a.isAfter(b) ? a : b)
                           : null) ??
                       piece.piece.createdAt;
                   return Text(
@@ -237,7 +238,7 @@ class PieceRow extends ConsumerWidget {
     }
 
     final screenWidth = MediaQuery.of(context).size.width;
-    final availableWidth = screenWidth - AppSizes.md * 2;
+    final availableWidth = screenWidth - 32 * 2;
     final thumbSize = (availableWidth - AppSizes.sm * 2) / 3;
 
     return _ScrollablePhotoRow(
@@ -249,7 +250,7 @@ class PieceRow extends ConsumerWidget {
 
   Widget _buildPhotoRowPlaceholder(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final availableWidth = screenWidth - AppSizes.md * 2;
+    final availableWidth = screenWidth - 32 * 2;
     final thumbSize = (availableWidth - AppSizes.sm * 2) / 3;
 
     return SizedBox(

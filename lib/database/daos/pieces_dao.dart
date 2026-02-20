@@ -53,7 +53,7 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
       pieceQuery.where(pieces.isArchived.equals(false));
     }
 
-    pieceQuery.orderBy([OrderingTerm.desc(pieces.updatedAt)]);
+    pieceQuery.orderBy([OrderingTerm.desc(pieces.createdAt)]);
 
     return pieceQuery.watch().map(
       (rows) => rows.map((row) {

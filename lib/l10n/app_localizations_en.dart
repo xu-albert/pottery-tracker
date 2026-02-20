@@ -192,7 +192,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get reorderPhotos => 'Reorder';
+  String get reorderPhotos => 'Reorder photos';
 
   @override
   String get addNew => 'Add New';

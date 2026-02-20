@@ -144,7 +144,7 @@
       "count": { "type": "int" }
     }
   },
-  "reorderPhotos": "Reorder",
+  "reorderPhotos": "Reorder photos",
   "@reorderPhotos": { "description": "Reorder photos button" },
   "addNew": "Add New",
   "@addNew": { "description": "Add new option to dropdown" },

@@ -13,6 +13,7 @@ class PotteryTrackerApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
+      debugShowCheckedModeBanner: false,
       title: 'Pottery Tracker',
       theme: AppTheme.light,
       routerConfig: router,

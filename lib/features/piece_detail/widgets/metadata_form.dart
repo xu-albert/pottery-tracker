@@ -20,8 +20,8 @@ class MetadataForm extends StatefulWidget {
     String? notes,
   })
   onUpdateField;
-  final void Function(List<String> glazeOptionIds) onUpdateGlazes;
-  final void Function(List<String> tagOptionIds) onUpdateTags;
+  final Future<void> Function(List<String> glazeOptionIds) onUpdateGlazes;
+  final Future<void> Function(List<String> tagOptionIds) onUpdateTags;
   final SyncTrigger syncTrigger;
 
   const MetadataForm({
@@ -41,6 +41,8 @@ class MetadataForm extends StatefulWidget {
 }
 
 class MetadataFormState extends State<MetadataForm> {
+  final TextEditingController _glazesTextCtrl = TextEditingController();
+  final TextEditingController _tagsTextCtrl = TextEditingController();
   late final TextEditingController _notesCtrl;
   late final TextEditingController _clayCtrl;
   late final FocusNode _clayFocus;
@@ -75,6 +77,8 @@ class MetadataFormState extends State<MetadataForm> {
     _clayFocus.dispose();
     _clayCtrl.dispose();
     _notesCtrl.dispose();
+    _glazesTextCtrl.dispose();
+    _tagsTextCtrl.dispose();
     super.dispose();
   }
 
@@ -110,13 +114,36 @@ class MetadataFormState extends State<MetadataForm> {
     return PieceStage.values.where((e) => e.name == s).firstOrNull;
   }
 
-  void saveAll() {
+  Future<void> saveAll() async {
+    // Save any pending typed-but-not-submitted glaze text
+    final pendingGlaze = _glazesTextCtrl.text.trim();
+    if (pendingGlaze.isNotEmpty) {
+      final glaze = await widget.materialsDao.findOrCreateGlaze(pendingGlaze);
+      await widget.syncTrigger.afterGlazeWrite(glaze.id);
+      final glazeIds = widget.selectedGlazes.map((g) => g.id).toList();
+      if (!glazeIds.contains(glaze.id)) {
+        glazeIds.add(glaze.id);
+      }
+      await widget.onUpdateGlazes(glazeIds);
+    }
+
+    // Save any pending typed-but-not-submitted tag text
+    final pendingTag = _tagsTextCtrl.text.trim();
+    if (pendingTag.isNotEmpty) {
+      final tag = await widget.materialsDao.findOrCreateTag(pendingTag);
+      await widget.syncTrigger.afterTagWrite(tag.id);
+      final tagIds = widget.selectedTags.map((t) => t.id).toList();
+      if (!tagIds.contains(tag.id)) {
+        tagIds.add(tag.id);
+      }
+      await widget.onUpdateTags(tagIds);
+    }
+
     final clayText = _clayCtrl.text.trim();
     widget.onUpdateField(clayType: clayText, notes: _notesCtrl.text);
     if (clayText.isNotEmpty) {
-      widget.materialsDao
-          .findOrCreateClay(clayText)
-          .then((clay) => widget.syncTrigger.afterClayWrite(clay.id));
+      final clay = await widget.materialsDao.findOrCreateClay(clayText);
+      await widget.syncTrigger.afterClayWrite(clay.id);
     }
   }
 
@@ -167,20 +194,25 @@ class MetadataFormState extends State<MetadataForm> {
             onSelected: (clay) => _saveClay(),
             fieldViewBuilder:
                 (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    decoration: InputDecoration(
-                      labelText: l10n.clayTypeLabel,
-                      hintText: l10n.enterClayName,
-                      counterText: '',
+                  return InputDecorator(
+                    decoration: InputDecoration(labelText: l10n.clayTypeLabel),
+                    child: TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                        hintText: l10n.enterClayName,
+                        counterText: '',
+                      ),
+                      textCapitalization: TextCapitalization.sentences,
+                      autocorrect: false,
+                      maxLength: AppSizes.maxClayNameLength,
+                      onSubmitted: (_) {
+                        _saveClay();
+                      },
                     ),
-                    textCapitalization: TextCapitalization.sentences,
-                    autocorrect: false,
-                    maxLength: AppSizes.maxClayNameLength,
-                    onSubmitted: (_) {
-                      _saveClay();
-                    },
                   );
                 },
             optionsViewBuilder: (context, onSelected, options) {
@@ -217,6 +249,7 @@ class MetadataFormState extends State<MetadataForm> {
 
           // Glazes chip input
           _ChipInputField<GlazeOption>(
+            controller: _glazesTextCtrl,
             selectedItems: widget.selectedGlazes,
             labelBuilder: (g) => g.name,
             allOptionsLoader: widget.materialsDao.getAllGlazes,
@@ -235,6 +268,7 @@ class MetadataFormState extends State<MetadataForm> {
 
           // Tags chip input
           _ChipInputField<TagOption>(
+            controller: _tagsTextCtrl,
             selectedItems: widget.selectedTags,
             labelBuilder: (t) => t.name,
             leadingBuilder: (t) => t.color != null
@@ -285,14 +319,16 @@ class _ChipInputField<T extends Object> extends StatefulWidget {
   final Widget? Function(T)? leadingBuilder;
   final Future<List<T>> Function() allOptionsLoader;
   final Future<T> Function(String name) onCreateNew;
-  final void Function(List<String> ids) onChanged;
+  final Future<void> Function(List<String> ids) onChanged;
   final String Function(T) idGetter;
   final String label;
   final String hintText;
   final int? maxInputLength;
+  final TextEditingController? controller;
 
   const _ChipInputField({
     super.key,
+    this.controller,
     required this.selectedItems,
     required this.labelBuilder,
     this.leadingBuilder,
@@ -310,13 +346,20 @@ class _ChipInputField<T extends Object> extends StatefulWidget {
 }
 
 class _ChipInputFieldState<T extends Object> extends State<_ChipInputField<T>> {
-  final TextEditingController _controller = TextEditingController();
+  late final TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
   List<T> _allOptions = [];
+  bool _ownsController = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.controller != null) {
+      _controller = widget.controller!;
+    } else {
+      _controller = TextEditingController();
+      _ownsController = true;
+    }
     _focusNode.addListener(_onFocusChange);
     _loadOptions();
   }
@@ -331,7 +374,7 @@ class _ChipInputFieldState<T extends Object> extends State<_ChipInputField<T>> {
   void dispose() {
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
-    _controller.dispose();
+    if (_ownsController) _controller.dispose();
     super.dispose();
   }
 
@@ -346,15 +389,15 @@ class _ChipInputFieldState<T extends Object> extends State<_ChipInputField<T>> {
     if (mounted) setState(() {});
   }
 
-  void _removeItem(T item) {
+  Future<void> _removeItem(T item) async {
     final ids = widget.selectedItems
         .where((i) => widget.idGetter(i) != widget.idGetter(item))
         .map((i) => widget.idGetter(i))
         .toList();
-    widget.onChanged(ids);
+    await widget.onChanged(ids);
   }
 
-  void _addItem(T item) {
+  Future<void> _addItem(T item) async {
     final selectedIds = widget.selectedItems.map(widget.idGetter).toSet();
     if (selectedIds.contains(widget.idGetter(item))) {
       _controller.clear();
@@ -362,18 +405,18 @@ class _ChipInputFieldState<T extends Object> extends State<_ChipInputField<T>> {
     }
     final ids = widget.selectedItems.map((i) => widget.idGetter(i)).toList()
       ..add(widget.idGetter(item));
-    widget.onChanged(ids);
+    await widget.onChanged(ids);
     _controller.clear();
     _focusNode.requestFocus();
   }
 
-  Future<void> _submitText() async {
+  Future<void> submitText() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     _controller.clear();
     final item = await widget.onCreateNew(text);
     await _loadOptions();
-    _addItem(item);
+    await _addItem(item);
   }
 
   Iterable<T> _filterOptions(TextEditingValue value) {
@@ -417,7 +460,7 @@ class _ChipInputFieldState<T extends Object> extends State<_ChipInputField<T>> {
                 autocorrect: false,
                 onEditingComplete: () {},
                 onSubmitted: (_) {
-                  _submitText();
+                  submitText();
                   _focusNode.requestFocus();
                 },
               ),

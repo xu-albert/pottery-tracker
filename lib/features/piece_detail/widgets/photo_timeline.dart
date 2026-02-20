@@ -21,6 +21,7 @@ class LastUpdatedInfo extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Icon(
                 Icons.access_time,
@@ -28,20 +29,20 @@ class LastUpdatedInfo extends StatelessWidget {
                 color: AppColors.charcoal.withValues(alpha: 0.5),
               ),
               const SizedBox(width: AppSizes.xs),
-              Expanded(
-                child: Text(
-                  dateFormat.format(displayDate),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.charcoal.withValues(alpha: 0.5),
-                  ),
+              Text(
+                dateFormat.format(displayDate),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.charcoal.withValues(alpha: 0.5),
                 ),
               ),
-              if (onTap != null)
+              if (onTap != null) ...[
+                const SizedBox(width: AppSizes.xs),
                 Icon(
                   Icons.edit,
                   size: 14,
                   color: AppColors.charcoal.withValues(alpha: 0.5),
                 ),
+              ],
             ],
           ),
         ),
