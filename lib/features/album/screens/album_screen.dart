@@ -19,7 +19,7 @@ class AlbumScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.appTitle)),
       body: Column(
         children: [
-          const app.PiecesSearchBar(),
+          app.PiecesSearchBar(isArchived: ref.watch(archivedFilterProvider)),
           const FilterChips(),
           Expanded(
             child: piecesAsync.when(

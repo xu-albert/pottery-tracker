@@ -124,6 +124,18 @@ abstract class AppLocalizations {
   /// **'Search anything...'**
   String get searchPieces;
 
+  /// Search bar placeholder for active pieces
+  ///
+  /// In en, this message translates to:
+  /// **'Search Active...'**
+  String get searchActive;
+
+  /// Search bar placeholder for archived pieces
+  ///
+  /// In en, this message translates to:
+  /// **'Search Archive...'**
+  String get searchArchive;
+
   /// Active filter label
   ///
   /// In en, this message translates to:

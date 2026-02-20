@@ -24,6 +24,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchPieces => 'Search anything...';
 
   @override
+  String get searchActive => 'Search Active...';
+
+  @override
+  String get searchArchive => 'Search Archive...';
+
+  @override
   String get filterAll => 'Active';
 
   @override
