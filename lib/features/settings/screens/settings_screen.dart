@@ -176,10 +176,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       onTap = null;
     } else if (!isLinked) {
       onTap = onConnect;
-    } else if (providerCount > 1) {
-      onTap = onDisconnect;
     } else {
-      onTap = null;
+      onTap = onDisconnect;
     }
 
     return ListTile(
