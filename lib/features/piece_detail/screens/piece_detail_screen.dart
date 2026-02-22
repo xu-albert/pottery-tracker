@@ -16,6 +16,7 @@ import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../widgets/app_snackbar.dart';
 import '../widgets/photo_gallery.dart';
 import '../widgets/metadata_form.dart';
 import '../widgets/photo_timeline.dart' show LastUpdatedInfo;
@@ -133,9 +134,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       _loadPiece();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not add photo: $e')));
+        AppSnackbar.show(context, message: 'Could not add photo: $e');
       }
     }
   }
@@ -182,21 +181,16 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         .logEvent(name: wasArchived ? 'piece_unarchived' : 'piece_archived');
     await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     if (mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              wasArchived
-                  ? l10n.pieceUnarchivedWithTitle(
-                      _piece!.title ?? 'Untitled Piece',
-                    )
-                  : l10n.pieceArchivedWithTitle(
-                      _piece!.title ?? 'Untitled Piece',
-                    ),
-            ),
-          ),
-        );
+      AppSnackbar.show(
+        context,
+        message: wasArchived
+            ? l10n.pieceUnarchivedWithTitle(
+                _piece!.title ?? 'Untitled Piece',
+              )
+            : l10n.pieceArchivedWithTitle(
+                _piece!.title ?? 'Untitled Piece',
+              ),
+      );
       context.go('/');
     }
   }
@@ -455,9 +449,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       _loadPiece();
 
       if (failures > 0 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.batchPhotoFailures(failures))),
-        );
+        AppSnackbar.show(context, message: l10n.batchPhotoFailures(failures));
       }
     } catch (e) {
       // Dismiss progress dialog only if it was shown
@@ -465,9 +457,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         Navigator.of(context, rootNavigator: true).pop();
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not add photos: $e')));
+        AppSnackbar.show(context, message: 'Could not add photos: $e');
       }
     }
   }

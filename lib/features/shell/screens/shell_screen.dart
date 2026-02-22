@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/pieces_provider.dart';
+import '../../../widgets/app_snackbar.dart';
 import '../../../providers/sync_provider.dart';
 
 class ShellScreen extends ConsumerWidget {
@@ -24,8 +25,8 @@ class ShellScreen extends ConsumerWidget {
             ? navigationShell.currentIndex + 1
             : navigationShell.currentIndex,
         onTap: (index) {
+          AppSnackbar.hide();
           if (index == 1) {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ref.read(archivedFilterProvider.notifier).state = false;
             context.push('/create');
           } else {

@@ -7,6 +7,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../services/auth_service.dart'
     show AuthService, SignInCancelledException;
 import '../../../core/constants/app_colors.dart';
+import '../../../widgets/app_snackbar.dart';
 import '../../../core/constants/app_sizes.dart';
 
 class SignInScreen extends ConsumerStatefulWidget {
@@ -33,19 +34,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       }
     } on SignInCancelledException {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.signInCancelled),
-            ),
-          );
+        AppSnackbar.show(
+          context,
+          message: AppLocalizations.of(context)!.signInCancelled,
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        AppSnackbar.show(context, message: e.toString());
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -65,19 +61,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       }
     } on SignInCancelledException {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.signInCancelled),
-            ),
-          );
+        AppSnackbar.show(
+          context,
+          message: AppLocalizations.of(context)!.signInCancelled,
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        AppSnackbar.show(context, message: e.toString());
       }
     } finally {
       if (mounted) setState(() => _loading = false);

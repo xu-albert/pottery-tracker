@@ -11,6 +11,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../widgets/app_snackbar.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -34,27 +35,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await linkFn();
       ref.read(authProvider.notifier).refreshProviders();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(successMessage)));
+        AppSnackbar.show(context, message: successMessage);
       }
     } on SignInCancelledException {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(l10n.signInCancelled)));
+        AppSnackbar.show(context, message: l10n.signInCancelled);
       }
     } on AccountAlreadyLinkedException {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(l10n.accountAlreadyLinked)));
+        AppSnackbar.show(context, message: l10n.accountAlreadyLinked);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(e.toString())));
+        AppSnackbar.show(context, message: e.toString());
       }
     } finally {
       if (mounted) setState(() => _isLinking = false);
@@ -93,15 +86,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await unlinkFn();
       ref.read(authProvider.notifier).refreshProviders();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(successMessage)));
+        AppSnackbar.show(context, message: successMessage);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(e.toString())));
+        AppSnackbar.show(context, message: e.toString());
       }
     } finally {
       if (mounted) setState(() => _isLinking = false);
@@ -119,15 +108,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } on SignInCancelledException {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(l10n.signInCancelled)));
+        AppSnackbar.show(context, message: l10n.signInCancelled);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text(e.toString())));
+        AppSnackbar.show(context, message: e.toString());
       }
     } finally {
       if (mounted) setState(() => _isLinking = false);
