@@ -46,7 +46,6 @@ class _ArchivedPieceDetailScreenState
   }
 
   Future<void> _unarchive() async {
-    final l10n = AppLocalizations.of(context)!;
     final dao = ref.read(piecesDaoProvider);
     await dao.updatePiece(
       PiecesCompanion(
@@ -61,7 +60,7 @@ class _ArchivedPieceDetailScreenState
     if (mounted) {
       AppSnackbar.show(
         context,
-        message: l10n.pieceUnarchivedWithTitle(
+        message: AppLocalizations.of(context)!.pieceUnarchivedWithTitle(
           _piece!.title ?? 'Untitled Piece',
         ),
       );
@@ -130,7 +129,6 @@ class _ArchivedPieceDetailScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
         actions: [
           IconButton(
             icon: const Icon(Icons.unarchive_outlined),
@@ -148,132 +146,153 @@ class _ArchivedPieceDetailScreenState
       body: photosAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (photos) => SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Photo gallery (read-only: no add, no delete, no date edit)
-              PhotoGallery(
-                photos: photos,
-                padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
-              ),
-              const SizedBox(height: AppSizes.md),
+        data: (photos) => LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: AppSizes.xl),
+                  // Title
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.md,
+                    ),
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.sm),
 
-              // Metadata section
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Stage + Date row
-                    Row(
+                  // Photo gallery (read-only: no add, no delete, no date edit)
+                  PhotoGallery(
+                    photos: photos,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.md,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.md),
+
+                  // Metadata section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.md,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (stage != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: stage.color.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              stage.displayName,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                        // Stage + Date row
+                        Row(
+                          children: [
+                            if (stage != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: stage.color.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  stage.displayName,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: stage.color,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ),
+                            if (stage != null)
+                              const SizedBox(width: AppSizes.sm),
+                            Text(
+                              _formatDisplayDate(photos),
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    color: stage.color,
-                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.charcoal.withValues(
+                                      alpha: 0.5,
+                                    ),
                                   ),
                             ),
-                          ),
-                        if (stage != null) const SizedBox(width: AppSizes.sm),
-                        Text(
-                          _formatDisplayDate(photos),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                color: AppColors.charcoal.withValues(alpha: 0.5),
-                              ),
+                          ],
                         ),
+
+                        // Clay
+                        if (_piece!.clayType != null &&
+                            _piece!.clayType!.isNotEmpty) ...[
+                          const SizedBox(height: AppSizes.sm),
+                          _metadataLine(context, 'Clay', _piece!.clayType!),
+                        ],
+
+                        // Glazes
+                        glazesAsync.when(
+                          loading: () => const SizedBox.shrink(),
+                          error: (_, _) => const SizedBox.shrink(),
+                          data: (glazes) {
+                            if (glazes.isEmpty) return const SizedBox.shrink();
+                            final names = glazes.map((g) => g.name).toList();
+                            final prefix = names.length > 1
+                                ? 'Glazes'
+                                : 'Glaze';
+                            return Padding(
+                              padding: const EdgeInsets.only(top: AppSizes.sm),
+                              child: _metadataLine(
+                                context,
+                                prefix,
+                                names.join(', '),
+                              ),
+                            );
+                          },
+                        ),
+
+                        // Notes
+                        if (_piece!.notes != null &&
+                            _piece!.notes!.isNotEmpty) ...[
+                          const SizedBox(height: AppSizes.sm),
+                          Text(
+                            _piece!.notes!,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: AppColors.charcoal.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                          ),
+                        ],
+
+                        // Tags
+                        tagsAsync.when(
+                          loading: () => const SizedBox.shrink(),
+                          error: (_, _) => const SizedBox.shrink(),
+                          data: (tags) {
+                            if (tags.isEmpty) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(top: AppSizes.sm),
+                              child: Wrap(
+                                spacing: 4,
+                                runSpacing: 4,
+                                children: tags.map((tag) {
+                                  return _buildTagChip(
+                                    context,
+                                    tag.name,
+                                    tagColorMap,
+                                  );
+                                }).toList(),
+                              ),
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: AppSizes.lg),
                       ],
                     ),
-
-                    // Clay
-                    if (_piece!.clayType != null &&
-                        _piece!.clayType!.isNotEmpty) ...[
-                      const SizedBox(height: AppSizes.sm),
-                      _metadataLine(
-                        context,
-                        'Clay',
-                        _piece!.clayType!,
-                      ),
-                    ],
-
-                    // Glazes
-                    glazesAsync.when(
-                      loading: () => const SizedBox.shrink(),
-                      error: (_, _) => const SizedBox.shrink(),
-                      data: (glazes) {
-                        if (glazes.isEmpty) return const SizedBox.shrink();
-                        final names =
-                            glazes.map((g) => g.name).toList();
-                        final prefix =
-                            names.length > 1 ? 'Glazes' : 'Glaze';
-                        return Padding(
-                          padding: const EdgeInsets.only(top: AppSizes.sm),
-                          child: _metadataLine(
-                            context,
-                            prefix,
-                            names.join(', '),
-                          ),
-                        );
-                      },
-                    ),
-
-                    // Notes
-                    if (_piece!.notes != null &&
-                        _piece!.notes!.isNotEmpty) ...[
-                      const SizedBox(height: AppSizes.sm),
-                      Text(
-                        _piece!.notes!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.charcoal.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
-
-                    // Tags
-                    tagsAsync.when(
-                      loading: () => const SizedBox.shrink(),
-                      error: (_, _) => const SizedBox.shrink(),
-                      data: (tags) {
-                        if (tags.isEmpty) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: AppSizes.sm),
-                          child: Wrap(
-                            spacing: 4,
-                            runSpacing: 4,
-                            children: tags.map((tag) {
-                              return _buildTagChip(
-                                context,
-                                tag.name,
-                                tagColorMap,
-                              );
-                            }).toList(),
-                          ),
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: AppSizes.lg),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -281,7 +300,8 @@ class _ArchivedPieceDetailScreenState
   }
 
   String _formatDisplayDate(List<Photo> photos) {
-    final displayDate = _piece!.displayDate ??
+    final displayDate =
+        _piece!.displayDate ??
         (photos.isNotEmpty
             ? photos
                   .map((p) => p.dateTaken)
