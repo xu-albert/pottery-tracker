@@ -13,6 +13,7 @@ import '../../../providers/analytics_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/image_service.dart';
+import '../../../widgets/app_snackbar.dart';
 
 class CreatePieceScreen extends ConsumerStatefulWidget {
   const CreatePieceScreen({super.key});
@@ -101,9 +102,7 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
       await _savePiece(pieceId, [result]);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not capture photo: $e')));
+        AppSnackbar.show(context, message: 'Could not capture photo: $e');
         context.pop();
       }
     }
@@ -146,9 +145,7 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
       await _savePiece(pieceId, results);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not add photos: $e')));
+        AppSnackbar.show(context, message: 'Could not add photos: $e');
         context.pop();
       }
     }

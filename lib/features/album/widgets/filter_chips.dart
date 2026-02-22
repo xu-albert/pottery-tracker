@@ -4,6 +4,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/pieces_provider.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../widgets/app_snackbar.dart';
 import 'view_mode_toggle.dart';
 
 class FilterChips extends ConsumerWidget {
@@ -26,6 +27,7 @@ class FilterChips extends ConsumerWidget {
             showCheckmark: false,
             selected: !archivedOnly,
             onSelected: (_) {
+              AppSnackbar.hide();
               ref
                   .read(analyticsProvider)
                   .logEvent(
@@ -41,6 +43,7 @@ class FilterChips extends ConsumerWidget {
             showCheckmark: false,
             selected: archivedOnly,
             onSelected: (_) {
+              AppSnackbar.hide();
               ref
                   .read(analyticsProvider)
                   .logEvent(

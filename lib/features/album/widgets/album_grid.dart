@@ -12,6 +12,7 @@ import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/pieces_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../widgets/app_snackbar.dart';
 import 'archive_thumbnail.dart';
 import 'piece_row.dart';
 
@@ -69,70 +70,78 @@ class AlbumGrid extends ConsumerWidget {
           onTap: () => context.push('/piece/${item.piece.id}'),
         );
 
-        if (isArchived) return child;
-
         return Dismissible(
           key: ValueKey(item.piece.id),
-          direction: DismissDirection.endToStart,
+          direction: isArchived
+              ? DismissDirection.endToStart
+              : DismissDirection.startToEnd,
           background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: AppSizes.lg),
+            alignment: isArchived
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
+            padding: EdgeInsets.only(
+              left: isArchived ? 0 : AppSizes.lg,
+              right: isArchived ? AppSizes.lg : 0,
+            ),
             color: AppColors.teal,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
               children: [
+                if (!isArchived)
+                  const Icon(Icons.archive_outlined, color: Colors.white),
+                if (!isArchived) const SizedBox(width: AppSizes.xs),
                 Text(
-                  l10n.archivePiece,
+                  isArchived ? l10n.unarchivePiece : l10n.archivePiece,
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: AppSizes.xs),
-                const Icon(Icons.archive_outlined, color: Colors.white),
+                if (isArchived) const SizedBox(width: AppSizes.xs),
+                if (isArchived)
+                  const Icon(Icons.unarchive_outlined, color: Colors.white),
               ],
             ),
           ),
           onDismissed: (_) {
             HapticFeedback.lightImpact();
-            ref.read(analyticsProvider).logEvent(name: 'piece_archived');
             final pieceId = item.piece.id;
+            final newArchived = !isArchived;
+            ref.read(analyticsProvider).logEvent(
+              name: newArchived ? 'piece_archived' : 'piece_unarchived',
+            );
             piecesDao.updatePiece(
               PiecesCompanion(
                 id: Value(pieceId),
-                isArchived: const Value(true),
+                isArchived: Value(newArchived),
                 updatedAt: Value(DateTime.now()),
               ),
             );
             syncTrigger.afterPieceWrite(pieceId);
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(
-                SnackBar(
-                  content: Text(
-                    l10n.pieceArchivedWithTitle(
+            AppSnackbar.show(
+              context,
+              message: newArchived
+                  ? l10n.pieceArchivedWithTitle(
+                      item.piece.title ?? 'Untitled Piece',
+                    )
+                  : l10n.pieceUnarchivedWithTitle(
                       item.piece.title ?? 'Untitled Piece',
                     ),
+              actionLabel: l10n.undo,
+              onAction: () {
+                piecesDao.updatePiece(
+                  PiecesCompanion(
+                    id: Value(pieceId),
+                    isArchived: Value(!newArchived),
+                    updatedAt: Value(DateTime.now()),
                   ),
-                  duration: const Duration(seconds: 2),
-                  action: SnackBarAction(
-                    label: l10n.undo,
-                    onPressed: () {
-                      piecesDao.updatePiece(
-                        PiecesCompanion(
-                          id: Value(pieceId),
-                          isArchived: const Value(false),
-                          updatedAt: Value(DateTime.now()),
-                        ),
-                      );
-                      syncTrigger.afterPieceWrite(pieceId);
-                      ref
-                          .read(analyticsProvider)
-                          .logEvent(name: 'piece_unarchived');
-                    },
-                  ),
-                ),
-              );
+                );
+                syncTrigger.afterPieceWrite(pieceId);
+                ref.read(analyticsProvider).logEvent(
+                  name: newArchived ? 'piece_unarchived' : 'piece_archived',
+                );
+              },
+            );
           },
           child: child,
         );
