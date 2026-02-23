@@ -155,14 +155,42 @@ class _ArchivedPieceDetailScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: AppSizes.xl),
-                  // Title
+                  // Title + Stage
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSizes.md,
                     ),
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        if (stage != null) ...[
+                          const SizedBox(width: AppSizes.sm),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: stage.color.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              stage.displayName,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: stage.color,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   const SizedBox(height: AppSizes.sm),
@@ -184,40 +212,15 @@ class _ArchivedPieceDetailScreenState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Stage + Date row
-                        Row(
-                          children: [
-                            if (stage != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: stage.color.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  stage.displayName,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: stage.color,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                        // Date
+                        Text(
+                          _formatDisplayDate(photos),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppColors.charcoal.withValues(
+                                  alpha: 0.5,
                                 ),
                               ),
-                            if (stage != null)
-                              const SizedBox(width: AppSizes.sm),
-                            Text(
-                              _formatDisplayDate(photos),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppColors.charcoal.withValues(
-                                      alpha: 0.5,
-                                    ),
-                                  ),
-                            ),
-                          ],
                         ),
 
                         // Clay

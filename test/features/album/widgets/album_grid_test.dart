@@ -103,7 +103,7 @@ void main() {
       );
 
       // Swipe the row from right to left
-      await tester.drag(find.byType(Dismissible), const Offset(-500, 0));
+      await tester.drag(find.byType(Dismissible), const Offset(500, 0));
       await tester.pumpAndSettle();
 
       // Verify dao was called with isArchived: true
@@ -143,7 +143,7 @@ void main() {
         ],
       );
 
-      await tester.drag(find.byType(Dismissible), const Offset(-500, 0));
+      await tester.drag(find.byType(Dismissible), const Offset(500, 0));
       await tester.pumpAndSettle();
 
       // Tap Undo

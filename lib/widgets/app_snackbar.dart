@@ -39,12 +39,14 @@ abstract final class AppSnackbar {
   }
 
   static void hide() {
-    _currentState?.dismiss();
-    _currentState = null;
-    // If state wasn't available (already dismissed), remove entry directly
+    final state = _currentState;
     final entry = _currentEntry;
+    _currentState = null;
     _currentEntry = null;
-    if (entry != null && _currentState == null) {
+    if (state != null) {
+      state.dismiss();
+    } else if (entry != null) {
+      // State wasn't available (already dismissed), remove entry directly
       try {
         entry.remove();
       } catch (_) {}
@@ -114,6 +116,7 @@ class _SnackbarWidgetState extends State<_SnackbarWidget>
     if (_dismissed) return;
     _dismissed = true;
     _timer?.cancel();
+    if (!mounted) return;
     _controller.reverse().then((_) {
       if (mounted) widget.onDismissed();
     });
