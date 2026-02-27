@@ -97,7 +97,7 @@ abstract class AppLocalizations {
   /// The app title
   ///
   /// In en, this message translates to:
-  /// **'Pottery Tracker'**
+  /// **'Potter Journal'**
   String get appTitle;
 
   /// Home tab label
@@ -283,7 +283,7 @@ abstract class AppLocalizations {
   /// Sign in screen title
   ///
   /// In en, this message translates to:
-  /// **'Pottery Tracker'**
+  /// **'Potter Journal'**
   String get signInTitle;
 
   /// Sign in screen subtitle

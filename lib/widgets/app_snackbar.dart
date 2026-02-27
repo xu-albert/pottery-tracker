@@ -98,9 +98,10 @@ class _SnackbarWidgetState extends State<_SnackbarWidget>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
     _controller.forward();
     _startTimer();
@@ -131,9 +132,8 @@ class _SnackbarWidgetState extends State<_SnackbarWidget>
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom +
-        kBottomNavigationBarHeight +
-        16;
+    final bottomPadding =
+        MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 16;
 
     return Positioned(
       left: 16,

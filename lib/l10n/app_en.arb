@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "Pottery Tracker",
+  "appTitle": "Potter Journal",
   "@appTitle": { "description": "The app title" },
   "homeTab": "Home",
   "@homeTab": { "description": "Home tab label" },
@@ -62,7 +62,7 @@
   "@camera": { "description": "Camera option" },
   "photoLibrary": "Photo Library",
   "@photoLibrary": { "description": "Photo library option" },
-  "signInTitle": "Pottery Tracker",
+  "signInTitle": "Potter Journal",
   "@signInTitle": { "description": "Sign in screen title" },
   "signInSubtitle": "Track your ceramic creations",
   "@signInSubtitle": { "description": "Sign in screen subtitle" },

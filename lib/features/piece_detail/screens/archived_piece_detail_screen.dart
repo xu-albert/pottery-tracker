@@ -60,9 +60,9 @@ class _ArchivedPieceDetailScreenState
     if (mounted) {
       AppSnackbar.show(
         context,
-        message: AppLocalizations.of(context)!.pieceUnarchivedWithTitle(
-          _piece!.title ?? 'Untitled Piece',
-        ),
+        message: AppLocalizations.of(
+          context,
+        )!.pieceUnarchivedWithTitle(_piece!.title ?? 'Untitled Piece'),
       );
       context.go('/');
     }

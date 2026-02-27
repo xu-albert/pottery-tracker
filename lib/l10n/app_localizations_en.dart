@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Pottery Tracker';
+  String get appTitle => 'Potter Journal';
 
   @override
   String get homeTab => 'Home';
@@ -104,7 +104,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get photoLibrary => 'Photo Library';
 
   @override
-  String get signInTitle => 'Pottery Tracker';
+  String get signInTitle => 'Potter Journal';
 
   @override
   String get signInSubtitle => 'Track your ceramic creations';

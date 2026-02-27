@@ -14,7 +14,7 @@ class PotteryTrackerApp extends ConsumerWidget {
 
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      title: 'Pottery Tracker',
+      title: 'Potter Journal',
       theme: AppTheme.light,
       routerConfig: router,
       localizationsDelegates: const [

@@ -184,12 +184,8 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       AppSnackbar.show(
         context,
         message: wasArchived
-            ? l10n.pieceUnarchivedWithTitle(
-                _piece!.title ?? 'Untitled Piece',
-              )
-            : l10n.pieceArchivedWithTitle(
-                _piece!.title ?? 'Untitled Piece',
-              ),
+            ? l10n.pieceUnarchivedWithTitle(_piece!.title ?? 'Untitled Piece')
+            : l10n.pieceArchivedWithTitle(_piece!.title ?? 'Untitled Piece'),
       );
       context.go('/');
     }

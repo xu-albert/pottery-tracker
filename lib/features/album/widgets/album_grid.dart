@@ -115,9 +115,11 @@ class AlbumGrid extends ConsumerWidget {
             HapticFeedback.lightImpact();
             final pieceId = item.piece.id;
             final newArchived = !isArchived;
-            ref.read(analyticsProvider).logEvent(
-              name: newArchived ? 'piece_archived' : 'piece_unarchived',
-            );
+            ref
+                .read(analyticsProvider)
+                .logEvent(
+                  name: newArchived ? 'piece_archived' : 'piece_unarchived',
+                );
             piecesDao.updatePiece(
               PiecesCompanion(
                 id: Value(pieceId),
@@ -145,9 +147,11 @@ class AlbumGrid extends ConsumerWidget {
                   ),
                 );
                 syncTrigger.afterPieceWrite(pieceId);
-                ref.read(analyticsProvider).logEvent(
-                  name: newArchived ? 'piece_unarchived' : 'piece_archived',
-                );
+                ref
+                    .read(analyticsProvider)
+                    .logEvent(
+                      name: newArchived ? 'piece_unarchived' : 'piece_archived',
+                    );
               },
             );
           },
