@@ -10,6 +10,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../widgets/app_snackbar.dart';
 import '../../../core/constants/app_sizes.dart';
 
+enum _SignInProvider { google, apple }
+
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
@@ -19,14 +21,16 @@ class SignInScreen extends ConsumerStatefulWidget {
 
 class _SignInScreenState extends ConsumerState<SignInScreen> {
   final _authService = AuthService();
-  bool _loading = false;
+  _SignInProvider? _loadingProvider;
+
+  bool get _loading => _loadingProvider != null;
 
   Future<void> _signInWithGoogle() async {
     if (_loading) return;
     ref
         .read(analyticsProvider)
         .logEvent(name: 'sign_in_attempted', parameters: {'method': 'google'});
-    setState(() => _loading = true);
+    setState(() => _loadingProvider = _SignInProvider.google);
     try {
       final user = await _authService.signInWithGoogle();
       if (mounted) {
@@ -44,7 +48,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         AppSnackbar.show(context, message: e.toString());
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingProvider = null);
     }
   }
 
@@ -53,7 +57,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     ref
         .read(analyticsProvider)
         .logEvent(name: 'sign_in_attempted', parameters: {'method': 'apple'});
-    setState(() => _loading = true);
+    setState(() => _loadingProvider = _SignInProvider.apple);
     try {
       final user = await _authService.signInWithApple();
       if (mounted) {
@@ -71,7 +75,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         AppSnackbar.show(context, message: e.toString());
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingProvider = null);
     }
   }
 
@@ -111,7 +115,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               const Spacer(),
               ElevatedButton.icon(
                 onPressed: _loading ? null : _signInWithGoogle,
-                icon: _loading
+                icon: _loadingProvider == _SignInProvider.google
                     ? const SizedBox(
                         width: 20,
                         height: 20,
@@ -127,7 +131,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                   ),
-                  icon: const Icon(Icons.apple, size: 24),
+                  icon: _loadingProvider == _SignInProvider.apple
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.apple, size: 24),
                   label: Text(l10n.signInWithApple),
                 ),
               ],

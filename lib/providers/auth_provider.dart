@@ -25,7 +25,7 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState(status: AuthStatus.unauthenticated)) {
+  AuthNotifier() : super(const AuthState(status: AuthStatus.unknown)) {
     _init();
   }
 
@@ -110,19 +110,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> signOut() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (e) {
+      debugPrint('Firebase signOut failed: $e');
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_onboardingKey, false);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
-  void refreshProviders() {
+  Future<void> refreshProviders() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    final providers = _providerIds(user);
+    if (providers.isEmpty) {
+      await signOut();
+      return;
+    }
     state = AuthState(
       status: state.status,
       displayName: user.displayName ?? state.displayName,
       uid: user.uid,
-      linkedProviders: _providerIds(user),
+      linkedProviders: providers,
     );
   }
 }
