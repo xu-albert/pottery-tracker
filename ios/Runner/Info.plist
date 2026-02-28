@@ -39,6 +39,10 @@
 	<string>22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Potter Journal uses the camera to take photos of your pottery pieces.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Potter Journal accesses your photo library to import photos of your pottery pieces.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>FirebaseAppDelegateProxyEnabled</key>
