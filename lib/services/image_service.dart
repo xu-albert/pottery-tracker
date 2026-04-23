@@ -7,6 +7,14 @@ import 'package:path/path.dart' as p;
 import 'package:exif/exif.dart';
 import 'package:uuid/uuid.dart';
 
+typedef CompressFunction =
+    Future<Uint8List> Function(
+      Uint8List input, {
+      int quality,
+      int minWidth,
+      int minHeight,
+    });
+
 class ImageResult {
   final String photoId;
   final String localPath;
@@ -24,6 +32,10 @@ class ImageResult {
 class ImageService {
   final _picker = ImagePicker();
   final _uuid = const Uuid();
+  final CompressFunction _compress;
+
+  ImageService({CompressFunction? compress})
+    : _compress = compress ?? FlutterImageCompress.compressWithList;
 
   Future<ImageResult?> pickAndProcessImage({
     required ImageSource source,
@@ -37,7 +49,7 @@ class ImageService {
   }
 
   Future<List<XFile>?> pickMultipleImages() async {
-    final picked = await _picker.pickMultiImage();
+    final picked = await _picker.pickMultiImage(requestFullMetadata: true);
     if (picked.isEmpty) return null;
     return picked;
   }
@@ -47,7 +59,7 @@ class ImageService {
     required String pieceId,
   }) async {
     final photoId = _uuid.v4();
-    final dateTaken = _extractDateFromBytes(bytes);
+    final dateTaken = await _extractDateFromBytes(bytes);
 
     final appDir = await getApplicationDocumentsDirectory();
     final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
@@ -56,31 +68,23 @@ class ImageService {
     final mainPath = p.join(photoDir.path, '$photoId.jpg');
     final thumbPath = p.join(photoDir.path, '${photoId}_thumb.jpg');
 
-    // Save main image: try compressing, fall back to raw bytes
-    try {
-      final compressed = await FlutterImageCompress.compressWithList(
-        bytes,
-        quality: 75,
-        minWidth: 1500,
-        minHeight: 1500,
-      );
-      await File(mainPath).writeAsBytes(compressed);
-    } catch (_) {
-      await File(mainPath).writeAsBytes(bytes);
-    }
+    // Save main image (compression strips EXIF including GPS)
+    final mainBytes = await _compressOrStrip(
+      bytes,
+      quality: 75,
+      minWidth: 1500,
+      minHeight: 1500,
+    );
+    await File(mainPath).writeAsBytes(mainBytes);
 
-    // Save thumbnail: try compressing small, fall back to main
-    try {
-      final thumb = await FlutterImageCompress.compressWithList(
-        bytes,
-        quality: 60,
-        minWidth: 300,
-        minHeight: 300,
-      );
-      await File(thumbPath).writeAsBytes(thumb);
-    } catch (_) {
-      await File(thumbPath).writeAsBytes(bytes);
-    }
+    // Save thumbnail (compression strips EXIF including GPS)
+    final thumbBytes = await _compressOrStrip(
+      bytes,
+      quality: 60,
+      minWidth: 300,
+      minHeight: 300,
+    );
+    await File(thumbPath).writeAsBytes(thumbBytes);
 
     return ImageResult(
       photoId: photoId,
@@ -90,10 +94,39 @@ class ImageService {
     );
   }
 
-  DateTime _extractDateFromBytes(Uint8List bytes) {
+  /// Compress image bytes, stripping EXIF metadata (including GPS).
+  /// Falls back to a strip-only re-encode if the target compression fails,
+  /// then to raw bytes as a last resort.
+  Future<Uint8List> _compressOrStrip(
+    Uint8List bytes, {
+    required int quality,
+    required int minWidth,
+    required int minHeight,
+  }) async {
+    // Try target compression (strips EXIF)
     try {
-      final tags = readExifFromBytes(bytes) as Map<String, IfdTag>;
-      final dateTag = tags['EXIF DateTimeOriginal']?.toString() ??
+      return await _compress(
+        bytes,
+        quality: quality,
+        minWidth: minWidth,
+        minHeight: minHeight,
+      );
+    } catch (_) {}
+
+    // Fallback: re-encode at full quality with no resize (still strips EXIF)
+    try {
+      return await _compress(bytes, quality: 100);
+    } catch (_) {}
+
+    // Last resort: raw bytes (extremely unlikely)
+    return bytes;
+  }
+
+  Future<DateTime> _extractDateFromBytes(Uint8List bytes) async {
+    try {
+      final tags = await readExifFromBytes(bytes);
+      final dateTag =
+          tags['EXIF DateTimeOriginal']?.toString() ??
           tags['Image DateTime']?.toString();
       if (dateTag != null && dateTag.length >= 19) {
         final datePart = dateTag.substring(0, 10).replaceAll(':', '-');

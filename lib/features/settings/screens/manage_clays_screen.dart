@@ -1,11 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class ManageClaysScreen extends ConsumerWidget {
   const ManageClaysScreen({super.key});
@@ -32,8 +34,8 @@ class ManageClaysScreen extends ConsumerWidget {
               child: Text(
                 l10n.noClaysYet,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             );
           }
@@ -53,6 +55,10 @@ class ManageClaysScreen extends ConsumerWidget {
                 updates.add((id: reordered[i].id, sortOrder: i));
               }
               ref.read(materialsDaoProvider).updateSortOrders(updates);
+              final trigger = ref.read(syncTriggerProvider);
+              for (final entry in updates) {
+                trigger.afterClayWrite(entry.id);
+              }
             },
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(
@@ -90,8 +96,10 @@ class ManageClaysScreen extends ConsumerWidget {
                         index: index,
                         child: const Padding(
                           padding: EdgeInsets.all(AppSizes.sm),
-                          child: Icon(Icons.drag_handle,
-                              color: AppColors.inputText),
+                          child: Icon(
+                            Icons.drag_handle,
+                            color: AppColors.inputText,
+                          ),
                         ),
                       ),
                       const SizedBox(width: AppSizes.sm),
@@ -99,6 +107,8 @@ class ManageClaysScreen extends ConsumerWidget {
                         child: Text(
                           clay.name,
                           style: Theme.of(context).textTheme.bodyLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       IconButton(
@@ -125,7 +135,10 @@ class ManageClaysScreen extends ConsumerWidget {
   }
 
   Future<void> _showAddDialog(
-      BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
     final controller = TextEditingController();
     final name = await showCupertinoDialog<String>(
       context: context,
@@ -137,7 +150,11 @@ class ManageClaysScreen extends ConsumerWidget {
             controller: controller,
             autofocus: true,
             placeholder: l10n.enterClayName,
-            textCapitalization: TextCapitalization.words,
+            textCapitalization: TextCapitalization.sentences,
+            autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxClayNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),
@@ -156,12 +173,17 @@ class ManageClaysScreen extends ConsumerWidget {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      await ref.read(materialsDaoProvider).findOrCreateClay(name);
+      final clay = await ref.read(materialsDaoProvider).findOrCreateClay(name);
+      await ref.read(syncTriggerProvider).afterClayWrite(clay.id);
     }
   }
 
-  Future<void> _showEditDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, ClayOption clay) async {
+  Future<void> _showEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    ClayOption clay,
+  ) async {
     final controller = TextEditingController(text: clay.name);
     final newName = await showCupertinoDialog<String>(
       context: context,
@@ -172,7 +194,11 @@ class ManageClaysScreen extends ConsumerWidget {
           child: CupertinoTextField(
             controller: controller,
             autofocus: true,
-            textCapitalization: TextCapitalization.words,
+            textCapitalization: TextCapitalization.sentences,
+            autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxClayNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),
@@ -190,13 +216,20 @@ class ManageClaysScreen extends ConsumerWidget {
       ),
     );
 
-    if (newName != null && newName.trim().isNotEmpty && newName.trim() != clay.name) {
+    if (newName != null &&
+        newName.trim().isNotEmpty &&
+        newName.trim() != clay.name) {
       await ref.read(materialsDaoProvider).updateClayName(clay.id, newName);
+      await ref.read(syncTriggerProvider).afterClayWrite(clay.id);
     }
   }
 
-  Future<void> _showDeleteDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, ClayOption clay) async {
+  Future<void> _showDeleteDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    ClayOption clay,
+  ) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
@@ -218,6 +251,9 @@ class ManageClaysScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteClay(clay.id);
+      await ref
+          .read(syncTriggerProvider)
+          .afterMaterialDeletion('clays', clay.id);
     }
   }
 }

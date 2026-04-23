@@ -10,6 +10,8 @@ mixin _$MaterialsDaoMixin on DatabaseAccessor<AppDatabase> {
   $TagOptionsTable get tagOptions => attachedDatabase.tagOptions;
   $PieceTagsTable get pieceTags => attachedDatabase.pieceTags;
   $PiecesTable get pieces => attachedDatabase.pieces;
+  $DeletedJunctionsTable get deletedJunctions =>
+      attachedDatabase.deletedJunctions;
   MaterialsDaoManager get managers => MaterialsDaoManager(this);
 }
 
@@ -28,4 +30,9 @@ class MaterialsDaoManager {
       $$PieceTagsTableTableManager(_db.attachedDatabase, _db.pieceTags);
   $$PiecesTableTableManager get pieces =>
       $$PiecesTableTableManager(_db.attachedDatabase, _db.pieces);
+  $$DeletedJunctionsTableTableManager get deletedJunctions =>
+      $$DeletedJunctionsTableTableManager(
+        _db.attachedDatabase,
+        _db.deletedJunctions,
+      );
 }

@@ -4,9 +4,7 @@ import '../database/daos/pieces_dao.dart';
 import '../database/daos/photos_dao.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
-  final db = AppDatabase();
-  ref.onDispose(() => db.close());
-  return db;
+  throw UnimplementedError('Database must be initialized before runApp');
 });
 
 final piecesDaoProvider = Provider<PiecesDao>((ref) {

@@ -99,6 +99,17 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _displayDateMeta = const VerificationMeta(
+    'displayDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> displayDate = GeneratedColumn<DateTime>(
+    'display_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -132,6 +143,7 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
     notes,
     coverPhotoId,
     isArchived,
+    displayDate,
     createdAt,
     updatedAt,
   ];
@@ -203,6 +215,15 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
       );
     }
+    if (data.containsKey('display_date')) {
+      context.handle(
+        _displayDateMeta,
+        displayDate.isAcceptableOrUnknown(
+          data['display_date']!,
+          _displayDateMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -264,6 +285,10 @@ class $PiecesTable extends Pieces with TableInfo<$PiecesTable, Piece> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_archived'],
       )!,
+      displayDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}display_date'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -291,6 +316,7 @@ class Piece extends DataClass implements Insertable<Piece> {
   final String? notes;
   final String? coverPhotoId;
   final bool isArchived;
+  final DateTime? displayDate;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Piece({
@@ -303,6 +329,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     this.notes,
     this.coverPhotoId,
     required this.isArchived,
+    this.displayDate,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -332,6 +359,9 @@ class Piece extends DataClass implements Insertable<Piece> {
       map['cover_photo_id'] = Variable<String>(coverPhotoId);
     }
     map['is_archived'] = Variable<bool>(isArchived);
+    if (!nullToAbsent || displayDate != null) {
+      map['display_date'] = Variable<DateTime>(displayDate);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -360,6 +390,9 @@ class Piece extends DataClass implements Insertable<Piece> {
           ? const Value.absent()
           : Value(coverPhotoId),
       isArchived: Value(isArchived),
+      displayDate: displayDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayDate),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -380,6 +413,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       notes: serializer.fromJson<String?>(json['notes']),
       coverPhotoId: serializer.fromJson<String?>(json['coverPhotoId']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
+      displayDate: serializer.fromJson<DateTime?>(json['displayDate']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -397,6 +431,7 @@ class Piece extends DataClass implements Insertable<Piece> {
       'notes': serializer.toJson<String?>(notes),
       'coverPhotoId': serializer.toJson<String?>(coverPhotoId),
       'isArchived': serializer.toJson<bool>(isArchived),
+      'displayDate': serializer.toJson<DateTime?>(displayDate),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -412,6 +447,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     Value<String?> notes = const Value.absent(),
     Value<String?> coverPhotoId = const Value.absent(),
     bool? isArchived,
+    Value<DateTime?> displayDate = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Piece(
@@ -424,6 +460,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     notes: notes.present ? notes.value : this.notes,
     coverPhotoId: coverPhotoId.present ? coverPhotoId.value : this.coverPhotoId,
     isArchived: isArchived ?? this.isArchived,
+    displayDate: displayDate.present ? displayDate.value : this.displayDate,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -442,6 +479,9 @@ class Piece extends DataClass implements Insertable<Piece> {
       isArchived: data.isArchived.present
           ? data.isArchived.value
           : this.isArchived,
+      displayDate: data.displayDate.present
+          ? data.displayDate.value
+          : this.displayDate,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -459,6 +499,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
           ..write('isArchived: $isArchived, ')
+          ..write('displayDate: $displayDate, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -476,6 +517,7 @@ class Piece extends DataClass implements Insertable<Piece> {
     notes,
     coverPhotoId,
     isArchived,
+    displayDate,
     createdAt,
     updatedAt,
   );
@@ -492,6 +534,7 @@ class Piece extends DataClass implements Insertable<Piece> {
           other.notes == this.notes &&
           other.coverPhotoId == this.coverPhotoId &&
           other.isArchived == this.isArchived &&
+          other.displayDate == this.displayDate &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -506,6 +549,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
   final Value<String?> notes;
   final Value<String?> coverPhotoId;
   final Value<bool> isArchived;
+  final Value<DateTime?> displayDate;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -519,6 +563,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.displayDate = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -533,6 +578,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     this.notes = const Value.absent(),
     this.coverPhotoId = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.displayDate = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -549,6 +595,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Expression<String>? notes,
     Expression<String>? coverPhotoId,
     Expression<bool>? isArchived,
+    Expression<DateTime>? displayDate,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -563,6 +610,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       if (notes != null) 'notes': notes,
       if (coverPhotoId != null) 'cover_photo_id': coverPhotoId,
       if (isArchived != null) 'is_archived': isArchived,
+      if (displayDate != null) 'display_date': displayDate,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -579,6 +627,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     Value<String?>? notes,
     Value<String?>? coverPhotoId,
     Value<bool>? isArchived,
+    Value<DateTime?>? displayDate,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -593,6 +642,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
       notes: notes ?? this.notes,
       coverPhotoId: coverPhotoId ?? this.coverPhotoId,
       isArchived: isArchived ?? this.isArchived,
+      displayDate: displayDate ?? this.displayDate,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -629,6 +679,9 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
     if (isArchived.present) {
       map['is_archived'] = Variable<bool>(isArchived.value);
     }
+    if (displayDate.present) {
+      map['display_date'] = Variable<DateTime>(displayDate.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -653,6 +706,7 @@ class PiecesCompanion extends UpdateCompanion<Piece> {
           ..write('notes: $notes, ')
           ..write('coverPhotoId: $coverPhotoId, ')
           ..write('isArchived: $isArchived, ')
+          ..write('displayDate: $displayDate, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -2134,6 +2188,15 @@ class $TagOptionsTable extends TagOptions
     requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumn<String> color = GeneratedColumn<String>(
+    'color',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -2158,7 +2221,7 @@ class $TagOptionsTable extends TagOptions
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, name, sortOrder, createdAt];
+  List<GeneratedColumn> get $columns => [id, name, color, sortOrder, createdAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2183,6 +2246,12 @@ class $TagOptionsTable extends TagOptions
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('color')) {
+      context.handle(
+        _colorMeta,
+        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
     }
     if (data.containsKey('sort_order')) {
       context.handle(
@@ -2215,6 +2284,10 @@ class $TagOptionsTable extends TagOptions
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      color: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}color'],
+      ),
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -2235,11 +2308,13 @@ class $TagOptionsTable extends TagOptions
 class TagOption extends DataClass implements Insertable<TagOption> {
   final String id;
   final String name;
+  final String? color;
   final int sortOrder;
   final DateTime createdAt;
   const TagOption({
     required this.id,
     required this.name,
+    this.color,
     required this.sortOrder,
     required this.createdAt,
   });
@@ -2248,6 +2323,9 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
+    if (!nullToAbsent || color != null) {
+      map['color'] = Variable<String>(color);
+    }
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
@@ -2257,6 +2335,9 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return TagOptionsCompanion(
       id: Value(id),
       name: Value(name),
+      color: color == null && nullToAbsent
+          ? const Value.absent()
+          : Value(color),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
@@ -2270,6 +2351,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return TagOption(
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
+      color: serializer.fromJson<String?>(json['color']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
@@ -2280,6 +2362,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
+      'color': serializer.toJson<String?>(color),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
@@ -2288,11 +2371,13 @@ class TagOption extends DataClass implements Insertable<TagOption> {
   TagOption copyWith({
     String? id,
     String? name,
+    Value<String?> color = const Value.absent(),
     int? sortOrder,
     DateTime? createdAt,
   }) => TagOption(
     id: id ?? this.id,
     name: name ?? this.name,
+    color: color.present ? color.value : this.color,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -2300,6 +2385,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return TagOption(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
+      color: data.color.present ? data.color.value : this.color,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -2310,6 +2396,7 @@ class TagOption extends DataClass implements Insertable<TagOption> {
     return (StringBuffer('TagOption(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('color: $color, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -2317,13 +2404,14 @@ class TagOption extends DataClass implements Insertable<TagOption> {
   }
 
   @override
-  int get hashCode => Object.hash(id, name, sortOrder, createdAt);
+  int get hashCode => Object.hash(id, name, color, sortOrder, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is TagOption &&
           other.id == this.id &&
           other.name == this.name &&
+          other.color == this.color &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
@@ -2331,12 +2419,14 @@ class TagOption extends DataClass implements Insertable<TagOption> {
 class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   final Value<String> id;
   final Value<String> name;
+  final Value<String?> color;
   final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const TagOptionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
+    this.color = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2344,6 +2434,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   TagOptionsCompanion.insert({
     required String id,
     required String name,
+    this.color = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required DateTime createdAt,
     this.rowid = const Value.absent(),
@@ -2353,6 +2444,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   static Insertable<TagOption> custom({
     Expression<String>? id,
     Expression<String>? name,
+    Expression<String>? color,
     Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
@@ -2360,6 +2452,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
+      if (color != null) 'color': color,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
@@ -2369,6 +2462,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
   TagOptionsCompanion copyWith({
     Value<String>? id,
     Value<String>? name,
+    Value<String?>? color,
     Value<int>? sortOrder,
     Value<DateTime>? createdAt,
     Value<int>? rowid,
@@ -2376,6 +2470,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     return TagOptionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
+      color: color ?? this.color,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
@@ -2390,6 +2485,9 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
+    }
+    if (color.present) {
+      map['color'] = Variable<String>(color.value);
     }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
@@ -2408,6 +2506,7 @@ class TagOptionsCompanion extends UpdateCompanion<TagOption> {
     return (StringBuffer('TagOptionsCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('color: $color, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
@@ -2682,6 +2781,374 @@ class PieceTagsCompanion extends UpdateCompanion<PieceTag> {
   }
 }
 
+class $DeletedJunctionsTable extends DeletedJunctions
+    with TableInfo<$DeletedJunctionsTable, DeletedJunction> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DeletedJunctionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _junctionTypeMeta = const VerificationMeta(
+    'junctionType',
+  );
+  @override
+  late final GeneratedColumn<String> junctionType = GeneratedColumn<String>(
+    'junction_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pieceIdMeta = const VerificationMeta(
+    'pieceId',
+  );
+  @override
+  late final GeneratedColumn<String> pieceId = GeneratedColumn<String>(
+    'piece_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _optionIdMeta = const VerificationMeta(
+    'optionId',
+  );
+  @override
+  late final GeneratedColumn<String> optionId = GeneratedColumn<String>(
+    'option_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    junctionType,
+    pieceId,
+    optionId,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'deleted_junctions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DeletedJunction> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('junction_type')) {
+      context.handle(
+        _junctionTypeMeta,
+        junctionType.isAcceptableOrUnknown(
+          data['junction_type']!,
+          _junctionTypeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_junctionTypeMeta);
+    }
+    if (data.containsKey('piece_id')) {
+      context.handle(
+        _pieceIdMeta,
+        pieceId.isAcceptableOrUnknown(data['piece_id']!, _pieceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pieceIdMeta);
+    }
+    if (data.containsKey('option_id')) {
+      context.handle(
+        _optionIdMeta,
+        optionId.isAcceptableOrUnknown(data['option_id']!, _optionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_optionIdMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DeletedJunction map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DeletedJunction(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      junctionType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}junction_type'],
+      )!,
+      pieceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}piece_id'],
+      )!,
+      optionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}option_id'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DeletedJunctionsTable createAlias(String alias) {
+    return $DeletedJunctionsTable(attachedDatabase, alias);
+  }
+}
+
+class DeletedJunction extends DataClass implements Insertable<DeletedJunction> {
+  final String id;
+  final String junctionType;
+  final String pieceId;
+  final String optionId;
+  final DateTime deletedAt;
+  const DeletedJunction({
+    required this.id,
+    required this.junctionType,
+    required this.pieceId,
+    required this.optionId,
+    required this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['junction_type'] = Variable<String>(junctionType);
+    map['piece_id'] = Variable<String>(pieceId);
+    map['option_id'] = Variable<String>(optionId);
+    map['deleted_at'] = Variable<DateTime>(deletedAt);
+    return map;
+  }
+
+  DeletedJunctionsCompanion toCompanion(bool nullToAbsent) {
+    return DeletedJunctionsCompanion(
+      id: Value(id),
+      junctionType: Value(junctionType),
+      pieceId: Value(pieceId),
+      optionId: Value(optionId),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory DeletedJunction.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DeletedJunction(
+      id: serializer.fromJson<String>(json['id']),
+      junctionType: serializer.fromJson<String>(json['junctionType']),
+      pieceId: serializer.fromJson<String>(json['pieceId']),
+      optionId: serializer.fromJson<String>(json['optionId']),
+      deletedAt: serializer.fromJson<DateTime>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'junctionType': serializer.toJson<String>(junctionType),
+      'pieceId': serializer.toJson<String>(pieceId),
+      'optionId': serializer.toJson<String>(optionId),
+      'deletedAt': serializer.toJson<DateTime>(deletedAt),
+    };
+  }
+
+  DeletedJunction copyWith({
+    String? id,
+    String? junctionType,
+    String? pieceId,
+    String? optionId,
+    DateTime? deletedAt,
+  }) => DeletedJunction(
+    id: id ?? this.id,
+    junctionType: junctionType ?? this.junctionType,
+    pieceId: pieceId ?? this.pieceId,
+    optionId: optionId ?? this.optionId,
+    deletedAt: deletedAt ?? this.deletedAt,
+  );
+  DeletedJunction copyWithCompanion(DeletedJunctionsCompanion data) {
+    return DeletedJunction(
+      id: data.id.present ? data.id.value : this.id,
+      junctionType: data.junctionType.present
+          ? data.junctionType.value
+          : this.junctionType,
+      pieceId: data.pieceId.present ? data.pieceId.value : this.pieceId,
+      optionId: data.optionId.present ? data.optionId.value : this.optionId,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeletedJunction(')
+          ..write('id: $id, ')
+          ..write('junctionType: $junctionType, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('optionId: $optionId, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, junctionType, pieceId, optionId, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DeletedJunction &&
+          other.id == this.id &&
+          other.junctionType == this.junctionType &&
+          other.pieceId == this.pieceId &&
+          other.optionId == this.optionId &&
+          other.deletedAt == this.deletedAt);
+}
+
+class DeletedJunctionsCompanion extends UpdateCompanion<DeletedJunction> {
+  final Value<String> id;
+  final Value<String> junctionType;
+  final Value<String> pieceId;
+  final Value<String> optionId;
+  final Value<DateTime> deletedAt;
+  final Value<int> rowid;
+  const DeletedJunctionsCompanion({
+    this.id = const Value.absent(),
+    this.junctionType = const Value.absent(),
+    this.pieceId = const Value.absent(),
+    this.optionId = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DeletedJunctionsCompanion.insert({
+    required String id,
+    required String junctionType,
+    required String pieceId,
+    required String optionId,
+    required DateTime deletedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       junctionType = Value(junctionType),
+       pieceId = Value(pieceId),
+       optionId = Value(optionId),
+       deletedAt = Value(deletedAt);
+  static Insertable<DeletedJunction> custom({
+    Expression<String>? id,
+    Expression<String>? junctionType,
+    Expression<String>? pieceId,
+    Expression<String>? optionId,
+    Expression<DateTime>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (junctionType != null) 'junction_type': junctionType,
+      if (pieceId != null) 'piece_id': pieceId,
+      if (optionId != null) 'option_id': optionId,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DeletedJunctionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? junctionType,
+    Value<String>? pieceId,
+    Value<String>? optionId,
+    Value<DateTime>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return DeletedJunctionsCompanion(
+      id: id ?? this.id,
+      junctionType: junctionType ?? this.junctionType,
+      pieceId: pieceId ?? this.pieceId,
+      optionId: optionId ?? this.optionId,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (junctionType.present) {
+      map['junction_type'] = Variable<String>(junctionType.value);
+    }
+    if (pieceId.present) {
+      map['piece_id'] = Variable<String>(pieceId.value);
+    }
+    if (optionId.present) {
+      map['option_id'] = Variable<String>(optionId.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeletedJunctionsCompanion(')
+          ..write('id: $id, ')
+          ..write('junctionType: $junctionType, ')
+          ..write('pieceId: $pieceId, ')
+          ..write('optionId: $optionId, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2692,6 +3159,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PieceGlazesTable pieceGlazes = $PieceGlazesTable(this);
   late final $TagOptionsTable tagOptions = $TagOptionsTable(this);
   late final $PieceTagsTable pieceTags = $PieceTagsTable(this);
+  late final $DeletedJunctionsTable deletedJunctions = $DeletedJunctionsTable(
+    this,
+  );
   late final PiecesDao piecesDao = PiecesDao(this as AppDatabase);
   late final PhotosDao photosDao = PhotosDao(this as AppDatabase);
   late final MaterialsDao materialsDao = MaterialsDao(this as AppDatabase);
@@ -2707,6 +3177,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     pieceGlazes,
     tagOptions,
     pieceTags,
+    deletedJunctions,
   ];
 }
 
@@ -2721,6 +3192,7 @@ typedef $$PiecesTableCreateCompanionBuilder =
       Value<String?> notes,
       Value<String?> coverPhotoId,
       Value<bool> isArchived,
+      Value<DateTime?> displayDate,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -2736,6 +3208,7 @@ typedef $$PiecesTableUpdateCompanionBuilder =
       Value<String?> notes,
       Value<String?> coverPhotoId,
       Value<bool> isArchived,
+      Value<DateTime?> displayDate,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -2816,6 +3289,11 @@ class $$PiecesTableFilterComposer
 
   ColumnFilters<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get displayDate => $composableBuilder(
+    column: $table.displayDate,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2909,6 +3387,11 @@ class $$PiecesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get displayDate => $composableBuilder(
+    column: $table.displayDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2957,6 +3440,11 @@ class $$PiecesTableAnnotationComposer
 
   GeneratedColumn<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get displayDate => $composableBuilder(
+    column: $table.displayDate,
     builder: (column) => column,
   );
 
@@ -3029,6 +3517,7 @@ class $$PiecesTableTableManager
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> displayDate = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3042,6 +3531,7 @@ class $$PiecesTableTableManager
                 notes: notes,
                 coverPhotoId: coverPhotoId,
                 isArchived: isArchived,
+                displayDate: displayDate,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -3057,6 +3547,7 @@ class $$PiecesTableTableManager
                 Value<String?> notes = const Value.absent(),
                 Value<String?> coverPhotoId = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> displayDate = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -3070,6 +3561,7 @@ class $$PiecesTableTableManager
                 notes: notes,
                 coverPhotoId: coverPhotoId,
                 isArchived: isArchived,
+                displayDate: displayDate,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -4045,6 +4537,7 @@ typedef $$TagOptionsTableCreateCompanionBuilder =
     TagOptionsCompanion Function({
       required String id,
       required String name,
+      Value<String?> color,
       Value<int> sortOrder,
       required DateTime createdAt,
       Value<int> rowid,
@@ -4053,6 +4546,7 @@ typedef $$TagOptionsTableUpdateCompanionBuilder =
     TagOptionsCompanion Function({
       Value<String> id,
       Value<String> name,
+      Value<String?> color,
       Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<int> rowid,
@@ -4074,6 +4568,11 @@ class $$TagOptionsTableFilterComposer
 
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get color => $composableBuilder(
+    column: $table.color,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4107,6 +4606,11 @@ class $$TagOptionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -4132,6 +4636,9 @@ class $$TagOptionsTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -4173,12 +4680,14 @@ class $$TagOptionsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
+                Value<String?> color = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagOptionsCompanion(
                 id: id,
                 name: name,
+                color: color,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 rowid: rowid,
@@ -4187,12 +4696,14 @@ class $$TagOptionsTableTableManager
               ({
                 required String id,
                 required String name,
+                Value<String?> color = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
                 Value<int> rowid = const Value.absent(),
               }) => TagOptionsCompanion.insert(
                 id: id,
                 name: name,
+                color: color,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 rowid: rowid,
@@ -4377,6 +4888,214 @@ typedef $$PieceTagsTableProcessedTableManager =
       PieceTag,
       PrefetchHooks Function()
     >;
+typedef $$DeletedJunctionsTableCreateCompanionBuilder =
+    DeletedJunctionsCompanion Function({
+      required String id,
+      required String junctionType,
+      required String pieceId,
+      required String optionId,
+      required DateTime deletedAt,
+      Value<int> rowid,
+    });
+typedef $$DeletedJunctionsTableUpdateCompanionBuilder =
+    DeletedJunctionsCompanion Function({
+      Value<String> id,
+      Value<String> junctionType,
+      Value<String> pieceId,
+      Value<String> optionId,
+      Value<DateTime> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$DeletedJunctionsTableFilterComposer
+    extends Composer<_$AppDatabase, $DeletedJunctionsTable> {
+  $$DeletedJunctionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get junctionType => $composableBuilder(
+    column: $table.junctionType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get optionId => $composableBuilder(
+    column: $table.optionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DeletedJunctionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DeletedJunctionsTable> {
+  $$DeletedJunctionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get junctionType => $composableBuilder(
+    column: $table.junctionType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pieceId => $composableBuilder(
+    column: $table.pieceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get optionId => $composableBuilder(
+    column: $table.optionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DeletedJunctionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DeletedJunctionsTable> {
+  $$DeletedJunctionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get junctionType => $composableBuilder(
+    column: $table.junctionType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get pieceId =>
+      $composableBuilder(column: $table.pieceId, builder: (column) => column);
+
+  GeneratedColumn<String> get optionId =>
+      $composableBuilder(column: $table.optionId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$DeletedJunctionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DeletedJunctionsTable,
+          DeletedJunction,
+          $$DeletedJunctionsTableFilterComposer,
+          $$DeletedJunctionsTableOrderingComposer,
+          $$DeletedJunctionsTableAnnotationComposer,
+          $$DeletedJunctionsTableCreateCompanionBuilder,
+          $$DeletedJunctionsTableUpdateCompanionBuilder,
+          (
+            DeletedJunction,
+            BaseReferences<
+              _$AppDatabase,
+              $DeletedJunctionsTable,
+              DeletedJunction
+            >,
+          ),
+          DeletedJunction,
+          PrefetchHooks Function()
+        > {
+  $$DeletedJunctionsTableTableManager(
+    _$AppDatabase db,
+    $DeletedJunctionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DeletedJunctionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DeletedJunctionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DeletedJunctionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> junctionType = const Value.absent(),
+                Value<String> pieceId = const Value.absent(),
+                Value<String> optionId = const Value.absent(),
+                Value<DateTime> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DeletedJunctionsCompanion(
+                id: id,
+                junctionType: junctionType,
+                pieceId: pieceId,
+                optionId: optionId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String junctionType,
+                required String pieceId,
+                required String optionId,
+                required DateTime deletedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => DeletedJunctionsCompanion.insert(
+                id: id,
+                junctionType: junctionType,
+                pieceId: pieceId,
+                optionId: optionId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DeletedJunctionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DeletedJunctionsTable,
+      DeletedJunction,
+      $$DeletedJunctionsTableFilterComposer,
+      $$DeletedJunctionsTableOrderingComposer,
+      $$DeletedJunctionsTableAnnotationComposer,
+      $$DeletedJunctionsTableCreateCompanionBuilder,
+      $$DeletedJunctionsTableUpdateCompanionBuilder,
+      (
+        DeletedJunction,
+        BaseReferences<_$AppDatabase, $DeletedJunctionsTable, DeletedJunction>,
+      ),
+      DeletedJunction,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4395,4 +5114,6 @@ class $AppDatabaseManager {
       $$TagOptionsTableTableManager(_db, _db.tagOptions);
   $$PieceTagsTableTableManager get pieceTags =>
       $$PieceTagsTableTableManager(_db, _db.pieceTags);
+  $$DeletedJunctionsTableTableManager get deletedJunctions =>
+      $$DeletedJunctionsTableTableManager(_db, _db.deletedJunctions);
 }

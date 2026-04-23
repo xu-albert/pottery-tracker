@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/pieces_provider.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../widgets/app_snackbar.dart';
+import 'view_mode_toggle.dart';
 
 class FilterChips extends ConsumerWidget {
   const FilterChips({super.key});
@@ -14,22 +17,44 @@ class FilterChips extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.md, vertical: AppSizes.sm),
+        horizontal: AppSizes.md,
+        vertical: AppSizes.sm,
+      ),
       child: Row(
         children: [
           ChoiceChip(
             label: Text(l10n.filterAll),
+            showCheckmark: false,
             selected: !archivedOnly,
-            onSelected: (_) =>
-                ref.read(archivedFilterProvider.notifier).state = false,
+            onSelected: (_) {
+              AppSnackbar.hide();
+              ref
+                  .read(analyticsProvider)
+                  .logEvent(
+                    name: 'filter_changed',
+                    parameters: {'filter': 'active'},
+                  );
+              ref.read(archivedFilterProvider.notifier).state = false;
+            },
           ),
           const SizedBox(width: AppSizes.sm),
           ChoiceChip(
             label: Text(l10n.filterArchived),
+            showCheckmark: false,
             selected: archivedOnly,
-            onSelected: (_) =>
-                ref.read(archivedFilterProvider.notifier).state = true,
+            onSelected: (_) {
+              AppSnackbar.hide();
+              ref
+                  .read(analyticsProvider)
+                  .logEvent(
+                    name: 'filter_changed',
+                    parameters: {'filter': 'archived'},
+                  );
+              ref.read(archivedFilterProvider.notifier).state = true;
+            },
           ),
+          const Spacer(),
+          const ViewModeToggle(),
         ],
       ),
     );

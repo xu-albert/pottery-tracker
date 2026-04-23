@@ -1,16 +1,22 @@
 import 'package:drift/drift.dart' hide Column;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
 import '../../../models/piece_stage.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
+import '../../../providers/sync_provider.dart';
+import '../../../core/constants/app_sizes.dart';
+import '../../../widgets/app_snackbar.dart';
 import '../widgets/photo_gallery.dart';
 import '../widgets/metadata_form.dart';
 import '../widgets/photo_timeline.dart' show LastUpdatedInfo;
@@ -28,27 +34,60 @@ class PieceDetailScreen extends ConsumerStatefulWidget {
 class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   final _formKey = GlobalKey<MetadataFormState>();
   late final TextEditingController _titleCtrl;
+  late final FocusNode _titleFocus;
+  String? _titleHint;
   Piece? _piece;
+  bool _showDateHint = false;
 
   @override
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController();
+    _titleFocus = FocusNode();
+    _titleFocus.addListener(_onTitleFocusChange);
     _loadPiece();
+    _checkDateHint();
   }
 
   @override
   void dispose() {
+    _titleFocus.removeListener(_onTitleFocusChange);
+    _titleFocus.dispose();
     _titleCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkDateHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dismissed = prefs.getBool('date_hint_dismissed') ?? false;
+    if (!dismissed && mounted) {
+      setState(() => _showDateHint = true);
+    }
+  }
+
+  Future<void> _dismissDateHint() async {
+    setState(() => _showDateHint = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('date_hint_dismissed', true);
+  }
+
+  void _onTitleFocusChange() {
+    if (!_titleFocus.hasFocus && _titleCtrl.text.isNotEmpty) {
+      _updateField(title: _titleCtrl.text);
+    }
   }
 
   Future<void> _loadPiece() async {
     final dao = ref.read(piecesDaoProvider);
     final piece = await dao.getPieceById(widget.pieceId);
     if (mounted) {
-      setState(() => _piece = piece);
-      _titleCtrl.text = piece?.title ?? '';
+      final title = piece?.title ?? '';
+      final isUntitled = RegExp(r'^Untitled Piece \d+$').hasMatch(title);
+      setState(() {
+        _piece = piece;
+        _titleHint = isUntitled ? title : null;
+      });
+      _titleCtrl.text = isUntitled ? '' : title;
     }
   }
 
@@ -64,105 +103,111 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       if (result == null) return;
 
       final sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
-      await photosDao.insertPhoto(PhotosCompanion(
-        id: Value(result.photoId),
-        pieceId: Value(widget.pieceId),
-        localPath: Value(result.localPath),
-        thumbnailPath: Value(result.thumbnailPath),
-        dateTaken: Value(result.dateTaken),
-        createdAt: Value(DateTime.now()),
-        sortOrder: Value(sortOrder),
-      ));
+      await photosDao.insertPhoto(
+        PhotosCompanion(
+          id: Value(result.photoId),
+          pieceId: Value(widget.pieceId),
+          localPath: Value(result.localPath),
+          thumbnailPath: Value(result.thumbnailPath),
+          dateTaken: Value(result.dateTaken),
+          createdAt: Value(DateTime.now()),
+          sortOrder: Value(sortOrder),
+        ),
+      );
 
       // Update piece timestamp and set new photo as cover
       final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(PiecesCompanion(
-        id: Value(widget.pieceId),
-        coverPhotoId: Value(result.photoId),
-        updatedAt: Value(DateTime.now()),
-      ));
+      await piecesDao.updatePiece(
+        PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(result.photoId),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
       HapticFeedback.lightImpact();
+      ref
+          .read(analyticsProvider)
+          .logEvent(name: 'photo_added', parameters: {'source': source.name});
+      final trigger = ref.read(syncTriggerProvider);
+      await trigger.afterPhotoWrite(result.photoId, includeFile: true);
+      await trigger.afterPieceWrite(widget.pieceId);
       _loadPiece();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photo: $e')),
-        );
+        AppSnackbar.show(context, message: 'Could not add photo: $e');
       }
     }
   }
 
   Future<void> _deletePhoto(Photo photo) async {
-    final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.deletePhotoConfirmTitle),
-        content: Text(l10n.deletePhotoConfirmMessage),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel)),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.delete)),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
     final photosDao = ref.read(photosDaoProvider);
     final imageService = ref.read(imageServiceProvider);
 
     await photosDao.deletePhoto(photo.id);
     await imageService.deletePhotoFiles(widget.pieceId, photo.id);
     HapticFeedback.lightImpact();
+    await ref.read(syncTriggerProvider).afterPhotoDeletion(photo.id);
 
     // If deleted photo was cover, set new cover
     if (_piece?.coverPhotoId == photo.id) {
       final remaining = await photosDao.getPhotosForPiece(widget.pieceId);
       final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(PiecesCompanion(
-        id: Value(widget.pieceId),
-        coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
-        updatedAt: Value(DateTime.now()),
-      ));
+      await piecesDao.updatePiece(
+        PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+      await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
       _loadPiece();
     }
   }
 
   Future<void> _toggleArchive() async {
     final wasArchived = _piece!.isArchived;
+    final l10n = AppLocalizations.of(context)!;
     final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(PiecesCompanion(
-      id: Value(widget.pieceId),
-      isArchived: Value(!wasArchived),
-      updatedAt: Value(DateTime.now()),
-    ));
+    await dao.updatePiece(
+      PiecesCompanion(
+        id: Value(widget.pieceId),
+        isArchived: Value(!wasArchived),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
     HapticFeedback.lightImpact();
-    if (!wasArchived && mounted) {
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: wasArchived ? 'piece_unarchived' : 'piece_archived');
+    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
+    if (mounted) {
+      AppSnackbar.show(
+        context,
+        message: wasArchived
+            ? l10n.pieceUnarchivedWithTitle(_piece!.title ?? 'Untitled Piece')
+            : l10n.pieceArchivedWithTitle(_piece!.title ?? 'Untitled Piece'),
+      );
       context.go('/');
-    } else {
-      _loadPiece();
     }
   }
 
   Future<void> _deletePiece() async {
     final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => CupertinoAlertDialog(
         title: Text(l10n.deletePieceConfirmTitle),
         content: Text(l10n.deletePieceConfirmMessage),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel)),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.delete,
-                  style: const TextStyle(color: Colors.red))),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.delete),
+          ),
         ],
       ),
     );
@@ -173,10 +218,18 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final photosDao = ref.read(photosDaoProvider);
     final imageService = ref.read(imageServiceProvider);
 
+    // Capture photo IDs before deletion for sync
+    final photos = await photosDao.getPhotosForPiece(widget.pieceId);
+    final photoIds = photos.map((p) => p.id).toList();
+
     await photosDao.deletePhotosForPiece(widget.pieceId);
     await piecesDao.deletePiece(widget.pieceId);
     await imageService.deletePhotos(widget.pieceId);
     HapticFeedback.mediumImpact();
+    ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
+    await ref
+        .read(syncTriggerProvider)
+        .afterPieceDeletion(widget.pieceId, photoIds);
 
     if (mounted) context.go('/');
   }
@@ -189,71 +242,126 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     String? notes,
   }) async {
     final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(PiecesCompanion(
-      id: Value(widget.pieceId),
-      title: title != null ? Value(title.isEmpty ? null : title) : const Value.absent(),
-      stage: clearStage
-          ? const Value(null)
-          : stage != null
-              ? Value(stage.name)
-              : const Value.absent(),
-      clayType: clayType != null
-          ? Value(clayType.isEmpty ? null : clayType)
-          : const Value.absent(),
-      notes: notes != null
-          ? Value(notes.isEmpty ? null : notes)
-          : const Value.absent(),
-      updatedAt: Value(DateTime.now()),
-    ));
+    await dao.updatePiece(
+      PiecesCompanion(
+        id: Value(widget.pieceId),
+        title: title != null
+            ? Value(title.isEmpty ? null : title)
+            : const Value.absent(),
+        stage: clearStage
+            ? const Value(null)
+            : stage != null
+            ? Value(stage.name)
+            : const Value.absent(),
+        clayType: clayType != null
+            ? Value(clayType.isEmpty ? null : clayType)
+            : const Value.absent(),
+        notes: notes != null
+            ? Value(notes.isEmpty ? null : notes)
+            : const Value.absent(),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
   Future<void> _updateGlazes(List<String> glazeOptionIds) async {
     final materialsDao = ref.read(materialsDaoProvider);
     await materialsDao.setGlazesForPiece(widget.pieceId, glazeOptionIds);
+    final trigger = ref.read(syncTriggerProvider);
+    await trigger.afterPieceGlazesWrite(widget.pieceId);
+    await trigger.afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
   Future<void> _updateTags(List<String> tagOptionIds) async {
     final materialsDao = ref.read(materialsDaoProvider);
     await materialsDao.setTagsForPiece(widget.pieceId, tagOptionIds);
+    final trigger = ref.read(syncTriggerProvider);
+    await trigger.afterPieceTagsWrite(widget.pieceId);
+    await trigger.afterPieceWrite(widget.pieceId);
     _loadPiece();
   }
 
   Future<void> _pickUpdatedDate() async {
-    final current = _piece!.updatedAt;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: current,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
+    final current = _resolveDisplayDate();
+    final date = await _showCupertinoDatePicker(current);
     if (date == null || !mounted) return;
 
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(current),
-    );
-    if (!mounted) return;
-
-    final newDate = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time?.hour ?? current.hour,
-      time?.minute ?? current.minute,
-    );
-
     final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(PiecesCompanion(
-      id: Value(widget.pieceId),
-      updatedAt: Value(newDate),
-    ));
+    await dao.updatePiece(
+      PiecesCompanion(
+        id: Value(widget.pieceId),
+        displayDate: Value(date),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     _loadPiece();
+  }
+
+  DateTime _resolveDisplayDate() {
+    if (_piece!.displayDate != null) return _piece!.displayDate!;
+    final photos = ref.read(photosForPieceProvider(widget.pieceId)).valueOrNull;
+    if (photos != null && photos.isNotEmpty) {
+      return photos
+          .map((p) => p.dateTaken)
+          .reduce((a, b) => a.isAfter(b) ? a : b);
+    }
+    return _piece!.createdAt;
+  }
+
+  Future<void> _editPhotoDate(Photo photo) async {
+    final date = await _showCupertinoDatePicker(photo.dateTaken);
+    if (date == null || !mounted) return;
+
+    final photosDao = ref.read(photosDaoProvider);
+    await photosDao.updatePhoto(
+      PhotosCompanion(id: Value(photo.id), dateTaken: Value(date)),
+    );
+    await ref.read(syncTriggerProvider).afterPhotoWrite(photo.id);
+  }
+
+  Future<DateTime?> _showCupertinoDatePicker(DateTime initial) async {
+    DateTime selected = initial;
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      builder: (ctx) => SizedBox(
+        height: 300,
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                CupertinoButton(
+                  child: const Text('Cancel'),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+                CupertinoButton(
+                  child: const Text('Done'),
+                  onPressed: () => Navigator.pop(ctx, selected),
+                ),
+              ],
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.date,
+                initialDateTime: initial,
+                maximumDate: DateTime.now(),
+                minimumDate: DateTime(2000),
+                onDateTimeChanged: (date) => selected = date,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _addMultiplePhotos() async {
     final l10n = AppLocalizations.of(context)!;
+    var dialogOpen = false;
     try {
       final imageService = ref.read(imageServiceProvider);
       final picked = await imageService.pickMultipleImages();
@@ -265,6 +373,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
         barrierDismissible: false,
         builder: (_) => _BatchProgressDialog(total: picked.length),
       );
+      dialogOpen = true;
 
       final photosDao = ref.read(photosDaoProvider);
       final piecesDao = ref.read(piecesDaoProvider);
@@ -285,15 +394,20 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             pieceId: widget.pieceId,
           );
 
-          await photosDao.insertPhoto(PhotosCompanion(
-            id: Value(result.photoId),
-            pieceId: Value(widget.pieceId),
-            localPath: Value(result.localPath),
-            thumbnailPath: Value(result.thumbnailPath),
-            dateTaken: Value(result.dateTaken),
-            createdAt: Value(DateTime.now()),
-            sortOrder: Value(sortOrder),
-          ));
+          await photosDao.insertPhoto(
+            PhotosCompanion(
+              id: Value(result.photoId),
+              pieceId: Value(widget.pieceId),
+              localPath: Value(result.localPath),
+              thumbnailPath: Value(result.thumbnailPath),
+              dateTaken: Value(result.dateTaken),
+              createdAt: Value(DateTime.now()),
+              sortOrder: Value(sortOrder),
+            ),
+          );
+
+          final trigger = ref.read(syncTriggerProvider);
+          await trigger.afterPhotoWrite(result.photoId, includeFile: true);
 
           lastPhotoId = result.photoId;
           sortOrder++;
@@ -304,78 +418,127 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
       // Dismiss progress dialog
       if (mounted) Navigator.of(context).pop();
+      dialogOpen = false;
 
       // Set last photo as cover
       if (lastPhotoId != null) {
-        await piecesDao.updatePiece(PiecesCompanion(
-          id: Value(widget.pieceId),
-          coverPhotoId: Value(lastPhotoId),
-          updatedAt: Value(DateTime.now()),
-        ));
+        await piecesDao.updatePiece(
+          PiecesCompanion(
+            id: Value(widget.pieceId),
+            coverPhotoId: Value(lastPhotoId),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
 
       HapticFeedback.lightImpact();
+      ref
+          .read(analyticsProvider)
+          .logEvent(
+            name: 'photo_added',
+            parameters: {
+              'source': 'gallery',
+              'count': picked.length - failures,
+            },
+          );
+      await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
       _loadPiece();
 
       if (failures > 0 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.batchPhotoFailures(failures))),
-        );
+        AppSnackbar.show(context, message: l10n.batchPhotoFailures(failures));
       }
     } catch (e) {
-      // Dismiss progress dialog if open
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      // Dismiss progress dialog only if it was shown
+      if (dialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photos: $e')),
-        );
+        AppSnackbar.show(context, message: 'Could not add photos: $e');
       }
     }
   }
 
   Future<void> _reorderPhotos(List<Photo> photos) async {
-    final result = await Navigator.push<List<Photo>>(
+    final result = await Navigator.push<PhotoReorderResult>(
       context,
-      MaterialPageRoute(
-        builder: (_) => PhotoReorderScreen(photos: photos),
-      ),
+      MaterialPageRoute(builder: (_) => PhotoReorderScreen(photos: photos)),
     );
     if (result == null) return;
 
-    // Assign new sort orders: first in list = highest sortOrder (newest first display)
-    final updates = <({String id, int sortOrder})>[];
-    for (var i = 0; i < result.length; i++) {
-      updates.add((id: result[i].id, sortOrder: result.length - 1 - i));
+    final photosDao = ref.read(photosDaoProvider);
+    final imageService = ref.read(imageServiceProvider);
+    final trigger = ref.read(syncTriggerProvider);
+
+    // Process deletions
+    for (final deletedId in result.deletedIds) {
+      await photosDao.deletePhoto(deletedId);
+      await imageService.deletePhotoFiles(widget.pieceId, deletedId);
+      await trigger.afterPhotoDeletion(deletedId);
     }
 
-    final photosDao = ref.read(photosDaoProvider);
-    await photosDao.updateSortOrders(updates);
+    // Update cover photo if deleted
+    if (result.deletedIds.contains(_piece?.coverPhotoId)) {
+      final remaining = result.reordered;
+      final piecesDao = ref.read(piecesDaoProvider);
+      await piecesDao.updatePiece(
+        PiecesCompanion(
+          id: Value(widget.pieceId),
+          coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+      await trigger.afterPieceWrite(widget.pieceId);
+      _loadPiece();
+    }
+
+    // Assign new sort orders
+    if (result.reordered.isNotEmpty) {
+      ref
+          .read(analyticsProvider)
+          .logEvent(
+            name: 'photo_reorder_saved',
+            parameters: {'photo_count': result.reordered.length},
+          );
+
+      final updates = <({String id, int sortOrder})>[];
+      for (var i = 0; i < result.reordered.length; i++) {
+        updates.add((
+          id: result.reordered[i].id,
+          sortOrder: result.reordered.length - 1 - i,
+        ));
+      }
+
+      await photosDao.updateSortOrders(updates);
+      for (final update in updates) {
+        await trigger.afterPhotoWrite(update.id);
+      }
+    }
   }
 
   void _showAddPhotoSheet() {
     final l10n = AppLocalizations.of(context)!;
-    showModalBottomSheet(
+    showCupertinoModalPopup(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: Text(l10n.camera),
-              onTap: () {
-                Navigator.pop(ctx);
-                _addPhoto(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: Text(l10n.photoLibrary),
-              onTap: () {
-                Navigator.pop(ctx);
-                _addMultiplePhotos();
-              },
-            ),
-          ],
+      builder: (ctx) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _addPhoto(ImageSource.camera);
+            },
+            child: Text(l10n.camera),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _addMultiplePhotos();
+            },
+            child: Text(l10n.photoLibrary),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(l10n.cancel),
         ),
       ),
     );
@@ -391,23 +554,18 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final selectedTags = tagsAsync.valueOrNull ?? [];
 
     if (_piece == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
       appBar: AppBar(
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_a_photo),
-            tooltip: l10n.addPhoto,
-            onPressed: _showAddPhotoSheet,
-          ),
-          IconButton(
-            icon: Icon(_piece!.isArchived
-                ? Icons.unarchive_outlined
-                : Icons.archive_outlined),
+            icon: Icon(
+              _piece!.isArchived
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined,
+            ),
             tooltip: _piece!.isArchived
                 ? l10n.unarchivePiece
                 : l10n.archivePiece,
@@ -435,29 +593,102 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: TextField(
                         controller: _titleCtrl,
+                        focusNode: _titleFocus,
                         style: Theme.of(context).textTheme.titleLarge,
+                        autocorrect: false,
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLength: AppSizes.maxTitleLength,
                         decoration: InputDecoration(
-                          hintText: l10n.untitledPiece,
+                          hintText: _titleHint ?? l10n.untitledPiece,
                           border: InputBorder.none,
+                          counterText: '',
                         ),
-                        onEditingComplete: () =>
-                            _updateField(title: _titleCtrl.text),
+                        onEditingComplete: () {
+                          if (_titleCtrl.text.isNotEmpty) {
+                            _updateField(title: _titleCtrl.text);
+                          }
+                        },
                       ),
                     ),
-                    if (photos.isNotEmpty)
-                      PhotoGallery(
-                        photos: photos,
-                        onDelete: _deletePhoto,
+                    if (_showDateHint && photos.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer
+                                .withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(
+                              AppSizes.radiusSm,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.info_outline,
+                                size: 18,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Tap the date on a photo to change the photo\'s date',
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: Colors.grey.shade700),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: _dismissDateHint,
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                    PhotoGallery(
+                      photos: photos,
+                      onDelete: _deletePhoto,
+                      onEditDate: _editPhotoDate,
+                      onAddPhoto: _showAddPhotoSheet,
+                    ),
                     if (photos.length >= 2)
                       Align(
                         alignment: Alignment.centerRight,
                         child: Padding(
-                          padding: const EdgeInsets.only(right: 16),
-                          child: TextButton.icon(
-                            onPressed: () => _reorderPhotos(photos),
-                            icon: const Icon(Icons.swap_vert, size: 18),
-                            label: Text(l10n.reorderPhotos),
+                          padding: const EdgeInsets.only(
+                            right: 16,
+                            top: AppSizes.sm,
+                          ),
+                          child: GestureDetector(
+                            onTap: () => _reorderPhotos(photos),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.swap_vert,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  l10n.reorderPhotos,
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -465,13 +696,17 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                       key: _formKey,
                       piece: _piece!,
                       materialsDao: ref.read(materialsDaoProvider),
+                      syncTrigger: ref.read(syncTriggerProvider),
                       selectedGlazes: selectedGlazes,
                       selectedTags: selectedTags,
                       onUpdateField: _updateField,
                       onUpdateGlazes: _updateGlazes,
                       onUpdateTags: _updateTags,
                     ),
-                    LastUpdatedInfo(piece: _piece!, onTap: _pickUpdatedDate),
+                    LastUpdatedInfo(
+                      displayDate: _resolveDisplayDate(),
+                      onTap: _pickUpdatedDate,
+                    ),
                     const SizedBox(height: 16),
                   ],
                 ),
@@ -484,10 +719,12 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
-                      _updateField(title: _titleCtrl.text);
-                      _formKey.currentState?.saveAll();
-                      context.go('/');
+                    onPressed: () async {
+                      if (_titleCtrl.text.isNotEmpty) {
+                        _updateField(title: _titleCtrl.text);
+                      }
+                      await _formKey.currentState?.saveAll();
+                      if (context.mounted) context.go('/');
                     },
                     child: const Text('Done'),
                   ),
@@ -536,11 +773,11 @@ class _BatchProgressDialogState extends State<_BatchProgressDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    return AlertDialog(
+    return CupertinoAlertDialog(
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
+          const CupertinoActivityIndicator(),
           const SizedBox(height: 16),
           Text(l10n.processingPhotos(_current, widget.total)),
         ],

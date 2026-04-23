@@ -2,6 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/daos/pieces_dao.dart';
 import 'database_provider.dart';
 
+enum ViewMode { list, grid }
+
+final viewModeProvider = StateProvider<ViewMode>((ref) => ViewMode.list);
+
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
 final archivedFilterProvider = StateProvider<bool>((ref) => false);

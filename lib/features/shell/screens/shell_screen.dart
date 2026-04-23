@@ -1,24 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../providers/pieces_provider.dart';
+import '../../../widgets/app_snackbar.dart';
+import '../../../providers/sync_provider.dart';
 
-class ShellScreen extends StatelessWidget {
+class ShellScreen extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   const ShellScreen({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context)!;
+    // Initialize sync provider early so it starts on auth change
+    ref.watch(syncStateProvider);
 
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: navigationShell.currentIndex,
+        currentIndex: navigationShell.currentIndex >= 1
+            ? navigationShell.currentIndex + 1
+            : navigationShell.currentIndex,
         onTap: (index) {
+          AppSnackbar.hide();
           if (index == 1) {
-            // Center "+" button — navigate to create flow
+            ref.read(archivedFilterProvider.notifier).state = false;
             context.push('/create');
           } else {
             navigationShell.goBranch(

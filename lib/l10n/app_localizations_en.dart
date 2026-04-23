@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Pottery Tracker';
+  String get appTitle => 'Potter Journal';
 
   @override
   String get homeTab => 'Home';
@@ -21,7 +21,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addPiece => 'Add Piece';
 
   @override
-  String get searchPieces => 'Search pieces...';
+  String get searchPieces => 'Search anything...';
+
+  @override
+  String get searchActive => 'Search Active...';
+
+  @override
+  String get searchArchive => 'Search Archive...';
 
   @override
   String get filterAll => 'Active';
@@ -98,7 +104,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get photoLibrary => 'Photo Library';
 
   @override
-  String get signInTitle => 'Pottery Tracker';
+  String get signInTitle => 'Potter Journal';
 
   @override
   String get signInSubtitle => 'Track your ceramic creations';
@@ -128,6 +134,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signOut => 'Sign Out';
+
+  @override
+  String get signInCancelled => 'Sign-in cancelled';
 
   @override
   String get about => 'About';
@@ -189,10 +198,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get reorderPhotos => 'Reorder';
+  String get reorderPhotos => 'Reorder photos';
 
   @override
-  String get addNew => '+ Add New';
+  String get addNew => 'Add New';
 
   @override
   String get create => 'Create';
@@ -277,4 +286,119 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagsNone => 'None';
+
+  @override
+  String get tagColor => 'Tag Color';
+
+  @override
+  String pieceArchivedWithTitle(String title) {
+    return '$title archived';
+  }
+
+  @override
+  String pieceUnarchivedWithTitle(String title) {
+    return '$title unarchived';
+  }
+
+  @override
+  String get undo => 'Undo';
+
+  @override
+  String get sendFeedback => 'Send Feedback';
+
+  @override
+  String get connectedAccounts => 'Connected Accounts';
+
+  @override
+  String get google => 'Google';
+
+  @override
+  String get apple => 'Apple';
+
+  @override
+  String get connect => 'Connect';
+
+  @override
+  String get connected => 'Connected';
+
+  @override
+  String get googleLinkedSuccess => 'Google account connected';
+
+  @override
+  String get appleLinkedSuccess => 'Apple account connected';
+
+  @override
+  String get accountAlreadyLinked =>
+      'This account is already linked to a different user';
+
+  @override
+  String get signInToEnableSync => 'Sign in to enable cloud sync';
+
+  @override
+  String get comingSoon => 'Coming soon';
+
+  @override
+  String get linked => 'LINKED';
+
+  @override
+  String get notLinked => 'NOT LINKED';
+
+  @override
+  String get disconnect => 'Disconnect';
+
+  @override
+  String disconnectConfirmTitle(String provider) {
+    return 'Disconnect $provider?';
+  }
+
+  @override
+  String get disconnectConfirmMessage =>
+      'You can reconnect anytime from Settings.';
+
+  @override
+  String get googleDisconnected => 'Google account disconnected';
+
+  @override
+  String get appleDisconnected => 'Apple account disconnected';
+
+  @override
+  String get signOutConfirmTitle => 'Sign out of everything?';
+
+  @override
+  String get signOutConfirmMessage =>
+      'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.';
+
+  @override
+  String get viewModeList => 'List view';
+
+  @override
+  String get viewModeGrid => 'Grid view';
+
+  @override
+  String get cloudBackup => 'Cloud Backup';
+
+  @override
+  String get syncBackedUp => 'All data backed up';
+
+  @override
+  String get syncSyncing => 'Syncing...';
+
+  @override
+  String syncPending(int count) {
+    return '$count changes pending';
+  }
+
+  @override
+  String get syncError => 'Sync error';
+
+  @override
+  String get syncDisabled => 'Sign in to enable cloud backup';
+
+  @override
+  String get syncNow => 'Sync Now';
+
+  @override
+  String syncLastSynced(String date) {
+    return 'Last synced $date';
+  }
 }

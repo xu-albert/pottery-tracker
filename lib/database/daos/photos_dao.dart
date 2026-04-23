@@ -8,12 +8,10 @@ part 'photos_dao.g.dart';
 class PhotosDao extends DatabaseAccessor<AppDatabase> with _$PhotosDaoMixin {
   PhotosDao(super.db);
 
-  Future<void> insertPhoto(PhotosCompanion photo) =>
-      into(photos).insert(photo);
+  Future<void> insertPhoto(PhotosCompanion photo) => into(photos).insert(photo);
 
   Future<void> updatePhoto(PhotosCompanion photo) =>
-      (update(photos)..where((p) => p.id.equals(photo.id.value)))
-          .write(photo);
+      (update(photos)..where((p) => p.id.equals(photo.id.value))).write(photo);
 
   Future<void> deletePhoto(String id) =>
       (delete(photos)..where((p) => p.id.equals(id))).go();
@@ -36,10 +34,11 @@ class PhotosDao extends DatabaseAccessor<AppDatabase> with _$PhotosDaoMixin {
   }
 
   Future<int> getNextSortOrder(String pieceId) async {
-    final result = await (selectOnly(photos)
-          ..addColumns([photos.sortOrder.max()])
-          ..where(photos.pieceId.equals(pieceId)))
-        .getSingleOrNull();
+    final result =
+        await (selectOnly(photos)
+              ..addColumns([photos.sortOrder.max()])
+              ..where(photos.pieceId.equals(pieceId)))
+            .getSingleOrNull();
     final maxOrder = result?.read(photos.sortOrder.max());
     return (maxOrder ?? -1) + 1;
   }

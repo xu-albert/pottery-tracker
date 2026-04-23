@@ -37,16 +37,25 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Tapping a row opens piece detail
 - [ ] Scrollable photo row shows left/right fade gradients when overflowing
 - [ ] Gradients hide when scrolled to edge
+- [ ] Swipe left on a piece row → teal background with archive icon → piece archived
+- [ ] "Piece archived" snackbar with "Undo" action shown for 2 seconds
+- [ ] Tapping "Undo" restores piece to active list
+- [ ] Light haptic feedback on swipe-archive
 
 ### Archive View
 - [ ] Tap "Archive" chip → shows 3-column grid of archived pieces
-- [ ] Archive thumbnails are 1:1 square, photo-only (no title text overlay)
+- [ ] Archive thumbnails are 1:1 square with title text overlay at bottom-right
+- [ ] Title overlay has gradient fade from transparent to semi-black
+- [ ] Long titles truncate with ellipsis
+- [ ] Untitled pieces show "Untitled Piece N" on overlay
+- [ ] Placeholder thumbnails (no cover photo) also show gradient + title
 - [ ] Tapping thumbnail opens piece detail
 
 ### Search
 - [ ] Typing in search bar filters pieces in real-time
 - [ ] Searches across: title, clay type, glazes, tags, notes
 - [ ] Clearing search shows all pieces again
+- [ ] Search field has no autocorrect
 
 ### Empty States
 - [ ] No active pieces → "No pieces yet" message with icon
@@ -124,29 +133,33 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
+- [ ] Title field defaults to uppercase first letter (TextCapitalization.sentences)
+- [ ] Title field has no autocorrect suggestions
 - [ ] Select stage (Greenware / Bisqued / Glazed / None) → saves immediately
 - [ ] Clay field is a dropdown (not free text)
 - [ ] Clay dropdown shows "None" + saved clays + divider + "+ Add New"
 - [ ] Selecting a clay → saves immediately
 - [ ] Selecting "None" → clears clay value
-- [ ] Tapping "+ Add New" → dialog with text input → creates clay + selects it
+- [ ] Tapping "Add New" (icon + text, no duplicate +) → dialog with text input → creates clay + selects it
 - [ ] Newly created clay appears in dropdown for other pieces
 - [ ] Pieces with existing clay text values → preserved after DB migration
 - [ ] Glazes field is a multi-select picker (not free text)
 - [ ] Tapping Glazes → bottom sheet with checkboxes for each saved glaze
 - [ ] Checking/unchecking glazes → "Done" button commits selection
 - [ ] "None" checkbox clears all glaze selections
-- [ ] "+ Add New" in glaze picker → dialog → creates glaze + auto-checks it
+- [ ] "Add New" in glaze picker → dialog → creates glaze + auto-checks it
 - [ ] Selected glazes displayed as comma-separated text on the field
 - [ ] Pieces with existing free-text glazes → parsed into library on migration
 - [ ] Tags field is a multi-select picker
 - [ ] Tapping Tags → bottom sheet with checkboxes for each saved tag
 - [ ] Checking/unchecking tags → "Done" button commits selection
 - [ ] "None" checkbox clears all tag selections
-- [ ] "+ Add New" in tag picker → dialog → creates tag + auto-checks it
+- [ ] "Add New" in tag picker → dialog → creates tag + auto-checks it
 - [ ] Selected tags displayed as comma-separated text on the field
 - [ ] Tags searchable from album search bar (via denormalized column)
 - [ ] Edit notes (multiline) → saves on keyboard "done"
+- [ ] All material dialogs (clay, glaze, tag) default to uppercase first letter and have no autocorrect
+- [ ] Notes field has no autocorrect
 - [ ] Empty string fields saved as NULL in database
 
 ### Actions (Icon Buttons in App Bar)
@@ -157,7 +170,10 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ### Title (Above Gallery)
 - [ ] Title displayed above photo gallery with titleLarge styling
 - [ ] Title is editable, saves on keyboard "done"
-- [ ] Empty title shows "Untitled Piece" hint
+- [ ] Untitled pieces: title field is empty, hint shows "Untitled Piece N" with correct number
+- [ ] Leaving title empty preserves "Untitled Piece N" in DB for album display
+- [ ] Typing a name replaces the untitled name
+- [ ] Pieces with custom titles show the title prefilled normally
 
 ### Haptic Feedback (manual — requires physical device)
 - [ ] Adding a photo → light haptic
@@ -246,6 +262,16 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Dragging a tag to a new position reorders the list immediately
 - [ ] Scale + elevation animation on dragged item
 
+### Tag Colors
+- [ ] New tags auto-assigned a default color from 7 presets (cycling)
+- [ ] Colored circle shown next to each tag in Manage Tags list
+- [ ] Tapping circle opens color picker bottom sheet with 7 preset swatches
+- [ ] Selected swatch shows checkmark and border
+- [ ] Picking a color saves immediately; Manage Tags list updates
+- [ ] Album view tag chips reflect custom color (tinted bg + darkened text)
+- [ ] Tags without a custom color fall back to hash-based palette
+- [ ] Color dot shown next to each tag in piece detail tag picker bottom sheet
+
 ### Tag Rename Propagation
 - [ ] Renaming a tag in Manage Tags → all pieces using that tag show updated name
 - [ ] Denormalized tags text column updated (for search)
@@ -266,11 +292,12 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] ClayOptions table: id, name (unique), sortOrder, createdAt
 - [ ] GlazeOptions table: id, name (unique), sortOrder, createdAt
 - [ ] PieceGlazes junction table: id, pieceId, glazeOptionId, sortOrder
-- [ ] TagOptions table: id, name (unique), sortOrder, createdAt
+- [ ] TagOptions table: id, name (unique), color (nullable), sortOrder, createdAt
 - [ ] PieceTags junction table: id, pieceId, tagOptionId
 - [ ] Photos sorted by sortOrder DESC (newest first) everywhere
 - [ ] Migration v4→v5: creates GlazeOptions + PieceGlazes, parses free-text glazes into library
 - [ ] Migration v5→v6: creates TagOptions + PieceTags + adds tags column to pieces
+- [ ] Migration v6→v7: adds color column to TagOptions
 
 ### Photo Ordering (Newest First)
 - [ ] Detail gallery: newest photo leftmost
@@ -300,6 +327,67 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ---
 
+## 10. Widget Tests (Automated)
+
+### Album Screen (`test/features/album/album_screen_test.dart`)
+- [x] Shows loading indicator while data loads
+- [x] Shows empty state when no pieces
+- [x] Renders pieces when data available
+- [x] Shows error message on error
+
+### Filter Chips (`test/features/album/widgets/filter_chips_test.dart`)
+- [x] Active chip is selected by default
+- [x] Tapping Archive updates provider to true
+- [x] Tapping Active after Archive sets back to false
+
+### Album Grid (`test/features/album/widgets/album_grid_test.dart`)
+- [x] Active view renders list items (PieceRow)
+- [x] Swipe-to-archive calls dao.updatePiece and shows snackbar
+- [x] Undo button reverses the archive
+- [x] Archive view renders grid of ArchiveThumbnails
+
+### Archive Thumbnail (`test/features/album/widgets/archive_thumbnail_test.dart`)
+- [x] Renders with title overlay
+
+### Empty State (`test/features/album/widgets/empty_state_test.dart`)
+- [x] Shows illustration and message
+
+### Settings Screen (`test/features/settings/settings_screen_test.dart`)
+- [x] Shows Settings title and materials section
+
+---
+
+## 11. Firebase Analytics & Crashlytics
+
+### Analytics Events
+- [ ] `sign_in_attempted` — fires when user taps Google or Apple sign-in button (with `method` parameter)
+- [ ] `sign_in_skipped` — fires when user taps "Skip for now"
+- [ ] `filter_changed` — fires when user switches between Active/Archive filter chips (with `filter` parameter)
+- [ ] `photo_viewed_fullscreen` — fires when user taps a photo to view fullscreen
+- [ ] `photo_reorder_saved` — fires when user saves a new photo order (with `photo_count` parameter)
+- [ ] `material_created` — fires when user creates a new clay, glaze, or tag (with `material_type` parameter)
+- [ ] `piece_created` — fires when a new piece is created
+- [ ] `piece_deleted` — fires when a piece is deleted
+- [ ] `piece_archived` — fires when a piece is archived
+- [ ] `piece_unarchived` — fires when a piece is unarchived
+- [ ] `photo_added` — fires when a photo is added to a piece
+
+### Screen Tracking
+- [ ] Auto screen tracking logs screen changes via `FirebaseAnalyticsObserver` on GoRouter
+
+### Crashlytics
+- [ ] Test crash button visible in Settings under "Debug" section
+- [ ] Tapping "Test Crash" triggers a `FirebaseCrashlytics.instance.crash()`
+- [ ] Uncaught Flutter errors reported via `FlutterError.onError`
+- [ ] Uncaught platform errors reported via `PlatformDispatcher.instance.onError`
+
+### Verification
+- [ ] All analytics events fire without errors (no crashes or exceptions)
+- [ ] Events visible in Firebase Console (DebugView) after ~24h or via debug mode
+- [ ] Crashlytics test crash appears in Firebase Console
+
+---
+
 ## Changelog
 
 | Date       | Change |
@@ -323,3 +411,10 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-13 | Manage Glazes: settings screen to add, edit, delete, and reorder saved glaze options |
 | 2026-02-13 | Clay/glaze rename propagation: renaming in Manage Clays/Glazes updates all pieces using that name |
 | 2026-02-13 | Tags: multi-select picker, TagOptions + PieceTags tables (DB v6), Manage Tags screen with drag-to-reorder, tag rename propagation, search integration |
+| 2026-02-14 | Custom tag colors: 7 preset swatches, auto-assign on creation, color picker in Manage Tags, accessible chip rendering in album view (DB v7) |
+| 2026-02-14 | Untitled piece title as hint: title field empty for new pieces, "Untitled Piece N" shown as placeholder hint, DB value preserved when field left empty |
+| 2026-02-14 | Input field UX cleanup: TextCapitalization.sentences on all inputs, autocorrect disabled, "Add New" button text de-duplicated |
+| 2026-02-14 | Swipe-to-archive: left-swipe on album rows with teal background, haptic feedback, and 4-second undo snackbar |
+| 2026-02-14 | Archive thumbnail titles: bottom-right title overlay with gradient fade on archive grid thumbnails |
+| 2026-02-14 | Widget tests: 20 automated tests across 6 files covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings |
+| 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |

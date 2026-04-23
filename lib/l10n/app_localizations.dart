@@ -97,7 +97,7 @@ abstract class AppLocalizations {
   /// The app title
   ///
   /// In en, this message translates to:
-  /// **'Pottery Tracker'**
+  /// **'Potter Journal'**
   String get appTitle;
 
   /// Home tab label
@@ -121,8 +121,20 @@ abstract class AppLocalizations {
   /// Search bar placeholder
   ///
   /// In en, this message translates to:
-  /// **'Search pieces...'**
+  /// **'Search anything...'**
   String get searchPieces;
+
+  /// Search bar placeholder for active pieces
+  ///
+  /// In en, this message translates to:
+  /// **'Search Active...'**
+  String get searchActive;
+
+  /// Search bar placeholder for archived pieces
+  ///
+  /// In en, this message translates to:
+  /// **'Search Archive...'**
+  String get searchArchive;
 
   /// Active filter label
   ///
@@ -271,7 +283,7 @@ abstract class AppLocalizations {
   /// Sign in screen title
   ///
   /// In en, this message translates to:
-  /// **'Pottery Tracker'**
+  /// **'Potter Journal'**
   String get signInTitle;
 
   /// Sign in screen subtitle
@@ -327,6 +339,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sign Out'**
   String get signOut;
+
+  /// Shown when user cancels sign-in
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in cancelled'**
+  String get signInCancelled;
 
   /// About section label
   ///
@@ -427,13 +445,13 @@ abstract class AppLocalizations {
   /// Reorder photos button
   ///
   /// In en, this message translates to:
-  /// **'Reorder'**
+  /// **'Reorder photos'**
   String get reorderPhotos;
 
   /// Add new option to dropdown
   ///
   /// In en, this message translates to:
-  /// **'+ Add New'**
+  /// **'Add New'**
   String get addNew;
 
   /// Create action button
@@ -597,6 +615,210 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'None'**
   String get tagsNone;
+
+  /// Tag color picker title
+  ///
+  /// In en, this message translates to:
+  /// **'Tag Color'**
+  String get tagColor;
+
+  /// Snackbar message when a piece is archived
+  ///
+  /// In en, this message translates to:
+  /// **'{title} archived'**
+  String pieceArchivedWithTitle(String title);
+
+  /// Snackbar message when a piece is unarchived
+  ///
+  /// In en, this message translates to:
+  /// **'{title} unarchived'**
+  String pieceUnarchivedWithTitle(String title);
+
+  /// Undo action label
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get undo;
+
+  /// Send feedback email option in settings
+  ///
+  /// In en, this message translates to:
+  /// **'Send Feedback'**
+  String get sendFeedback;
+
+  /// Connected accounts section header
+  ///
+  /// In en, this message translates to:
+  /// **'Connected Accounts'**
+  String get connectedAccounts;
+
+  /// Google provider name
+  ///
+  /// In en, this message translates to:
+  /// **'Google'**
+  String get google;
+
+  /// Apple provider name
+  ///
+  /// In en, this message translates to:
+  /// **'Apple'**
+  String get apple;
+
+  /// Connect provider button
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get connect;
+
+  /// Provider is connected label
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get connected;
+
+  /// Google link success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Google account connected'**
+  String get googleLinkedSuccess;
+
+  /// Apple link success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Apple account connected'**
+  String get appleLinkedSuccess;
+
+  /// Account already linked error
+  ///
+  /// In en, this message translates to:
+  /// **'This account is already linked to a different user'**
+  String get accountAlreadyLinked;
+
+  /// Subtitle when not signed in
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to enable cloud sync'**
+  String get signInToEnableSync;
+
+  /// Coming soon placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Coming soon'**
+  String get comingSoon;
+
+  /// Provider linked status label
+  ///
+  /// In en, this message translates to:
+  /// **'LINKED'**
+  String get linked;
+
+  /// Provider not linked status label
+  ///
+  /// In en, this message translates to:
+  /// **'NOT LINKED'**
+  String get notLinked;
+
+  /// Disconnect provider button
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get disconnect;
+
+  /// Disconnect confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect {provider}?'**
+  String disconnectConfirmTitle(String provider);
+
+  /// Disconnect confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'You can reconnect anytime from Settings.'**
+  String get disconnectConfirmMessage;
+
+  /// Google disconnect success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Google account disconnected'**
+  String get googleDisconnected;
+
+  /// Apple disconnect success snackbar
+  ///
+  /// In en, this message translates to:
+  /// **'Apple account disconnected'**
+  String get appleDisconnected;
+
+  /// Sign out confirmation title
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out of everything?'**
+  String get signOutConfirmTitle;
+
+  /// Sign out confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.'**
+  String get signOutConfirmMessage;
+
+  /// List view mode label for accessibility
+  ///
+  /// In en, this message translates to:
+  /// **'List view'**
+  String get viewModeList;
+
+  /// Grid view mode label for accessibility
+  ///
+  /// In en, this message translates to:
+  /// **'Grid view'**
+  String get viewModeGrid;
+
+  /// Cloud backup section header
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud Backup'**
+  String get cloudBackup;
+
+  /// Sync status when everything is synced
+  ///
+  /// In en, this message translates to:
+  /// **'All data backed up'**
+  String get syncBackedUp;
+
+  /// Sync status while syncing
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing...'**
+  String get syncSyncing;
+
+  /// Sync status with pending changes
+  ///
+  /// In en, this message translates to:
+  /// **'{count} changes pending'**
+  String syncPending(int count);
+
+  /// Sync error status
+  ///
+  /// In en, this message translates to:
+  /// **'Sync error'**
+  String get syncError;
+
+  /// Sync disabled status
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to enable cloud backup'**
+  String get syncDisabled;
+
+  /// Manual sync button
+  ///
+  /// In en, this message translates to:
+  /// **'Sync Now'**
+  String get syncNow;
+
+  /// Last sync timestamp
+  ///
+  /// In en, this message translates to:
+  /// **'Last synced {date}'**
+  String syncLastSynced(String date);
 }
 
 class _AppLocalizationsDelegate

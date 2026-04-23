@@ -2,18 +2,86 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/auth_provider.dart';
-import '../../../services/auth_service.dart';
+import '../../../services/auth_service.dart'
+    show AuthService, SignInCancelledException;
 import '../../../core/constants/app_colors.dart';
+import '../../../widgets/app_snackbar.dart';
 import '../../../core/constants/app_sizes.dart';
 
-class SignInScreen extends ConsumerWidget {
+enum _SignInProvider { google, apple }
+
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends ConsumerState<SignInScreen> {
+  final _authService = AuthService();
+  _SignInProvider? _loadingProvider;
+
+  bool get _loading => _loadingProvider != null;
+
+  Future<void> _signInWithGoogle() async {
+    if (_loading) return;
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: 'sign_in_attempted', parameters: {'method': 'google'});
+    setState(() => _loadingProvider = _SignInProvider.google);
+    try {
+      final user = await _authService.signInWithGoogle();
+      if (mounted) {
+        ref.read(authProvider.notifier).signIn(user);
+      }
+    } on SignInCancelledException {
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: AppLocalizations.of(context)!.signInCancelled,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        AppSnackbar.show(context, message: e.toString());
+      }
+    } finally {
+      if (mounted) setState(() => _loadingProvider = null);
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    if (_loading) return;
+    ref
+        .read(analyticsProvider)
+        .logEvent(name: 'sign_in_attempted', parameters: {'method': 'apple'});
+    setState(() => _loadingProvider = _SignInProvider.apple);
+    try {
+      final user = await _authService.signInWithApple();
+      if (mounted) {
+        ref.read(authProvider.notifier).signIn(user);
+      }
+    } on SignInCancelledException {
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: AppLocalizations.of(context)!.signInCancelled,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        AppSnackbar.show(context, message: e.toString());
+      }
+    } finally {
+      if (mounted) setState(() => _loadingProvider = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final authService = AuthService();
 
     return Scaffold(
       body: SafeArea(
@@ -33,47 +101,59 @@ class SignInScreen extends ConsumerWidget {
               Text(
                 l10n.signInTitle,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: AppColors.charcoal,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: AppColors.charcoal,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: AppSizes.sm),
               Text(
                 l10n.signInSubtitle,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppColors.charcoal.withValues(alpha: 0.7),
-                    ),
+                  color: AppColors.charcoal.withValues(alpha: 0.7),
+                ),
               ),
               const Spacer(),
               ElevatedButton.icon(
-                onPressed: () async {
-                  final name = await authService.signInWithGoogle();
-                  if (name != null && context.mounted) {
-                    ref.read(authProvider.notifier).signIn(displayName: name);
-                  }
-                },
-                icon: const Icon(Icons.g_mobiledata, size: 24),
+                onPressed: _loading ? null : _signInWithGoogle,
+                icon: _loadingProvider == _SignInProvider.google
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.g_mobiledata, size: 24),
                 label: Text(l10n.signInWithGoogle),
               ),
               if (Platform.isIOS) ...[
                 const SizedBox(height: AppSizes.md),
                 ElevatedButton.icon(
-                  onPressed: () async {
-                    final name = await authService.signInWithApple();
-                    if (name != null && context.mounted) {
-                      ref.read(authProvider.notifier).signIn(displayName: name);
-                    }
-                  },
+                  onPressed: _loading ? null : _signInWithApple,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                   ),
-                  icon: const Icon(Icons.apple, size: 24),
+                  icon: _loadingProvider == _SignInProvider.apple
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.apple, size: 24),
                   label: Text(l10n.signInWithApple),
                 ),
               ],
               const SizedBox(height: AppSizes.md),
               TextButton(
-                onPressed: () => ref.read(authProvider.notifier).skip(),
+                onPressed: _loading
+                    ? null
+                    : () {
+                        ref
+                            .read(analyticsProvider)
+                            .logEvent(name: 'sign_in_skipped');
+                        ref.read(authProvider.notifier).skip();
+                      },
                 child: Text(l10n.skipForNow),
               ),
               const SizedBox(height: AppSizes.xxl),

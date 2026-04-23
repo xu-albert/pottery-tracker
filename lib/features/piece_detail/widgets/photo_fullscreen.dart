@@ -18,10 +18,7 @@ class PhotoFullscreen extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 4.0,
-          child: Image.file(
-            File(photoPath),
-            fit: BoxFit.contain,
-          ),
+          child: Image.file(File(photoPath), fit: BoxFit.contain),
         ),
       ),
     );

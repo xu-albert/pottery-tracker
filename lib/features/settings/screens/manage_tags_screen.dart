@@ -1,11 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class ManageTagsScreen extends ConsumerWidget {
   const ManageTagsScreen({super.key});
@@ -32,8 +34,8 @@ class ManageTagsScreen extends ConsumerWidget {
               child: Text(
                 l10n.noTagsYet,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             );
           }
@@ -53,6 +55,10 @@ class ManageTagsScreen extends ConsumerWidget {
                 updates.add((id: reordered[i].id, sortOrder: i));
               }
               ref.read(materialsDaoProvider).updateTagSortOrders(updates);
+              final trigger = ref.read(syncTriggerProvider);
+              for (final entry in updates) {
+                trigger.afterTagWrite(entry.id);
+              }
             },
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(
@@ -85,8 +91,28 @@ class ManageTagsScreen extends ConsumerWidget {
                         index: index,
                         child: const Padding(
                           padding: EdgeInsets.all(AppSizes.sm),
-                          child: Icon(Icons.drag_handle,
-                              color: AppColors.inputText),
+                          child: Icon(
+                            Icons.drag_handle,
+                            color: AppColors.inputText,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSizes.sm),
+                      GestureDetector(
+                        onTap: () => _showColorPicker(context, ref, tag),
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: tag.color != null
+                                ? TagColorPresets.hexToColor(tag.color!)
+                                : AppColors.inputText.withValues(alpha: 0.3),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.divider,
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: AppSizes.sm),
@@ -94,6 +120,8 @@ class ManageTagsScreen extends ConsumerWidget {
                         child: Text(
                           tag.name,
                           style: Theme.of(context).textTheme.bodyLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       IconButton(
@@ -119,8 +147,81 @@ class ManageTagsScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _showColorPicker(
+    BuildContext context,
+    WidgetRef ref,
+    TagOption tag,
+  ) async {
+    final currentColor = tag.color != null
+        ? TagColorPresets.hexToColor(tag.color!)
+        : null;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                AppLocalizations.of(context)!.tagColor,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSizes.md),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: TagColorPresets.colors.map((color) {
+                  final isSelected =
+                      currentColor != null &&
+                      color.toARGB32() == currentColor.toARGB32();
+                  return GestureDetector(
+                    onTap: () {
+                      ref
+                          .read(materialsDaoProvider)
+                          .updateTagColor(
+                            tag.id,
+                            TagColorPresets.colorToHex(color),
+                          );
+                      ref.read(syncTriggerProvider).afterTagWrite(tag.id);
+                      Navigator.of(ctx).pop();
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: isSelected
+                            ? Border.all(color: AppColors.charcoal, width: 2.5)
+                            : Border.all(color: AppColors.divider, width: 1),
+                      ),
+                      child: isSelected
+                          ? const Icon(
+                              Icons.check,
+                              color: Colors.white,
+                              size: 20,
+                            )
+                          : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: AppSizes.md),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showAddDialog(
-      BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
     final controller = TextEditingController();
     final name = await showCupertinoDialog<String>(
       context: context,
@@ -132,7 +233,11 @@ class ManageTagsScreen extends ConsumerWidget {
             controller: controller,
             autofocus: true,
             placeholder: l10n.enterTagName,
-            textCapitalization: TextCapitalization.words,
+            textCapitalization: TextCapitalization.sentences,
+            autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxTagNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),
@@ -151,12 +256,17 @@ class ManageTagsScreen extends ConsumerWidget {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      await ref.read(materialsDaoProvider).findOrCreateTag(name);
+      final tag = await ref.read(materialsDaoProvider).findOrCreateTag(name);
+      await ref.read(syncTriggerProvider).afterTagWrite(tag.id);
     }
   }
 
-  Future<void> _showEditDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, TagOption tag) async {
+  Future<void> _showEditDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    TagOption tag,
+  ) async {
     final controller = TextEditingController(text: tag.name);
     final newName = await showCupertinoDialog<String>(
       context: context,
@@ -167,7 +277,11 @@ class ManageTagsScreen extends ConsumerWidget {
           child: CupertinoTextField(
             controller: controller,
             autofocus: true,
-            textCapitalization: TextCapitalization.words,
+            textCapitalization: TextCapitalization.sentences,
+            autocorrect: false,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(AppSizes.maxTagNameLength),
+            ],
             onSubmitted: (value) => Navigator.of(ctx).pop(value),
           ),
         ),
@@ -189,11 +303,16 @@ class ManageTagsScreen extends ConsumerWidget {
         newName.trim().isNotEmpty &&
         newName.trim() != tag.name) {
       await ref.read(materialsDaoProvider).updateTagName(tag.id, newName);
+      await ref.read(syncTriggerProvider).afterTagWrite(tag.id);
     }
   }
 
-  Future<void> _showDeleteDialog(BuildContext context, WidgetRef ref,
-      AppLocalizations l10n, TagOption tag) async {
+  Future<void> _showDeleteDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    TagOption tag,
+  ) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
@@ -215,6 +334,7 @@ class ManageTagsScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       await ref.read(materialsDaoProvider).deleteTag(tag.id);
+      await ref.read(syncTriggerProvider).afterMaterialDeletion('tags', tag.id);
     }
   }
 }

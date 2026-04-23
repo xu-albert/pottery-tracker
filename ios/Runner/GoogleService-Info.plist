@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.22629038852-m2kc56p1cpo0hdq6oriq1e8r60do77dj</string>
+	<key>API_KEY</key>
+	<string>AIzaSyC-gT63i1UsP-c-fAUqNqRijLOpOIlGuzU</string>
+	<key>GCM_SENDER_ID</key>
+	<string>22629038852</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.albertxu.potterytracker</string>
+	<key>PROJECT_ID</key>
+	<string>pottery-tracker-31b1f</string>
+	<key>STORAGE_BUCKET</key>
+	<string>pottery-tracker-31b1f.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:22629038852:ios:21037012b59e03d00fae51</string>
+</dict>
+</plist>

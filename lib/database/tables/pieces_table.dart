@@ -10,6 +10,7 @@ class Pieces extends Table {
   TextColumn get notes => text().nullable()();
   TextColumn get coverPhotoId => text().nullable()();
   BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get displayDate => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
