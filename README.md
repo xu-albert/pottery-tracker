@@ -1,9 +1,21 @@
 # Potter Journal
 
-A photo-first pottery tracking app for iOS. Follow each piece through its stages — greenware, bisqued, glazed — and keep a visual record of everything you've made.
+A photo-first pottery tracking app for iOS, built with Flutter and Firebase.
 
-## What it does
+![Potter Journal screenshots](screenshot.png)
 
-Potter Journal lets you log pottery pieces with just a photo. Each piece can be tracked through its stages, tagged with clay type and glazes, and browsed in an album view. Data syncs to the cloud via Firebase so nothing is lost if you switch devices.
+## Features
 
-Built with Flutter and available on the [App Store](https://apps.apple.com/us/app/potter-journal/id6759199150).
+- Photo gallery for every piece
+- Toggle between list or album view
+- Track each stage: greenware, bisqued, glazed
+- Log your clays and glazes
+- Organize with custom tags
+- Search and filter your entire collection
+- Cloud sync to backup all your pieces
+
+## How it's built
+
+Flutter app with Riverpod for state management and Drift (SQLite) for local storage. Works fully offline. Search queries across all fields so you can find pieces by whatever you remember. Users can sign in with Google or Apple to sync their data to Firebase, so their work is preserved even if they lose or break their device. Photos are compressed before upload to keep cloud usage low.
+
+Available on the [App Store](https://apps.apple.com/us/app/potter-journal/id6759199150).
