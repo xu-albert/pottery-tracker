@@ -9,11 +9,55 @@ import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/sync_provider.dart';
 
-class ManageTagsScreen extends ConsumerWidget {
+class ManageTagsScreen extends ConsumerStatefulWidget {
   const ManageTagsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ManageTagsScreen> createState() => _ManageTagsScreenState();
+}
+
+class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
+  final _searchCtrl = TextEditingController();
+  List<String> _recentTagIds = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecents();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRecents() async {
+    final ids = await ref
+        .read(materialsDaoProvider)
+        .getRecentTagIds(limit: 100);
+    if (mounted) setState(() => _recentTagIds = ids);
+  }
+
+  List<TagOption> _sortByRecency(List<TagOption> tags) {
+    final recentSet = _recentTagIds.toSet();
+    final sorted = List<TagOption>.of(tags);
+    sorted.sort((a, b) {
+      final aRecent = recentSet.contains(a.id);
+      final bRecent = recentSet.contains(b.id);
+      if (aRecent && !bRecent) return -1;
+      if (!aRecent && bRecent) return 1;
+      if (aRecent && bRecent) {
+        return _recentTagIds.indexOf(a.id)
+            .compareTo(_recentTagIds.indexOf(b.id));
+      }
+      return a.sortOrder.compareTo(b.sortOrder);
+    });
+    return sorted;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final tagsAsync = ref.watch(allTagsProvider);
 
@@ -23,7 +67,7 @@ class ManageTagsScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => _showAddDialog(context, ref, l10n),
+            onPressed: () => _showAddDialog(l10n),
           ),
         ],
       ),
@@ -39,106 +83,100 @@ class ManageTagsScreen extends ConsumerWidget {
               ),
             );
           }
-          return ReorderableListView.builder(
-            padding: const EdgeInsets.symmetric(
-              vertical: AppSizes.sm,
-              horizontal: AppSizes.md,
-            ),
-            itemCount: tags.length,
-            onReorder: (oldIndex, newIndex) {
-              if (newIndex > oldIndex) newIndex--;
-              final reordered = List<TagOption>.of(tags);
-              final item = reordered.removeAt(oldIndex);
-              reordered.insert(newIndex, item);
-              final updates = <({String id, int sortOrder})>[];
-              for (var i = 0; i < reordered.length; i++) {
-                updates.add((id: reordered[i].id, sortOrder: i));
-              }
-              ref.read(materialsDaoProvider).updateTagSortOrders(updates);
-              final trigger = ref.read(syncTriggerProvider);
-              for (final entry in updates) {
-                trigger.afterTagWrite(entry.id);
-              }
-            },
-            proxyDecorator: (child, index, animation) {
-              return AnimatedBuilder(
-                animation: animation,
-                builder: (context, child) {
-                  final scale = 1.0 + 0.02 * animation.value;
-                  return Transform.scale(
-                    scale: scale,
-                    child: Material(
-                      elevation: 6 * animation.value,
-                      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-                      shadowColor: AppColors.charcoal.withValues(alpha: 0.3),
-                      child: child,
-                    ),
-                  );
-                },
-                child: child,
-              );
-            },
-            itemBuilder: (context, index) {
-              final tag = tags[index];
-              return Card(
-                key: ValueKey(tag.id),
-                margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSizes.xs),
-                  child: Row(
-                    children: [
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: const Padding(
-                          padding: EdgeInsets.all(AppSizes.sm),
-                          child: Icon(
-                            Icons.drag_handle,
-                            color: AppColors.inputText,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSizes.sm),
-                      GestureDetector(
-                        onTap: () => _showColorPicker(context, ref, tag),
-                        child: Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: tag.color != null
-                                ? TagColorPresets.hexToColor(tag.color!)
-                                : AppColors.inputText.withValues(alpha: 0.3),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.divider,
-                              width: 1.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSizes.sm),
-                      Expanded(
-                        child: Text(
-                          tag.name,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () =>
-                            _showEditDialog(context, ref, l10n, tag),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () =>
-                            _showDeleteDialog(context, ref, l10n, tag),
-                      ),
-                    ],
+
+          final query = _searchCtrl.text.toLowerCase();
+          final sorted = _sortByRecency(tags);
+          final filtered = query.isEmpty
+              ? sorted
+              : sorted
+                  .where((t) => t.name.toLowerCase().contains(query))
+                  .toList();
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSizes.md, AppSizes.sm, AppSizes.md, 0,
+                ),
+                child: CupertinoSearchTextField(
+                  controller: _searchCtrl,
+                  placeholder: l10n.searchTags,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.md, vertical: AppSizes.xs,
+                ),
+                child: Text(
+                  l10n.manageTagsSubtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSizes.xs,
+                    horizontal: AppSizes.md,
+                  ),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final tag = filtered[index];
+                    return Card(
+                      key: ValueKey(tag.id),
+                      margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSizes.xs),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: AppSizes.sm),
+                            GestureDetector(
+                              onTap: () => _showColorPicker(tag),
+                              child: Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: tag.color != null
+                                      ? TagColorPresets.hexToColor(tag.color!)
+                                      : AppColors.inputText
+                                          .withValues(alpha: 0.3),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppColors.divider,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSizes.sm),
+                            Expanded(
+                              child: Text(
+                                tag.name,
+                                style: Theme.of(context).textTheme.bodyLarge,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () =>
+                                  _showEditDialog(l10n, tag),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () =>
+                                  _showDeleteDialog(l10n, tag),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -147,11 +185,7 @@ class ManageTagsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _showColorPicker(
-    BuildContext context,
-    WidgetRef ref,
-    TagOption tag,
-  ) async {
+  Future<void> _showColorPicker(TagOption tag) async {
     final currentColor = tag.color != null
         ? TagColorPresets.hexToColor(tag.color!)
         : null;
@@ -217,11 +251,7 @@ class ManageTagsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _showAddDialog(
-    BuildContext context,
-    WidgetRef ref,
-    AppLocalizations l10n,
-  ) async {
+  Future<void> _showAddDialog(AppLocalizations l10n) async {
     final controller = TextEditingController();
     final name = await showCupertinoDialog<String>(
       context: context,
@@ -262,8 +292,6 @@ class ManageTagsScreen extends ConsumerWidget {
   }
 
   Future<void> _showEditDialog(
-    BuildContext context,
-    WidgetRef ref,
     AppLocalizations l10n,
     TagOption tag,
   ) async {
@@ -308,8 +336,6 @@ class ManageTagsScreen extends ConsumerWidget {
   }
 
   Future<void> _showDeleteDialog(
-    BuildContext context,
-    WidgetRef ref,
     AppLocalizations l10n,
     TagOption tag,
   ) async {
