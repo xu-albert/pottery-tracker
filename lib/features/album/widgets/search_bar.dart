@@ -45,8 +45,7 @@ class _PiecesSearchBarState extends ConsumerState<PiecesSearchBar> {
       child: TextField(
         autocorrect: false,
         decoration: InputDecoration(
-          hintText:
-              widget.isArchived ? l10n.searchArchive : l10n.searchActive,
+          hintText: widget.isArchived ? l10n.searchArchive : l10n.searchActive,
           prefixIcon: const Icon(Icons.search),
           isDense: true,
         ),
