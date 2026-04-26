@@ -43,6 +43,7 @@ class AlbumScreen extends ConsumerWidget {
             ),
           Expanded(
             child: piecesAsync.when(
+              skipLoadingOnReload: true,
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Error: $e')),
               data: (pieces) {
