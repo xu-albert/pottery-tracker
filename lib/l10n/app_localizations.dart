@@ -616,6 +616,60 @@ abstract class AppLocalizations {
   /// **'None'**
   String get tagsNone;
 
+  /// Subtitle for manage clays screen
+  ///
+  /// In en, this message translates to:
+  /// **'Recently used clays appear first'**
+  String get manageClaysSubtitle;
+
+  /// Subtitle for manage glazes screen
+  ///
+  /// In en, this message translates to:
+  /// **'Recently used glazes appear first'**
+  String get manageGlazesSubtitle;
+
+  /// Subtitle for manage tags screen
+  ///
+  /// In en, this message translates to:
+  /// **'Recently used tags appear first'**
+  String get manageTagsSubtitle;
+
+  /// Clay search field placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Search clays...'**
+  String get searchClays;
+
+  /// Glaze search field placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Search glazes...'**
+  String get searchGlazes;
+
+  /// Tag search field placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Search tags...'**
+  String get searchTags;
+
+  /// Clay picker title
+  ///
+  /// In en, this message translates to:
+  /// **'Select Clay'**
+  String get selectClay;
+
+  /// Recent section label for pills
+  ///
+  /// In en, this message translates to:
+  /// **'Recent'**
+  String get recent;
+
+  /// Add new option with pre-filled name
+  ///
+  /// In en, this message translates to:
+  /// **'Add \"{name}\"'**
+  String addNewWithName(String name);
+
   /// Tag color picker title
   ///
   /// In en, this message translates to:
