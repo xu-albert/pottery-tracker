@@ -2,18 +2,62 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/sync_provider.dart';
 
-class ManageGlazesScreen extends ConsumerWidget {
+class ManageGlazesScreen extends ConsumerStatefulWidget {
   const ManageGlazesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ManageGlazesScreen> createState() =>
+      _ManageGlazesScreenState();
+}
+
+class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
+  final _searchCtrl = TextEditingController();
+  List<String> _recentGlazeIds = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecents();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRecents() async {
+    final ids = await ref
+        .read(materialsDaoProvider)
+        .getRecentGlazeIds(limit: 100);
+    if (mounted) setState(() => _recentGlazeIds = ids);
+  }
+
+  List<GlazeOption> _sortByRecency(List<GlazeOption> glazes) {
+    final recentSet = _recentGlazeIds.toSet();
+    final sorted = List<GlazeOption>.of(glazes);
+    sorted.sort((a, b) {
+      final aRecent = recentSet.contains(a.id);
+      final bRecent = recentSet.contains(b.id);
+      if (aRecent && !bRecent) return -1;
+      if (!aRecent && bRecent) return 1;
+      if (aRecent && bRecent) {
+        return _recentGlazeIds.indexOf(a.id)
+            .compareTo(_recentGlazeIds.indexOf(b.id));
+      }
+      return a.sortOrder.compareTo(b.sortOrder);
+    });
+    return sorted;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final glazesAsync = ref.watch(allGlazesProvider);
 
@@ -23,7 +67,7 @@ class ManageGlazesScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => _showAddDialog(context, ref, l10n),
+            onPressed: () => _showAddDialog(l10n),
           ),
         ],
       ),
@@ -39,93 +83,81 @@ class ManageGlazesScreen extends ConsumerWidget {
               ),
             );
           }
-          return ReorderableListView.builder(
-            padding: const EdgeInsets.symmetric(
-              vertical: AppSizes.sm,
-              horizontal: AppSizes.md,
-            ),
-            itemCount: glazes.length,
-            onReorder: (oldIndex, newIndex) {
-              if (newIndex > oldIndex) newIndex--;
-              final reordered = List<GlazeOption>.of(glazes);
-              final item = reordered.removeAt(oldIndex);
-              reordered.insert(newIndex, item);
-              final updates = <({String id, int sortOrder})>[];
-              for (var i = 0; i < reordered.length; i++) {
-                updates.add((id: reordered[i].id, sortOrder: i));
-              }
-              ref.read(materialsDaoProvider).updateGlazeSortOrders(updates);
-              final trigger = ref.read(syncTriggerProvider);
-              for (final entry in updates) {
-                trigger.afterGlazeWrite(entry.id);
-              }
-            },
-            proxyDecorator: (child, index, animation) {
-              return AnimatedBuilder(
-                animation: animation,
-                builder: (context, child) {
-                  final scale = 1.0 + 0.02 * animation.value;
-                  return Transform.scale(
-                    scale: scale,
-                    child: Material(
-                      elevation: 6 * animation.value,
-                      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-                      shadowColor: AppColors.charcoal.withValues(alpha: 0.3),
-                      child: child,
-                    ),
-                  );
-                },
-                child: child,
-              );
-            },
-            itemBuilder: (context, index) {
-              final glaze = glazes[index];
-              return Card(
-                key: ValueKey(glaze.id),
-                margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
-                child: Padding(
-                  padding: const EdgeInsets.only(
-                    left: AppSizes.xs,
-                    right: AppSizes.xs,
-                    top: AppSizes.xs,
-                    bottom: AppSizes.xs,
-                  ),
-                  child: Row(
-                    children: [
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: const Padding(
-                          padding: EdgeInsets.all(AppSizes.sm),
-                          child: Icon(
-                            Icons.drag_handle,
-                            color: AppColors.inputText,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSizes.sm),
-                      Expanded(
-                        child: Text(
-                          glaze.name,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () =>
-                            _showEditDialog(context, ref, l10n, glaze),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () =>
-                            _showDeleteDialog(context, ref, l10n, glaze),
-                      ),
-                    ],
+
+          final query = _searchCtrl.text.toLowerCase();
+          final sorted = _sortByRecency(glazes);
+          final filtered = query.isEmpty
+              ? sorted
+              : sorted
+                  .where((g) => g.name.toLowerCase().contains(query))
+                  .toList();
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSizes.md, AppSizes.sm, AppSizes.md, 0,
+                ),
+                child: CupertinoSearchTextField(
+                  controller: _searchCtrl,
+                  placeholder: l10n.searchGlazes,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.md, vertical: AppSizes.xs,
+                ),
+                child: Text(
+                  l10n.manageGlazesSubtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSizes.xs,
+                    horizontal: AppSizes.md,
+                  ),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final glaze = filtered[index];
+                    return Card(
+                      key: ValueKey(glaze.id),
+                      margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSizes.xs),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: AppSizes.sm),
+                            Expanded(
+                              child: Text(
+                                glaze.name,
+                                style: Theme.of(context).textTheme.bodyLarge,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () =>
+                                  _showEditDialog(l10n, glaze),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () =>
+                                  _showDeleteDialog(l10n, glaze),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -134,11 +166,7 @@ class ManageGlazesScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _showAddDialog(
-    BuildContext context,
-    WidgetRef ref,
-    AppLocalizations l10n,
-  ) async {
+  Future<void> _showAddDialog(AppLocalizations l10n) async {
     final controller = TextEditingController();
     final name = await showCupertinoDialog<String>(
       context: context,
@@ -181,8 +209,6 @@ class ManageGlazesScreen extends ConsumerWidget {
   }
 
   Future<void> _showEditDialog(
-    BuildContext context,
-    WidgetRef ref,
     AppLocalizations l10n,
     GlazeOption glaze,
   ) async {
@@ -227,8 +253,6 @@ class ManageGlazesScreen extends ConsumerWidget {
   }
 
   Future<void> _showDeleteDialog(
-    BuildContext context,
-    WidgetRef ref,
     AppLocalizations l10n,
     GlazeOption glaze,
   ) async {

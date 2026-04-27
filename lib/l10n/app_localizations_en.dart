@@ -288,6 +288,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tagsNone => 'None';
 
   @override
+  String get manageClaysSubtitle => 'Recently used clays appear first';
+
+  @override
+  String get manageGlazesSubtitle => 'Recently used glazes appear first';
+
+  @override
+  String get manageTagsSubtitle => 'Recently used tags appear first';
+
+  @override
+  String get searchClays => 'Search clays...';
+
+  @override
+  String get searchGlazes => 'Search glazes...';
+
+  @override
+  String get searchTags => 'Search tags...';
+
+  @override
+  String get selectClay => 'Select Clay';
+
+  @override
+  String get recent => 'Recent';
+
+  @override
+  String addNewWithName(String name) {
+    return 'Add \"$name\"';
+  }
+
+  @override
   String get tagColor => 'Tag Color';
 
   @override

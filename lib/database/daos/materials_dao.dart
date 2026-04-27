@@ -110,6 +110,39 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     });
   }
 
+  /// Returns recently used clay names (from the most recently updated pieces).
+  Future<List<String>> getRecentClayNames({int limit = 3}) async {
+    final results = await customSelect(
+      'SELECT DISTINCT clay_type FROM pieces '
+      'WHERE clay_type IS NOT NULL AND clay_type != \'\' '
+      'ORDER BY updated_at DESC LIMIT ?',
+      variables: [Variable.withInt(limit)],
+    ).get();
+    return results.map((r) => r.read<String>('clay_type')).toList();
+  }
+
+  /// Returns recently used glaze option IDs (from the most recently updated pieces).
+  Future<List<String>> getRecentGlazeIds({int limit = 3}) async {
+    final results = await customSelect(
+      'SELECT DISTINCT pg.glaze_option_id FROM piece_glazes pg '
+      'INNER JOIN pieces p ON p.id = pg.piece_id '
+      'ORDER BY p.updated_at DESC LIMIT ?',
+      variables: [Variable.withInt(limit)],
+    ).get();
+    return results.map((r) => r.read<String>('glaze_option_id')).toList();
+  }
+
+  /// Returns recently used tag option IDs (from the most recently updated pieces).
+  Future<List<String>> getRecentTagIds({int limit = 3}) async {
+    final results = await customSelect(
+      'SELECT DISTINCT pt.tag_option_id FROM piece_tags pt '
+      'INNER JOIN pieces p ON p.id = pt.piece_id '
+      'ORDER BY p.updated_at DESC LIMIT ?',
+      variables: [Variable.withInt(limit)],
+    ).get();
+    return results.map((r) => r.read<String>('tag_option_id')).toList();
+  }
+
   // ── Glaze library methods ──
 
   Stream<List<GlazeOption>> watchAllGlazes() {
