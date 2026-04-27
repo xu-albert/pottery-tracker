@@ -48,7 +48,8 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       if (aRecent && bRecent) {
-        return _recentTagIds.indexOf(a.id)
+        return _recentTagIds
+            .indexOf(a.id)
             .compareTo(_recentTagIds.indexOf(b.id));
       }
       return a.sortOrder.compareTo(b.sortOrder);
@@ -89,14 +90,17 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
           final filtered = query.isEmpty
               ? sorted
               : sorted
-                  .where((t) => t.name.toLowerCase().contains(query))
-                  .toList();
+                    .where((t) => t.name.toLowerCase().contains(query))
+                    .toList();
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSizes.md, AppSizes.sm, AppSizes.md, 0,
+                  AppSizes.md,
+                  AppSizes.sm,
+                  AppSizes.md,
+                  0,
                 ),
                 child: CupertinoSearchTextField(
                   controller: _searchCtrl,
@@ -106,7 +110,8 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppSizes.md, vertical: AppSizes.xs,
+                  horizontal: AppSizes.md,
+                  vertical: AppSizes.xs,
                 ),
                 child: Text(
                   l10n.manageTagsSubtitle,
@@ -140,8 +145,9 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
                                 decoration: BoxDecoration(
                                   color: tag.color != null
                                       ? TagColorPresets.hexToColor(tag.color!)
-                                      : AppColors.inputText
-                                          .withValues(alpha: 0.3),
+                                      : AppColors.inputText.withValues(
+                                          alpha: 0.3,
+                                        ),
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: AppColors.divider,
@@ -161,13 +167,11 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
                             ),
                             IconButton(
                               icon: const Icon(Icons.edit_outlined),
-                              onPressed: () =>
-                                  _showEditDialog(l10n, tag),
+                              onPressed: () => _showEditDialog(l10n, tag),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline),
-                              onPressed: () =>
-                                  _showDeleteDialog(l10n, tag),
+                              onPressed: () => _showDeleteDialog(l10n, tag),
                             ),
                           ],
                         ),
@@ -291,10 +295,7 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
     }
   }
 
-  Future<void> _showEditDialog(
-    AppLocalizations l10n,
-    TagOption tag,
-  ) async {
+  Future<void> _showEditDialog(AppLocalizations l10n, TagOption tag) async {
     final controller = TextEditingController(text: tag.name);
     final newName = await showCupertinoDialog<String>(
       context: context,
@@ -335,10 +336,7 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
     }
   }
 
-  Future<void> _showDeleteDialog(
-    AppLocalizations l10n,
-    TagOption tag,
-  ) async {
+  Future<void> _showDeleteDialog(AppLocalizations l10n, TagOption tag) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(

@@ -12,8 +12,7 @@ class ManageGlazesScreen extends ConsumerStatefulWidget {
   const ManageGlazesScreen({super.key});
 
   @override
-  ConsumerState<ManageGlazesScreen> createState() =>
-      _ManageGlazesScreenState();
+  ConsumerState<ManageGlazesScreen> createState() => _ManageGlazesScreenState();
 }
 
 class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
@@ -48,7 +47,8 @@ class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       if (aRecent && bRecent) {
-        return _recentGlazeIds.indexOf(a.id)
+        return _recentGlazeIds
+            .indexOf(a.id)
             .compareTo(_recentGlazeIds.indexOf(b.id));
       }
       return a.sortOrder.compareTo(b.sortOrder);
@@ -89,14 +89,17 @@ class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
           final filtered = query.isEmpty
               ? sorted
               : sorted
-                  .where((g) => g.name.toLowerCase().contains(query))
-                  .toList();
+                    .where((g) => g.name.toLowerCase().contains(query))
+                    .toList();
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSizes.md, AppSizes.sm, AppSizes.md, 0,
+                  AppSizes.md,
+                  AppSizes.sm,
+                  AppSizes.md,
+                  0,
                 ),
                 child: CupertinoSearchTextField(
                   controller: _searchCtrl,
@@ -106,7 +109,8 @@ class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppSizes.md, vertical: AppSizes.xs,
+                  horizontal: AppSizes.md,
+                  vertical: AppSizes.xs,
                 ),
                 child: Text(
                   l10n.manageGlazesSubtitle,
@@ -142,13 +146,11 @@ class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
                             ),
                             IconButton(
                               icon: const Icon(Icons.edit_outlined),
-                              onPressed: () =>
-                                  _showEditDialog(l10n, glaze),
+                              onPressed: () => _showEditDialog(l10n, glaze),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline),
-                              onPressed: () =>
-                                  _showDeleteDialog(l10n, glaze),
+                              onPressed: () => _showDeleteDialog(l10n, glaze),
                             ),
                           ],
                         ),
@@ -208,10 +210,7 @@ class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
     }
   }
 
-  Future<void> _showEditDialog(
-    AppLocalizations l10n,
-    GlazeOption glaze,
-  ) async {
+  Future<void> _showEditDialog(AppLocalizations l10n, GlazeOption glaze) async {
     final controller = TextEditingController(text: glaze.name);
     final newName = await showCupertinoDialog<String>(
       context: context,

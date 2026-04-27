@@ -119,7 +119,8 @@ class MetadataFormState extends State<MetadataForm> {
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       if (aRecent && bRecent) {
-        return _recentClayNames.indexOf(a.name)
+        return _recentClayNames
+            .indexOf(a.name)
             .compareTo(_recentClayNames.indexOf(b.name));
       }
       return a.sortOrder.compareTo(b.sortOrder);
@@ -136,8 +137,8 @@ class MetadataFormState extends State<MetadataForm> {
           final filtered = query.isEmpty
               ? clays
               : clays
-                  .where((c) => c.name.toLowerCase().contains(query))
-                  .toList();
+                    .where((c) => c.name.toLowerCase().contains(query))
+                    .toList();
 
           return SafeArea(
             child: Padding(
@@ -149,8 +150,10 @@ class MetadataFormState extends State<MetadataForm> {
                 children: [
                   // Header
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -180,7 +183,8 @@ class MetadataFormState extends State<MetadataForm> {
                   if (query.isEmpty)
                     ListTile(
                       title: Text(l10n.stageNone),
-                      trailing: (widget.piece.clayType == null ||
+                      trailing:
+                          (widget.piece.clayType == null ||
                               widget.piece.clayType!.isEmpty)
                           ? const Icon(CupertinoIcons.checkmark_alt, size: 18)
                           : null,
@@ -200,8 +204,10 @@ class MetadataFormState extends State<MetadataForm> {
                         return ListTile(
                           title: Text(clay.name),
                           trailing: isSelected
-                              ? const Icon(CupertinoIcons.checkmark_alt,
-                                  size: 18)
+                              ? const Icon(
+                                  CupertinoIcons.checkmark_alt,
+                                  size: 18,
+                                )
                               : null,
                           onTap: () => Navigator.of(ctx).pop(clay.name),
                         );
@@ -219,8 +225,9 @@ class MetadataFormState extends State<MetadataForm> {
                     ),
                     onTap: () async {
                       final name = await _showAddClayDialog(
-                        initialName:
-                            query.isNotEmpty ? searchCtrl.text.trim() : null,
+                        initialName: query.isNotEmpty
+                            ? searchCtrl.text.trim()
+                            : null,
                       );
                       if (name != null && ctx.mounted) {
                         Navigator.of(ctx).pop(name);
@@ -304,7 +311,8 @@ class MetadataFormState extends State<MetadataForm> {
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       if (aRecent && bRecent) {
-        return recentGlazeIds.indexOf(a.id)
+        return recentGlazeIds
+            .indexOf(a.id)
             .compareTo(recentGlazeIds.indexOf(b.id));
       }
       return a.sortOrder.compareTo(b.sortOrder);
@@ -322,8 +330,8 @@ class MetadataFormState extends State<MetadataForm> {
           final filtered = query.isEmpty
               ? allGlazes
               : allGlazes
-                  .where((g) => g.name.toLowerCase().contains(query))
-                  .toList();
+                    .where((g) => g.name.toLowerCase().contains(query))
+                    .toList();
 
           return SafeArea(
             child: Padding(
@@ -335,8 +343,10 @@ class MetadataFormState extends State<MetadataForm> {
                 children: [
                   // Header
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -408,12 +418,13 @@ class MetadataFormState extends State<MetadataForm> {
                     ),
                     onTap: () async {
                       final newGlaze = await _showAddGlazeDialog(
-                        initialName:
-                            query.isNotEmpty ? searchCtrl.text.trim() : null,
+                        initialName: query.isNotEmpty
+                            ? searchCtrl.text.trim()
+                            : null,
                       );
                       if (newGlaze != null) {
-                        final refreshed =
-                            await widget.materialsDao.getAllGlazes();
+                        final refreshed = await widget.materialsDao
+                            .getAllGlazes();
                         setSheetState(() {
                           allGlazes
                             ..clear()
@@ -498,8 +509,7 @@ class MetadataFormState extends State<MetadataForm> {
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       if (aRecent && bRecent) {
-        return recentTagIds.indexOf(a.id)
-            .compareTo(recentTagIds.indexOf(b.id));
+        return recentTagIds.indexOf(a.id).compareTo(recentTagIds.indexOf(b.id));
       }
       return a.sortOrder.compareTo(b.sortOrder);
     });
@@ -516,8 +526,8 @@ class MetadataFormState extends State<MetadataForm> {
           final filtered = query.isEmpty
               ? allTags
               : allTags
-                  .where((t) => t.name.toLowerCase().contains(query))
-                  .toList();
+                    .where((t) => t.name.toLowerCase().contains(query))
+                    .toList();
 
           return SafeArea(
             child: Padding(
@@ -529,8 +539,10 @@ class MetadataFormState extends State<MetadataForm> {
                 children: [
                   // Header
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -615,12 +627,13 @@ class MetadataFormState extends State<MetadataForm> {
                     ),
                     onTap: () async {
                       final newTag = await _showAddTagDialog(
-                        initialName:
-                            query.isNotEmpty ? searchCtrl.text.trim() : null,
+                        initialName: query.isNotEmpty
+                            ? searchCtrl.text.trim()
+                            : null,
                       );
                       if (newTag != null) {
-                        final refreshed =
-                            await widget.materialsDao.getAllTags();
+                        final refreshed = await widget.materialsDao
+                            .getAllTags();
                         setSheetState(() {
                           allTags
                             ..clear()
@@ -770,8 +783,9 @@ class MetadataFormState extends State<MetadataForm> {
                   return ActionChip(
                     label: Text(name),
                     onPressed: () async {
-                      final clay =
-                          await widget.materialsDao.findOrCreateClay(name);
+                      final clay = await widget.materialsDao.findOrCreateClay(
+                        name,
+                      );
                       await widget.syncTrigger.afterClayWrite(clay.id);
                       widget.onUpdateField(clayType: name);
                     },
@@ -853,9 +867,8 @@ class MetadataFormState extends State<MetadataForm> {
                         : null,
                     label: Text(tag.name),
                     onPressed: () async {
-                      final ids =
-                          widget.selectedTags.map((t) => t.id).toList()
-                            ..add(tag.id);
+                      final ids = widget.selectedTags.map((t) => t.id).toList()
+                        ..add(tag.id);
                       await widget.onUpdateTags(ids);
                     },
                   );

@@ -47,7 +47,8 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       if (aRecent && bRecent) {
-        return _recentClayNames.indexOf(a.name)
+        return _recentClayNames
+            .indexOf(a.name)
             .compareTo(_recentClayNames.indexOf(b.name));
       }
       return a.sortOrder.compareTo(b.sortOrder);
@@ -88,14 +89,17 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
           final filtered = query.isEmpty
               ? sorted
               : sorted
-                  .where((c) => c.name.toLowerCase().contains(query))
-                  .toList();
+                    .where((c) => c.name.toLowerCase().contains(query))
+                    .toList();
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSizes.md, AppSizes.sm, AppSizes.md, 0,
+                  AppSizes.md,
+                  AppSizes.sm,
+                  AppSizes.md,
+                  0,
                 ),
                 child: CupertinoSearchTextField(
                   controller: _searchCtrl,
@@ -105,7 +109,8 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppSizes.md, vertical: AppSizes.xs,
+                  horizontal: AppSizes.md,
+                  vertical: AppSizes.xs,
                 ),
                 child: Text(
                   l10n.manageClaysSubtitle,
@@ -141,13 +146,11 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
                             ),
                             IconButton(
                               icon: const Icon(Icons.edit_outlined),
-                              onPressed: () =>
-                                  _showEditDialog(l10n, clay),
+                              onPressed: () => _showEditDialog(l10n, clay),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline),
-                              onPressed: () =>
-                                  _showDeleteDialog(l10n, clay),
+                              onPressed: () => _showDeleteDialog(l10n, clay),
                             ),
                           ],
                         ),
@@ -205,10 +208,7 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
     }
   }
 
-  Future<void> _showEditDialog(
-    AppLocalizations l10n,
-    ClayOption clay,
-  ) async {
+  Future<void> _showEditDialog(AppLocalizations l10n, ClayOption clay) async {
     final controller = TextEditingController(text: clay.name);
     final newName = await showCupertinoDialog<String>(
       context: context,
@@ -249,10 +249,7 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
     }
   }
 
-  Future<void> _showDeleteDialog(
-    AppLocalizations l10n,
-    ClayOption clay,
-  ) async {
+  Future<void> _showDeleteDialog(AppLocalizations l10n, ClayOption clay) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
