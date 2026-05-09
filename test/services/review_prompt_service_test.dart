@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:mocktail/mocktail.dart';
@@ -128,6 +129,30 @@ void main() {
       await service.recordCompleted();
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('review_prompt_completed'), isTrue);
+    });
+  });
+
+  group('maybePromptAfterPieceSave gating', () {
+    testWidgets('does nothing when shouldPrompt is false', (tester) async {
+      SharedPreferences.setMockInitialValues({});  // missing first launch -> false
+      final service = buildService(
+        now: DateTime(2026, 5, 9),
+        pieceCount: 5,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              service.maybePromptAfterPieceSave(context);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      verifyNever(() => mockReview.requestReview());
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('review_prompt_last_prompted_at'), isNull);
     });
   });
 }

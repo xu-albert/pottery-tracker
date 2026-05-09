@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../features/feedback/widgets/enjoyment_dialog.dart';
 
 class ReviewPromptService {
   ReviewPromptService({
@@ -22,7 +24,6 @@ class ReviewPromptService {
   static const _cooldown = Duration(days: 90);
 
   final DateTime Function() _now;
-  // ignore: unused_field — used in Task 6 (maybePromptAfterPieceSave)
   final InAppReview _inAppReview;
   final Future<int> Function() _pieceCount;
 
@@ -60,6 +61,25 @@ class ReviewPromptService {
   }
 
   Future<void> maybePromptAfterPieceSave(BuildContext context) async {
-    // Implemented in Task 6.
+    if (!await shouldPrompt()) return;
+
+    // Mark prompted atomically before showing the dialog (per design spec).
+    await recordPrompted();
+
+    if (!context.mounted) return;
+    final response = await showEnjoymentDialog(context);
+
+    switch (response) {
+      case EnjoymentResponse.yes:
+        if (await _inAppReview.isAvailable()) {
+          await _inAppReview.requestReview();
+        }
+        await recordCompleted();
+      case EnjoymentResponse.no:
+        if (!context.mounted) return;
+        context.push('/feedback');
+      case EnjoymentResponse.dismissed:
+        break;
+    }
   }
 }
