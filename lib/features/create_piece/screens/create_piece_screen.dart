@@ -12,6 +12,7 @@ import '../../../providers/database_provider.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/review_prompt_provider.dart';
 import '../../../services/image_service.dart';
 import '../../../widgets/app_snackbar.dart';
 
@@ -194,6 +195,11 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
     await trigger.afterPieceWrite(pieceId);
     for (final result in results) {
       await trigger.afterPhotoWrite(result.photoId, includeFile: true);
+    }
+    if (mounted) {
+      await ref
+          .read(reviewPromptServiceProvider)
+          .maybePromptAfterPieceSave(context);
     }
     if (mounted) context.go('/piece/$pieceId');
   }
