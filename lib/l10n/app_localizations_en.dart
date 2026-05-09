@@ -430,4 +430,52 @@ class AppLocalizationsEn extends AppLocalizations {
   String syncLastSynced(String date) {
     return 'Last synced $date';
   }
+
+  @override
+  String get enjoymentDialogTitle => 'Enjoying Potter Journal?';
+
+  @override
+  String get enjoymentDialogYes => 'Yes, I love it!';
+
+  @override
+  String get enjoymentDialogNo => 'Could be better';
+
+  @override
+  String get feedbackScreenTitle => 'Send Feedback';
+
+  @override
+  String get feedbackCategoryLabel => 'Category';
+
+  @override
+  String get feedbackCategoryBug => 'Bug';
+
+  @override
+  String get feedbackCategoryFeature => 'Feature request';
+
+  @override
+  String get feedbackCategoryOther => 'Other';
+
+  @override
+  String get feedbackCategoryPraise => 'Praise';
+
+  @override
+  String get feedbackMessageLabel => 'Message';
+
+  @override
+  String get feedbackMessageHint => 'What\'s on your mind?';
+
+  @override
+  String get feedbackReplyEmailLabel => 'Reply email (optional)';
+
+  @override
+  String get feedbackReplyEmailHint => 'Only if you want a reply';
+
+  @override
+  String get feedbackSendButton => 'Send';
+
+  @override
+  String get feedbackSentSuccess => 'Thanks — we read every message';
+
+  @override
+  String get feedbackSendFailed => 'Couldn\'t send — try again later';
 }
