@@ -47,6 +47,17 @@ void main() async {
   final db = await AppDatabase.open();
 
   final prefs = await SharedPreferences.getInstance();
+
+  // Review-prompt session tracking
+  final sessions = prefs.getInt('review_prompt_session_count') ?? 0;
+  await prefs.setInt('review_prompt_session_count', sessions + 1);
+  if (prefs.getString('review_prompt_first_launch_date') == null) {
+    await prefs.setString(
+      'review_prompt_first_launch_date',
+      DateTime.now().toIso8601String(),
+    );
+  }
+
   final savedMode = prefs.getString('view_mode');
   final initialViewMode = savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
 

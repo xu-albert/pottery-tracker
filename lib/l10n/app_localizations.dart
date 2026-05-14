@@ -873,6 +873,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Last synced {date}'**
   String syncLastSynced(String date);
+
+  /// Soft-ask dialog title
+  ///
+  /// In en, this message translates to:
+  /// **'Enjoying Potter Journal?'**
+  String get enjoymentDialogTitle;
+
+  /// Soft-ask positive action
+  ///
+  /// In en, this message translates to:
+  /// **'Yes, I love it!'**
+  String get enjoymentDialogYes;
+
+  /// Soft-ask negative action
+  ///
+  /// In en, this message translates to:
+  /// **'Could be better'**
+  String get enjoymentDialogNo;
+
+  /// Feedback screen title
+  ///
+  /// In en, this message translates to:
+  /// **'Send Feedback'**
+  String get feedbackScreenTitle;
+
+  /// Feedback category dropdown label
+  ///
+  /// In en, this message translates to:
+  /// **'Category'**
+  String get feedbackCategoryLabel;
+
+  /// Bug category
+  ///
+  /// In en, this message translates to:
+  /// **'Bug'**
+  String get feedbackCategoryBug;
+
+  /// Feature request category
+  ///
+  /// In en, this message translates to:
+  /// **'Feature request'**
+  String get feedbackCategoryFeature;
+
+  /// Other category
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get feedbackCategoryOther;
+
+  /// Praise category
+  ///
+  /// In en, this message translates to:
+  /// **'Praise'**
+  String get feedbackCategoryPraise;
+
+  /// Feedback message field label
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get feedbackMessageLabel;
+
+  /// Feedback message placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s on your mind?'**
+  String get feedbackMessageHint;
+
+  /// Optional reply email label
+  ///
+  /// In en, this message translates to:
+  /// **'Reply email (optional)'**
+  String get feedbackReplyEmailLabel;
+
+  /// Optional reply email helper
+  ///
+  /// In en, this message translates to:
+  /// **'Only if you want a reply'**
+  String get feedbackReplyEmailHint;
+
+  /// Send feedback button
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get feedbackSendButton;
+
+  /// Toast after successful submit
+  ///
+  /// In en, this message translates to:
+  /// **'Thanks — we read every message'**
+  String get feedbackSentSuccess;
+
+  /// Toast after failed submit
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send — try again later'**
+  String get feedbackSendFailed;
 }
 
 class _AppLocalizationsDelegate
