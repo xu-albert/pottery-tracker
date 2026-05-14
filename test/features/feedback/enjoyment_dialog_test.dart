@@ -6,21 +6,27 @@ import 'package:pottery_tracker/l10n/app_localizations.dart';
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: Builder(builder: (_) => child),
-      );
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Builder(builder: (_) => child),
+  );
 
   testWidgets('returns yes when "Yes" tapped', (tester) async {
     EnjoymentResponse? result;
-    await tester.pumpWidget(wrap(Builder(builder: (context) {
-      return CupertinoButton(
-        onPressed: () async {
-          result = await showEnjoymentDialog(context);
-        },
-        child: const Text('open'),
-      );
-    })));
+    await tester.pumpWidget(
+      wrap(
+        Builder(
+          builder: (context) {
+            return CupertinoButton(
+              onPressed: () async {
+                result = await showEnjoymentDialog(context);
+              },
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Yes, I love it!'));
@@ -30,14 +36,20 @@ void main() {
 
   testWidgets('returns no when "Could be better" tapped', (tester) async {
     EnjoymentResponse? result;
-    await tester.pumpWidget(wrap(Builder(builder: (context) {
-      return CupertinoButton(
-        onPressed: () async {
-          result = await showEnjoymentDialog(context);
-        },
-        child: const Text('open'),
-      );
-    })));
+    await tester.pumpWidget(
+      wrap(
+        Builder(
+          builder: (context) {
+            return CupertinoButton(
+              onPressed: () async {
+                result = await showEnjoymentDialog(context);
+              },
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Could be better'));

@@ -28,10 +28,10 @@ class FeedbackService {
     required FirebaseAuth auth,
     Future<PackageInfo> Function()? packageInfoLoader,
     Future<Map<String, String>> Function()? deviceInfoLoader,
-  })  : _firestore = firestore,
-        _auth = auth,
-        _packageInfoLoader = packageInfoLoader ?? PackageInfo.fromPlatform,
-        _deviceInfoLoader = deviceInfoLoader ?? _defaultDeviceInfo;
+  }) : _firestore = firestore,
+       _auth = auth,
+       _packageInfoLoader = packageInfoLoader ?? PackageInfo.fromPlatform,
+       _deviceInfoLoader = deviceInfoLoader ?? _defaultDeviceInfo;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
@@ -52,8 +52,9 @@ class FeedbackService {
       device = await _deviceInfoLoader();
     } catch (_) {}
 
-    final appVersion =
-        pkg != null ? '${pkg.version}+${pkg.buildNumber}' : 'unknown';
+    final appVersion = pkg != null
+        ? '${pkg.version}+${pkg.buildNumber}'
+        : 'unknown';
 
     await _firestore.collection('feedback').add({
       'uid': _auth.currentUser?.uid,

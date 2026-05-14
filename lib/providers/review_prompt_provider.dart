@@ -4,7 +4,5 @@ import 'database_provider.dart';
 
 final reviewPromptServiceProvider = Provider<ReviewPromptService>((ref) {
   final piecesDao = ref.watch(piecesDaoProvider);
-  return ReviewPromptService(
-    pieceCount: () async => piecesDao.countPieces(),
-  );
+  return ReviewPromptService(pieceCount: () async => piecesDao.countPieces());
 });

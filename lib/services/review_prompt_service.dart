@@ -9,9 +9,9 @@ class ReviewPromptService {
     DateTime Function()? now,
     InAppReview? inAppReview,
     required Future<int> Function() pieceCount,
-  })  : _now = now ?? DateTime.now,
-        _inAppReview = inAppReview ?? InAppReview.instance,
-        _pieceCount = pieceCount;
+  }) : _now = now ?? DateTime.now,
+       _inAppReview = inAppReview ?? InAppReview.instance,
+       _pieceCount = pieceCount;
 
   static const _kFirstLaunch = 'review_prompt_first_launch_date';
   static const _kSessions = 'review_prompt_session_count';

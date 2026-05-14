@@ -20,20 +20,20 @@ void main() {
   });
 
   FeedbackService buildService() => FeedbackService(
-        firestore: firestore,
-        auth: auth,
-        packageInfoLoader: () async => PackageInfo(
-          appName: 'Potter Journal',
-          packageName: 'com.albertxu.potterytracker',
-          version: '1.1.0',
-          buildNumber: '5',
-        ),
-        deviceInfoLoader: () async => {
-          'platform': 'ios',
-          'osVersion': 'iOS 26.2.1',
-          'deviceModel': 'iPhone15,2',
-        },
-      );
+    firestore: firestore,
+    auth: auth,
+    packageInfoLoader: () async => PackageInfo(
+      appName: 'Potter Journal',
+      packageName: 'com.albertxu.potterytracker',
+      version: '1.1.0',
+      buildNumber: '5',
+    ),
+    deviceInfoLoader: () async => {
+      'platform': 'ios',
+      'osVersion': 'iOS 26.2.1',
+      'deviceModel': 'iPhone15,2',
+    },
+  );
 
   test('writes a doc with all fields populated', () async {
     final service = buildService();
@@ -75,13 +75,10 @@ void main() {
 
   test('omits replyEmail when not provided', () async {
     final service = buildService();
-    await service.submit(
-      category: FeedbackCategory.praise,
-      message: 'love it',
-    );
+    await service.submit(category: FeedbackCategory.praise, message: 'love it');
 
-    final data =
-        (await firestore.collection('feedback').get()).docs.first.data();
+    final data = (await firestore.collection('feedback').get()).docs.first
+        .data();
     expect(data['replyEmail'], isNull);
   });
 
@@ -97,13 +94,10 @@ void main() {
       ),
       deviceInfoLoader: () async => throw Exception('boom'),
     );
-    await service.submit(
-      category: FeedbackCategory.other,
-      message: 'meh',
-    );
+    await service.submit(category: FeedbackCategory.other, message: 'meh');
 
-    final data =
-        (await firestore.collection('feedback').get()).docs.first.data();
+    final data = (await firestore.collection('feedback').get()).docs.first
+        .data();
     expect(data['platform'], 'unknown');
     expect(data['osVersion'], 'unknown');
     expect(data['deviceModel'], 'unknown');

@@ -46,7 +46,9 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
     final l10n = AppLocalizations.of(context)!;
     setState(() => _submitting = true);
     try {
-      await ref.read(feedbackServiceProvider).submit(
+      await ref
+          .read(feedbackServiceProvider)
+          .submit(
             category: _category,
             message: _messageController.text.trim(),
             replyEmail: _emailController.text.trim().isEmpty
@@ -97,10 +99,12 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
                 border: const OutlineInputBorder(),
               ),
               items: FeedbackCategory.values
-                  .map((c) => DropdownMenuItem(
-                        value: c,
-                        child: Text(_categoryLabel(c, l10n)),
-                      ))
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c,
+                      child: Text(_categoryLabel(c, l10n)),
+                    ),
+                  )
                   .toList(),
               onChanged: (v) {
                 if (v != null) setState(() => _category = v);

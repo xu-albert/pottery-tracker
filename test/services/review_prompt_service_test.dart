@@ -32,8 +32,11 @@ void main() {
   group('shouldPrompt gates', () {
     test('returns false when piece count < 3', () async {
       SharedPreferences.setMockInitialValues({
-        'review_prompt_first_launch_date':
-            DateTime(2026, 5, 1).toIso8601String(),
+        'review_prompt_first_launch_date': DateTime(
+          2026,
+          5,
+          1,
+        ).toIso8601String(),
         'review_prompt_session_count': 5,
       });
       final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 2);
@@ -42,8 +45,11 @@ void main() {
 
     test('returns false when session count < 2', () async {
       SharedPreferences.setMockInitialValues({
-        'review_prompt_first_launch_date':
-            DateTime(2026, 5, 1).toIso8601String(),
+        'review_prompt_first_launch_date': DateTime(
+          2026,
+          5,
+          1,
+        ).toIso8601String(),
         'review_prompt_session_count': 1,
       });
       final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 5);
@@ -52,8 +58,11 @@ void main() {
 
     test('returns false when first launch < 3 days ago', () async {
       SharedPreferences.setMockInitialValues({
-        'review_prompt_first_launch_date':
-            DateTime(2026, 5, 8).toIso8601String(),
+        'review_prompt_first_launch_date': DateTime(
+          2026,
+          5,
+          8,
+        ).toIso8601String(),
         'review_prompt_session_count': 5,
       });
       final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 5);
@@ -70,11 +79,17 @@ void main() {
 
     test('returns false when last_prompted_at < 90 days ago', () async {
       SharedPreferences.setMockInitialValues({
-        'review_prompt_first_launch_date':
-            DateTime(2026, 1, 1).toIso8601String(),
+        'review_prompt_first_launch_date': DateTime(
+          2026,
+          1,
+          1,
+        ).toIso8601String(),
         'review_prompt_session_count': 5,
-        'review_prompt_last_prompted_at':
-            DateTime(2026, 4, 1).toIso8601String(),
+        'review_prompt_last_prompted_at': DateTime(
+          2026,
+          4,
+          1,
+        ).toIso8601String(),
       });
       final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 5);
       expect(await service.shouldPrompt(), isFalse);
@@ -82,8 +97,11 @@ void main() {
 
     test('returns true when all gates pass', () async {
       SharedPreferences.setMockInitialValues({
-        'review_prompt_first_launch_date':
-            DateTime(2026, 5, 1).toIso8601String(),
+        'review_prompt_first_launch_date': DateTime(
+          2026,
+          5,
+          1,
+        ).toIso8601String(),
         'review_prompt_session_count': 2,
       });
       final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 3);
@@ -92,11 +110,17 @@ void main() {
 
     test('returns true when last_prompted_at >= 90 days ago', () async {
       SharedPreferences.setMockInitialValues({
-        'review_prompt_first_launch_date':
-            DateTime(2025, 1, 1).toIso8601String(),
+        'review_prompt_first_launch_date': DateTime(
+          2025,
+          1,
+          1,
+        ).toIso8601String(),
         'review_prompt_session_count': 5,
-        'review_prompt_last_prompted_at':
-            DateTime(2026, 2, 1).toIso8601String(),
+        'review_prompt_last_prompted_at': DateTime(
+          2026,
+          2,
+          1,
+        ).toIso8601String(),
       });
       final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 5);
       expect(await service.shouldPrompt(), isTrue);
@@ -122,10 +146,7 @@ void main() {
   group('recordCompleted', () {
     test('sets completed flag to true', () async {
       SharedPreferences.setMockInitialValues({});
-      final service = buildService(
-        now: DateTime(2026, 5, 9),
-        pieceCount: 0,
-      );
+      final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 0);
       await service.recordCompleted();
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('review_prompt_completed'), isTrue);
@@ -134,11 +155,10 @@ void main() {
 
   group('maybePromptAfterPieceSave gating', () {
     testWidgets('does nothing when shouldPrompt is false', (tester) async {
-      SharedPreferences.setMockInitialValues({});  // missing first launch -> false
-      final service = buildService(
-        now: DateTime(2026, 5, 9),
-        pieceCount: 5,
-      );
+      SharedPreferences.setMockInitialValues(
+        {},
+      ); // missing first launch -> false
+      final service = buildService(now: DateTime(2026, 5, 9), pieceCount: 5);
       await tester.pumpWidget(
         MaterialApp(
           home: Builder(
