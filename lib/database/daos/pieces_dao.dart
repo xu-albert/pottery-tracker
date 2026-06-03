@@ -27,6 +27,12 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
   Future<Piece?> getPieceById(String id) =>
       (select(pieces)..where((p) => p.id.equals(id))).getSingleOrNull();
 
+  Future<int> countPieces() async {
+    final count = countAll();
+    final row = await (selectOnly(pieces)..addColumns([count])).getSingle();
+    return row.read(count) ?? 0;
+  }
+
   Stream<List<PieceWithCover>> watchAllPieces({
     String? searchQuery,
     bool archivedOnly = false,

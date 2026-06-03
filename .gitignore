@@ -12,6 +12,10 @@
 .swiftpm/
 migrate_working_dir/
 
+# Claude Code local state and agent test artifacts
+.claude/
+agent-runs/
+
 # IntelliJ related
 *.iml
 *.ipr

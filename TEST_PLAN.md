@@ -388,6 +388,30 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ---
 
+## 12. In-App Review Prompt + Feedback Form
+
+### Gating
+- [ ] Fresh install creates 1, 2 pieces → no prompt fires.
+- [ ] After 3rd piece, before 3 days since install → no prompt fires.
+- [ ] After 3rd piece + 3 days + 2 sessions → soft-ask appears on next save.
+- [ ] After any prompt fires → 90-day cooldown enforced.
+
+### Soft-ask paths
+- [ ] "Yes, I love it!" → native review sheet (or silently no-op if iOS cap hit).
+- [ ] "Could be better" → /feedback opens with form.
+- [ ] Outside-tap dismiss → cooldown starts, no further action.
+
+### Feedback form
+- [ ] Send disabled until message non-empty.
+- [ ] Successful submit → toast, pops back, doc lands in Firestore `feedback/`.
+- [ ] Failed submit (airplane mode) → error toast, form stays open.
+- [ ] Anonymous user submit → doc has `uid: null`.
+
+### Settings entry
+- [ ] Settings → "Send Feedback" → /feedback opens directly (no soft-ask).
+
+---
+
 ## Changelog
 
 | Date       | Change |
@@ -418,3 +442,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Archive thumbnail titles: bottom-right title overlay with gradient fade on archive grid thumbnails |
 | 2026-02-14 | Widget tests: 20 automated tests across 6 files covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings |
 | 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |
+| 2026-05-09 | In-app review prompt + feedback form |

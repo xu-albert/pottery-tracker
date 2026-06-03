@@ -370,14 +370,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.mail_outline),
             title: Text(l10n.sendFeedback),
-            onTap: () {
-              final uri = Uri(
-                scheme: 'mailto',
-                path: 'pottery.tracker.app@gmail.com',
-                queryParameters: {'subject': 'Pottery Tracker Feedback'},
-              );
-              launchUrl(uri);
-            },
+            onTap: () => context.push('/feedback'),
           ),
           const Divider(),
 

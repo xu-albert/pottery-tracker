@@ -55,6 +55,11 @@ dependencies:
   firebase_storage: ^12.4.4
   firebase_app_check: ^0.3.2+10
 
+  # In-app review + device info
+  in_app_review: ^2.0.10
+  package_info_plus: ^8.3.0
+  device_info_plus: ^11.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
