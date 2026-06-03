@@ -18,6 +18,54 @@ const categoryEmoji: Record<string, string> = {
   other: "💬",
 };
 
+// Maps Apple device identifiers to friendly model names.
+// Identifier format: see https://gist.github.com/adamawolf/3048717
+const friendlyDeviceNames: Record<string, string> = {
+  // iPhone 16 family
+  "iPhone17,1": "iPhone 16 Pro",
+  "iPhone17,2": "iPhone 16 Pro Max",
+  "iPhone17,3": "iPhone 16",
+  "iPhone17,4": "iPhone 16 Plus",
+  "iPhone17,5": "iPhone 16e",
+  // iPhone 15 family
+  "iPhone15,4": "iPhone 15",
+  "iPhone15,5": "iPhone 15 Plus",
+  "iPhone16,1": "iPhone 15 Pro",
+  "iPhone16,2": "iPhone 15 Pro Max",
+  // iPhone 14 family
+  "iPhone14,7": "iPhone 14",
+  "iPhone14,8": "iPhone 14 Plus",
+  "iPhone15,2": "iPhone 14 Pro",
+  "iPhone15,3": "iPhone 14 Pro Max",
+  // iPhone 13 family
+  "iPhone14,5": "iPhone 13",
+  "iPhone14,4": "iPhone 13 mini",
+  "iPhone14,2": "iPhone 13 Pro",
+  "iPhone14,3": "iPhone 13 Pro Max",
+  // iPhone 12 family
+  "iPhone13,2": "iPhone 12",
+  "iPhone13,1": "iPhone 12 mini",
+  "iPhone13,3": "iPhone 12 Pro",
+  "iPhone13,4": "iPhone 12 Pro Max",
+  // iPhone 11 family
+  "iPhone12,1": "iPhone 11",
+  "iPhone12,3": "iPhone 11 Pro",
+  "iPhone12,5": "iPhone 11 Pro Max",
+  // iPhone SE
+  "iPhone14,6": "iPhone SE (3rd gen)",
+  "iPhone12,8": "iPhone SE (2nd gen)",
+  // iPad Pro (M4)
+  "iPad16,3": "iPad Pro 11\" M4",
+  "iPad16,4": "iPad Pro 11\" M4 (cellular)",
+  "iPad16,5": "iPad Pro 13\" M4",
+  "iPad16,6": "iPad Pro 13\" M4 (cellular)",
+  // iPad Air (M2)
+  "iPad14,8": "iPad Air 11\" M2",
+  "iPad14,9": "iPad Air 11\" M2 (cellular)",
+  "iPad14,10": "iPad Air 13\" M2",
+  "iPad14,11": "iPad Air 13\" M2 (cellular)",
+};
+
 export const notifyDiscordOnFeedback = onDocumentCreated(
   {
     document: "feedback/{docId}",
@@ -57,9 +105,13 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
       value: `v${appVersion} · ${locale}`,
       inline: true,
     });
+    const friendlyName = friendlyDeviceNames[deviceModel];
+    const deviceLabel = friendlyName
+      ? `${deviceModel} (${friendlyName})`
+      : deviceModel;
     fields.push({
       name: "Device",
-      value: `${deviceModel} · ${osVersion}`,
+      value: `${deviceLabel} · ${osVersion}`,
       inline: true,
     });
 
