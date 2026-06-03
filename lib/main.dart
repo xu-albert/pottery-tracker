@@ -31,7 +31,9 @@ void main() async {
       androidProvider: kDebugMode
           ? AndroidProvider.debug
           : AndroidProvider.playIntegrity,
-      appleProvider: AppleProvider.appAttest,
+      appleProvider: kDebugMode
+          ? AppleProvider.debug
+          : AppleProvider.appAttest,
     );
   } catch (e) {
     debugPrint('App Check activation failed (non-fatal): $e');
