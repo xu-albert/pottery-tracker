@@ -247,6 +247,20 @@ short durations.
 The footring is the one stroke that cannot share the start point — it lives at the base.
 It starts at its left end instead, so everything still travels left to right.
 
+### Round 21 — `round-21-footring-direction`
+Timing locked to `easeInOutQuart` at 750ms; the only variable is which end of the
+footring the stroke starts from.
+
+With the rim re-rooted to the top-left, *every* stroke was travelling left to right —
+coherent, but uniform to the point of feeling mechanical. Reversing the footring so it
+runs right-to-left gives the drawing a counterpoint: two strokes sweeping out from one
+corner, one running back the other way.
+
+At real speed the difference is close to subliminal, which is the interesting part — the
+round ships with a **4× slow-motion toggle** and a direction-arrow overlay, because the
+choice cannot honestly be made at 750ms. Variants R and S delay the footring so the
+opposing direction becomes legible rather than merely felt.
+
 ---
 
 ## What generalizes
