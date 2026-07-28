@@ -118,6 +118,34 @@ interpolated shades from `#3C3C3C` to `#1A1A1A`.
 
 **Final: stroke 3.6, `#313131`.**
 
+### Round 12 — `round-12-aspect-distortion`
+Not a design round. After the shape was locked and ported to Dart, the implementation
+rendered the mark **20% too wide**.
+
+The design space is 100×120 — a 5:6 ratio. The porting instructions scaled the axes
+independently (`sx = width/100`, `sy = height/120`) while the widget passed a *square*
+box, so at `Size(120, 120)` the x axis scaled by 1.2 and the y axis by 1.0. Measured
+bounds aspect: **0.699** against the approved **0.582**. Every preview approved during
+design had been rendered from `viewBox="0 0 100 120"`, which preserves the ratio; the
+Dart port silently did not.
+
+The archived page shows both at equal height, plus an overlay. The stretch reads
+hardest in the neck — the slenderness the whole form depends on.
+
+Two things about how it was caught are worth recording:
+
+- **The golden test could not catch it.** A golden captures whatever the code produces,
+  so it locks in a wrong shape just as happily as a right one, and passes forever after.
+- **The code review didn't catch it either** — it flagged that the vertical-centering
+  term was always exactly zero, and graded that Minor. That dead term was a *symptom* of
+  the same broken formula, but the reviewer stopped at the arithmetic without asking what
+  the shape actually came out looking like.
+
+What found it was measuring the rendered bounds and comparing them against the design's
+ratio. The fix scales by `min(w/100, h/120)` and centres on both axes, so the mark
+letterboxes in any box and no caller can distort it — plus an aspect assertion so it
+cannot silently return.
+
 ---
 
 ## What generalizes
@@ -135,6 +163,10 @@ interpolated shades from `#3C3C3C` to `#1A1A1A`.
   line sets the maximum stroke weight for the entire mark at both sizes.
 - **A reference image is worth many rounds.** Six rounds of approximation, then one
   photo made the target unambiguous.
+- **Approving a design does not mean it shipped.** The port to code silently changed
+  the proportions, and neither the golden test nor the code review caught it. Measure
+  the built artifact against the approved one — for a shape, that means comparing
+  actual rendered dimensions, not reading the code that produces them.
 
 ---
 
