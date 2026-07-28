@@ -2,6 +2,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
+import '../providers/splash_provider.dart';
 import '../features/auth/screens/sign_in_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/shell/screens/shell_screen.dart';
@@ -17,6 +18,7 @@ import '../features/feedback/screens/feedback_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authStatus = ref.watch(authProvider.select((s) => s.status));
+  final splashComplete = ref.watch(splashCompleteProvider);
 
   return GoRouter(
     initialLocation: '/',
@@ -26,7 +28,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final loc = state.matchedLocation;
 
-      if (authStatus == AuthStatus.unknown) {
+      if (authStatus == AuthStatus.unknown || !splashComplete) {
         if (loc != '/splash') return '/splash';
         return null;
       }
