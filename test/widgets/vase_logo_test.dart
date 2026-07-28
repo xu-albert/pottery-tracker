@@ -15,6 +15,20 @@ void main() {
       expect(bounds.bottom, lessThanOrEqualTo(120));
     });
 
+    test('keeps the approved 5:6 proportions in a square box', () {
+      // The design space is 100x120. Scaling x and y independently to fill a
+      // square stretches the mark; this asserts it does not.
+      final square = buildVasePath(const Size(120, 120)).getBounds();
+      final design = buildVasePath(const Size(100, 120)).getBounds();
+
+      expect(
+        square.width / square.height,
+        closeTo(design.width / design.height, 0.001),
+        reason: 'a square box must letterbox the mark, not stretch it',
+      );
+      expect(square.width / square.height, closeTo(0.582, 0.005));
+    });
+
     test('has rim, body and footring as three subpaths in order', () {
       final path = buildVasePath(const Size(120, 120));
       final metrics = path.computeMetrics().toList();

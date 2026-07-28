@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Index of the footring subpath within [buildVasePath]'s result. It strokes
@@ -11,12 +13,14 @@ const _footringWeightRatio = 0.75;
 /// scaled to [size]. Single source of shape truth for the logo, the splash
 /// animation, and the generated app icon.
 Path buildVasePath(Size size) {
-  final sx = size.width / 100;
-  final sy = size.height / 120;
-  final oy = (size.height - 120 * sy) / 2;
+  // One factor for both axes: the 5:6 design space must not stretch to fit a
+  // square box. The offsets letterbox the mark inside whatever size is given.
+  final s = math.min(size.width / 100, size.height / 120);
+  final ox = (size.width - 100 * s) / 2;
+  final oy = (size.height - 120 * s) / 2;
 
-  double x(double v) => v * sx;
-  double y(double v) => v * sy + oy;
+  double x(double v) => v * s + ox;
+  double y(double v) => v * s + oy;
 
   final path = Path();
 
