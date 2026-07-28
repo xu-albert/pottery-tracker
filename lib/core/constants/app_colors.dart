@@ -13,6 +13,7 @@ abstract final class AppColors {
   static const inputText = Color(0xFF6B6259);
   static const blue = Color(0xFF4A7FB5);
   static const error = Color(0xFFB3261E);
+  static const ink = Color(0xFF313131);
 }
 
 abstract final class TagColorPresets {
