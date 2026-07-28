@@ -1,4 +1,5 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
@@ -16,11 +17,21 @@ import '../features/piece_detail/screens/piece_detail_screen.dart';
 import '../features/piece_detail/screens/archived_piece_detail_screen.dart';
 import '../features/feedback/screens/feedback_screen.dart';
 
+/// Hoisted so it survives `routerProvider` recomputing. `GoRouter` mints a
+/// fresh `GoRouter` instance (and, without this, a fresh default
+/// `GlobalKey<NavigatorState>`) every time `authProvider` or
+/// `splashCompleteProvider` changes. A stable navigator key lets the
+/// rebuilt router reuse the existing `Navigator` element instead of
+/// remounting the whole subtree — otherwise in-flight state like the splash
+/// screen's draw-on animation gets discarded and replayed from zero.
+final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
+
 final routerProvider = Provider<GoRouter>((ref) {
   final authStatus = ref.watch(authProvider.select((s) => s.status));
   final splashComplete = ref.watch(splashCompleteProvider);
 
   return GoRouter(
+    navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     observers: [
       FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
