@@ -38,9 +38,11 @@ void main() {
     final recorder = ui.PictureRecorder();
     final c = Canvas(recorder);
 
+    // Sepia ground, not the app's cream: on a home screen the paler cream read
+    // as a white square beside saturated neighbours. In-app surfaces stay cream.
     c.drawRect(
       const Rect.fromLTWH(0, 0, canvas, canvas),
-      Paint()..color = AppColors.cream,
+      Paint()..color = AppColors.iconGround,
     );
 
     final inset = (canvas - markSize) / 2;

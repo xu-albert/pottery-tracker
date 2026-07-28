@@ -187,6 +187,24 @@ Two things fell out of that:
   try/catch, so any failure there is an unrecoverable blank screen with no error UI.
   Worth guarding — noted as a follow-up, not fixed here since it predates this work.
 
+### Rounds 16 & 17 — `round-16-icon-ground-sepia`, `round-17-ink-on-sepia`
+Seeing the icon on a real home screen surfaced what no isolated render had: against
+saturated neighbours, `#EDE5DA` reads as a **white square with a drawing on it**, not as a
+warm ceramic tile. Round 16 renders eight grounds from the original cream through to a
+toasted tan, at 180px and 60px, plus a mock home-screen row — which is the view that
+makes the problem obvious.
+
+**`#E3D3BD` was chosen.** Past roughly `#CFB490` the tile drifts from ceramic toward
+khaki and starts competing with the mark rather than supporting it.
+
+Round 17 tested a warmer ink (`#2E241C`) against the neutral `#313131` on that ground.
+Real at 180px, essentially invisible at 60px — so the neutral ink stayed, keeping one ink
+constant shared by the icon and the splash.
+
+**The ground change is icon-only.** In-app surfaces stay `cream`; `AppColors.iconGround`
+exists solely for the generated icon. The colour shift happens during the icon-zoom
+transition, where it reads as the app opening rather than as an inconsistency.
+
 ---
 
 ## What generalizes

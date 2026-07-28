@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#6E6E6E;font-family:-apple-system,Helvetica,Arial,sans-serif;color:#F2EDE6;padding:26px 22px}
+h2{font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.6;margin-bottom:14px}
+.row{display:flex;gap:26px;align-items:flex-end;margin-bottom:22px}
+.cell{text-align:center}
+.tile{border-radius:22.5%;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.lab{font-size:12px;margin-top:8px;font-family:ui-monospace,Menlo,monospace}
+.name{font-size:11px;opacity:.6;margin-top:2px;font-family:-apple-system,sans-serif}
+.band{padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid rgba(255,255,255,.18)}
+.band:last-child{border-bottom:none}
+</style></head><body><div id="out"></div>
+<script>
+const RIM="M 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 Z";
+const BODY="M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4";
+const FOOT="M 33 100 C 40 101.5, 60 101.5, 67 100";
+const S=740/120, OX=(1024-100*S)/2, OY=(1024-120*S)/2;
+function tile(px,bg,ink){return `<div class="tile" style="width:${px}px;height:${px}px">
+<svg width="${px}" height="${px}" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="${bg}"/>
+<g transform="translate(${OX},${OY}) scale(${S})" fill="none" stroke="${ink}" stroke-linecap="round" stroke-linejoin="round">
+<path stroke-width="5.6" d="${RIM}"/><path stroke-width="5.6" d="${BODY}"/><path stroke-width="4.2" d="${FOOT}"/>
+</g></svg></div>`;}
+const BG='#E3D3BD';
+let h='';
+h+=`<div class="band"><h2>Your pick &mdash; #E3D3BD light sepia &mdash; two ink options at 180px</h2><div class="row">`;
+h+=`<div class="cell">${tile(180,BG,'#313131')}<div class="lab">#313131</div><div class="name">neutral grey (current)</div></div>`;
+h+=`<div class="cell">${tile(180,BG,'#2E241C')}<div class="lab">#2E241C</div><div class="name">warm dark brown</div></div>`;
+h+=`<div class="cell">${tile(180,BG,'#2C2620')}<div class="lab">#2C2620</div><div class="name">midway</div></div>`;
+h+=`</div></div>`;
+h+=`<div class="band"><h2>Same three at 60px</h2><div class="row">`;
+h+=`<div class="cell">${tile(60,BG,'#313131')}<div class="lab">#313131</div></div>`;
+h+=`<div class="cell">${tile(60,BG,'#2E241C')}<div class="lab">#2E241C</div></div>`;
+h+=`<div class="cell">${tile(60,BG,'#2C2620')}<div class="lab">#2C2620</div></div>`;
+h+=`</div></div>`;
+h+=`<div class="band"><h2>Before / after &mdash; today's icon vs your pick, 140px</h2><div class="row">`;
+h+=`<div class="cell">${tile(140,'#EDE5DA','#313131')}<div class="lab">#EDE5DA</div><div class="name">shipping today</div></div>`;
+h+=`<div class="cell">${tile(140,BG,'#313131')}<div class="lab">#E3D3BD</div><div class="name">your pick, current ink</div></div>`;
+h+=`<div class="cell">${tile(140,BG,'#2E241C')}<div class="lab">#E3D3BD</div><div class="name">your pick, warm ink</div></div>`;
+h+=`</div></div>`;
+document.getElementById('out').innerHTML=h;
+</script></body></html>
