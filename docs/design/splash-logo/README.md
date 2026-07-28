@@ -205,6 +205,33 @@ constant shared by the icon and the splash.
 exists solely for the generated icon. The colour shift happens during the icon-zoom
 transition, where it reads as the app opening rather than as an inconsistency.
 
+### Rounds 18 & 19 — `round-18-animation-variants`, `round-19-symmetric-growth`
+The first device viewing produced three separate notes: the animation drew "from both
+sides", felt slow, and cut too abruptly into the app. Round 18 is an interactive harness
+— open the HTML, every variant has a replay button — with eight draw-on timings and four
+splash-to-app transitions.
+
+**"From both sides"** was the rim ellipse starting near the right lip at the same moment
+the body started at the left. Sequencing the subpaths removes it.
+
+**"Drawn twice"** turned out to be neither a rendering bug nor bad path data, and it is
+worth recording because the cause is non-obvious. The body is one continuous outline, so
+tracing it travels *down the left side, across the base, and back up the right*. The
+vase's neck is two nearly-parallel lines — and they sit at **opposite ends of the
+timeline**, roughly 600ms apart at the original pace. Watching at speed, the second one
+reads as the first being redrawn.
+
+That is inherent to tracing a silhouette, and no amount of re-timing a single travelling
+stroke fixes it. Round 19's **J / K / L** take a different approach: split the body into
+its two profiles and grow them **together**, so paired features appear simultaneously. J
+rises from the base to the lip — which also happens to be the right metaphor for a
+pottery app, reading as the vessel being pulled up on a wheel. K is the same symmetry
+falling from the lip instead.
+
+Round 19 also carries a **3× slow-motion toggle**, because at 600ms the mechanics are
+too fast to diagnose by eye — the thing that made the doubling explicable was watching
+it slowed down.
+
 ---
 
 ## What generalizes
