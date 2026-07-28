@@ -26,7 +26,7 @@
 - **Fallback timer:** 3 seconds.
 - **Light mode only.** Dark mode is explicitly out of scope per the spec — do not add dark variants or `Theme.of(context).brightness` branches.
 - **No skip gesture.** Deliberately deferred pending device testing. Do not add a `GestureDetector` to the splash.
-- **No new dependencies.** Everything needed is already in `pubspec.yaml`.
+- **No new runtime dependencies.** Nothing new may ship in the app binary — everything the feature needs at runtime is already in `pubspec.yaml`. A `dev_dependencies` entry is permitted when a test genuinely cannot be written without it; declare it explicitly rather than importing an undeclared transitive package. (Amended 2026-07-28: Task 4 needed `firebase_core_platform_interface` to fake Firebase, since `routerProvider` constructs a `FirebaseAnalyticsObserver` unconditionally. Already resolved transitively at the same version; dev-only.)
 - **Branch:** `feature/splash-logo-animation` (already created and checked out).
 - Run `dart format .` before each commit; CI runs `dart analyze` + `flutter test` on PRs.
 
