@@ -61,4 +61,34 @@ void main() {
       );
     });
   });
+
+  group('AnimatedVaseLogo', () {
+    testWidgets('fires onComplete once the stroke finishes', (tester) async {
+      var completed = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: AnimatedVaseLogo(
+                size: 120,
+                color: AppColors.ink,
+                duration: const Duration(milliseconds: 900),
+                onComplete: () => completed++,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(completed, 0, reason: 'still mid-stroke');
+
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(completed, 1);
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(completed, 1, reason: 'must not fire twice');
+    });
+  });
 }

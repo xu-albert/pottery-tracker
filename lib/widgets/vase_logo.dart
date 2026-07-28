@@ -122,3 +122,65 @@ class VaseLogoPainter extends CustomPainter {
       strokeWidth != oldDelegate.strokeWidth ||
       progress != oldDelegate.progress;
 }
+
+class AnimatedVaseLogo extends StatefulWidget {
+  const AnimatedVaseLogo({
+    super.key,
+    required this.size,
+    this.color,
+    this.strokeWidth = 3.6,
+    this.duration = const Duration(milliseconds: 900),
+    this.onComplete,
+  });
+
+  final double size;
+  final Color? color;
+  final double strokeWidth;
+  final Duration duration;
+  final VoidCallback? onComplete;
+
+  @override
+  State<AnimatedVaseLogo> createState() => _AnimatedVaseLogoState();
+}
+
+class _AnimatedVaseLogoState extends State<AnimatedVaseLogo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _progress = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onComplete?.call();
+      }
+    });
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color ?? Theme.of(context).colorScheme.primary;
+
+    return AnimatedBuilder(
+      animation: _progress,
+      builder: (context, _) => CustomPaint(
+        size: Size(widget.size, widget.size),
+        painter: VaseLogoPainter(
+          color: color,
+          strokeWidth: widget.strokeWidth,
+          progress: _progress.value,
+        ),
+      ),
+    );
+  }
+}
