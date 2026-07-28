@@ -46,17 +46,24 @@ void main() {
 
   group('VaseLogo', () {
     testWidgets('renders the mark', (tester) async {
+      const boundaryKey = Key('vase_logo_golden_boundary');
+
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
             backgroundColor: AppColors.cream,
-            body: Center(child: VaseLogo(size: 120, color: AppColors.ink)),
+            body: Center(
+              child: RepaintBoundary(
+                key: boundaryKey,
+                child: VaseLogo(size: 120, color: AppColors.ink),
+              ),
+            ),
           ),
         ),
       );
 
       await expectLater(
-        find.byType(VaseLogo),
+        find.byKey(boundaryKey),
         matchesGoldenFile('goldens/vase_logo.png'),
       );
     });
