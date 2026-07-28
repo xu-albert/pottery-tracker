@@ -1,0 +1,22 @@
+<!--
+  Pottery Tracker logo — approved silhouette (design source, not bundled at runtime).
+
+  A yuhuchunping (Ming pear-shaped bud vase): trumpet lip, long neck widening
+  downward, belly widest low, raised footring. Drawn in a 100x120 design space.
+
+  Three subpaths, in draw order:
+    1. rim   — closed crooked ellipse (the mouth opening, seen slightly from above)
+    2. body  — open outline: lip, down the left, across the base, up the right
+    3. foot  — open footring line
+
+  Approved 2026-07-27: stroke 3.6 at splash size, #313131.
+  The runtime source of truth is buildVasePath() in lib/widgets/vase_logo.dart;
+  this file is the design reference it was ported from.
+-->
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#313131" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="3.6" d="M 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 Z"/>
+    <path stroke-width="3.6" d="M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4"/>
+    <path stroke-width="2.7" d="M 33 100 C 40 101.5, 60 101.5, 67 100"/>
+  </g>
+</svg>

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'l10n/app_localizations.dart';
 import 'core/theme/app_theme.dart';
 import 'router/app_router.dart';
+import 'widgets/splash_overlay.dart';
 
 class PotteryTrackerApp extends ConsumerWidget {
   const PotteryTrackerApp({super.key});
@@ -17,6 +18,14 @@ class PotteryTrackerApp extends ConsumerWidget {
       title: 'Potter Journal',
       theme: AppTheme.light,
       routerConfig: router,
+      // The launch mark sits above the whole app, so the app builds and loads
+      // underneath it instead of after it.
+      builder: (context, child) => Stack(
+        children: [
+          if (child != null) Positioned.fill(child: child),
+          const SplashGate(),
+        ],
+      ),
       localizationsDelegates: const [
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,

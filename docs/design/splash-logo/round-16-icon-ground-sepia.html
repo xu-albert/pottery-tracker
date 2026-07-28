@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #6E6E6E; font-family: -apple-system, Helvetica, Arial, sans-serif;
+         color: #F2EDE6; padding: 28px 24px 22px; }
+  h2 { font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       opacity: .6; margin-bottom: 14px; }
+  h2 span { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .8; }
+  .row { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 8px; }
+  .cell { text-align: center; }
+  .tile { border-radius: 22.5%; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+  .lab { font-size: 11.5px; margin-top: 7px; opacity: .85; font-family: ui-monospace, Menlo, monospace; }
+  .name { font-size: 11px; opacity: .55; margin-top: 2px; font-family: -apple-system, sans-serif; }
+  .band { padding-bottom: 18px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,.18); }
+  .band:last-child { border-bottom: none; margin-bottom: 0; }
+  .neighbors { display: flex; gap: 14px; align-items: center; }
+  .fake { width: 96px; height: 96px; border-radius: 22.5%; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+          display: flex; align-items: center; justify-content: center; font-size: 34px; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+const RIM  = "M 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 Z";
+const BODY = "M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4";
+const FOOT = "M 33 100 C 40 101.5, 60 101.5, 67 100";
+
+// markSize 740 of 1024 -> scale 740/120, centred
+const S = 740/120, OX = (1024 - 100*S)/2, OY = (1024 - 120*S)/2;
+
+function tile(px, bg, ink) {
+  return `<div class="tile" style="width:${px}px;height:${px}px">
+    <svg width="${px}" height="${px}" viewBox="0 0 1024 1024">
+      <rect width="1024" height="1024" fill="${bg}"/>
+      <g transform="translate(${OX},${OY}) scale(${S})" fill="none" stroke="${ink}"
+         stroke-linecap="round" stroke-linejoin="round">
+        <path stroke-width="5.6" d="${RIM}"/>
+        <path stroke-width="5.6" d="${BODY}"/>
+        <path stroke-width="4.2" d="${FOOT}"/>
+      </g>
+    </svg></div>`;
+}
+
+const BGS = [
+  {hex:'#EDE5DA', name:'current cream'},
+  {hex:'#E8DCCB', name:'warm sand'},
+  {hex:'#E3D3BD', name:'light sepia'},
+  {hex:'#DDC9AE', name:'sepia'},
+  {hex:'#D6BE9E', name:'deep sepia'},
+  {hex:'#CFB490', name:'toasted'},
+  {hex:'#E6D5C3', name:'blush sepia'},
+  {hex:'#DCC7B0', name:'clay sepia'},
+];
+
+let h = '';
+
+h += `<div class="band"><h2>Sepia progression <span>&mdash; 180px, ink #313131</span></h2><div class="row">`;
+for (const b of BGS) {
+  h += `<div class="cell">${tile(180, b.hex, '#313131')}
+    <div class="lab">${b.hex}</div><div class="name">${b.name}</div></div>`;
+}
+h += `</div></div>`;
+
+h += `<div class="band"><h2>Same, at 60px <span>&mdash; does it still separate from the wallpaper?</span></h2><div class="row">`;
+for (const b of BGS) {
+  h += `<div class="cell">${tile(60, b.hex, '#313131')}
+    <div class="lab">${b.hex}</div></div>`;
+}
+h += `</div></div>`;
+
+h += `<div class="band"><h2>Warmer ink on the deeper grounds <span>&mdash; #2E241C instead of #313131</span></h2><div class="row">`;
+for (const b of BGS.slice(2, 6)) {
+  h += `<div class="cell">${tile(180, b.hex, '#2E241C')}
+    <div class="lab">${b.hex}</div><div class="name">warm ink</div></div>`;
+}
+h += `</div></div>`;
+
+h += `<div class="band"><h2>Beside typical home-screen neighbours <span>&mdash; 96px</span></h2>`;
+for (const b of [BGS[0], BGS[3], BGS[5]]) {
+  h += `<div class="neighbors" style="margin-bottom:14px">
+    <div class="fake" style="background:linear-gradient(#4A9BE8,#1B6FD0)">&#9993;</div>
+    ${tile(96, b.hex, '#313131')}
+    <div class="fake" style="background:linear-gradient(#37C14B,#159B2C)">&#9742;</div>
+    <div class="fake" style="background:linear-gradient(#F5C33B,#E8A008)">&#9728;</div>
+    <div class="lab" style="margin:0 0 0 10px">${b.hex} &mdash; ${b.name}</div>
+  </div>`;
+}
+h += `</div>`;
+
+document.getElementById('out').innerHTML = h;
+</script>
+</body>
+</html>

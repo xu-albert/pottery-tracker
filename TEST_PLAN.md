@@ -19,6 +19,18 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ---
 
+### Splash Screen (`/splash`)
+- [ ] Vase mark draws itself on over ~900ms at launch
+- [ ] No flash or colour change between the native launch screen and the Flutter splash
+- [ ] Animation always completes — never cut off mid-stroke, even when auth resolves fast
+- [ ] App proceeds to Album (signed in) or Sign-In (signed out) once the stroke finishes
+- [ ] Launch is not blocked if the animation stalls (3-second fallback releases it)
+- [ ] No spinner on the splash — the draw-on is the only progress signal
+- [ ] Home-screen app icon matches the drawn mark
+- [ ] Icon reads clearly at small sizes (Spotlight, Settings, notifications)
+
+---
+
 ## 2. Bottom Navigation
 
 ### Shell Screen
@@ -443,3 +455,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Widget tests: 20 automated tests across 6 files covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings |
 | 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |
 | 2026-05-09 | In-app review prompt + feedback form |
+| 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |

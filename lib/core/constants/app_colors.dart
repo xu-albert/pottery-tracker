@@ -13,6 +13,12 @@ abstract final class AppColors {
   static const inputText = Color(0xFF6B6259);
   static const blue = Color(0xFF4A7FB5);
   static const error = Color(0xFFB3261E);
+  static const ink = Color(0xFF313131);
+
+  /// Ground for the generated app icon only — a warmer sepia than [cream], so
+  /// the tile reads as clay rather than paper beside saturated home-screen
+  /// icons. In-app surfaces stay [cream].
+  static const iconGround = Color(0xFFE3D3BD);
 }
 
 abstract final class TagColorPresets {

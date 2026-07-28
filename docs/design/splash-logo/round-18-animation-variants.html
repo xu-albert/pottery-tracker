@@ -1,0 +1,233 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Splash draw-on — variants</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #EDE5DA; font-family: -apple-system, Helvetica, Arial, sans-serif;
+         color: #313131; padding: 30px 26px 40px; }
+  h1 { font-size: 15px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       opacity: .55; margin-bottom: 6px; }
+  .hint { font-size: 13px; opacity: .6; margin-bottom: 22px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 30px; }
+  .card { width: 208px; }
+  .stage { width: 208px; height: 250px; background: #EDE5DA; border-radius: 14px;
+           display: flex; align-items: center; justify-content: center;
+           border: 1px solid rgba(49,49,49,.14); }
+  .name { font-size: 14px; font-weight: 700; margin-top: 10px; }
+  .desc { font-size: 12px; opacity: .62; margin-top: 3px; line-height: 1.45; min-height: 46px; }
+  .dur { font-size: 11.5px; opacity: .5; font-family: ui-monospace, Menlo, monospace; }
+  button { font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 999px;
+           border: 1px solid rgba(49,49,49,.3); background: transparent; color: #313131;
+           cursor: pointer; margin-top: 8px; }
+  button:hover { background: rgba(49,49,49,.08); }
+  .bar { position: sticky; top: 0; background: #EDE5DA; padding: 10px 0 16px; z-index: 5;
+         border-bottom: 1px solid rgba(49,49,49,.15); margin-bottom: 24px; }
+  .bar button { margin-top: 0; margin-right: 8px; font-size: 13px; padding: 8px 18px; }
+  h2 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       opacity: .5; margin: 34px 0 14px; padding-top: 22px;
+       border-top: 1px solid rgba(49,49,49,.15); }
+  .phone { width: 190px; height: 300px; border-radius: 22px; overflow: hidden; position: relative;
+           border: 1px solid rgba(49,49,49,.2); background: #EDE5DA; }
+  .phone .splash, .phone .journal { position: absolute; inset: 0; }
+  .phone .splash { display: flex; align-items: center; justify-content: center; background: #EDE5DA; }
+  .phone .journal { background: #EDE5DA; padding: 14px 12px; opacity: 0; }
+  .jrow { height: 9px; background: rgba(49,49,49,.13); border-radius: 3px; margin-bottom: 9px; }
+  .jtitle { height: 13px; width: 65%; background: rgba(49,49,49,.28); border-radius: 3px;
+            margin: 6px auto 16px; }
+  .jthumb { height: 54px; width: 54px; background: #E3D3BD; border-radius: 6px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <button onclick="playAll()">▶ Replay all draw-ons</button>
+  <button onclick="playAllT()">▶ Replay all transitions</button>
+</div>
+
+<h1>Draw-on variants</h1>
+<div class="hint">Each plays once on load. Click a card's button to replay it alone. Current shipping behaviour is <b>A</b>.</div>
+<div class="grid" id="grid"></div>
+
+<h2>Splash → journal transition</h2>
+<div class="hint">Full sequence: draw-on, hold, then hand off to the app. Current behaviour is <b>T1 (hard cut)</b>.</div>
+<div class="grid" id="tgrid"></div>
+
+<script>
+const RIM  = "M 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 Z";
+const BODY = "M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4";
+const FOOT = "M 33 100 C 40 101.5, 60 101.5, 67 100";
+
+// BODY traversed the other way: starts at the right lip, down the right side,
+// across the base, up the left. Same shape, mirrored drawing direction.
+const BODY_REV = "M 64 10.4 C 60 13.5, 56 17, 55.5 23 C 55.8 33, 57 42, 57.5 51 C 58.5 59, 64 64, 68 70 C 74.5 78, 79.5 85, 79 91 C 78.5 96, 74 99, 67 100 C 66.5 102, 67 104, 67 105.5 C 62 107.5, 38 107.5, 33 105.5 C 33 104, 33.5 102, 33 100 C 26 99, 21.5 96, 21 91 C 20.5 85, 25.5 78, 32 70 C 36 64, 41.5 59, 42.5 51 C 43 42, 44.2 33, 44.5 23 C 44 17, 40 13.5, 36 10.4";
+
+function svg(size, defs) {
+  const s = size / 120;
+  return `<svg width="${size*100/120}" height="${size}" viewBox="0 0 100 120">
+    <g fill="none" stroke="#313131" stroke-linecap="round" stroke-linejoin="round">
+      ${defs}
+    </g></svg>`;
+}
+
+// spec: array of {d, w, delay, dur}
+function makeStage(spec, size) {
+  const paths = spec.map((p, i) =>
+    `<path class="p${i}" d="${p.d}" stroke-width="${p.w}"/>`).join('');
+  return svg(size, paths);
+}
+
+function animate(stageEl, spec) {
+  const paths = stageEl.querySelectorAll('path');
+  paths.forEach((el, i) => {
+    const L = el.getTotalLength();
+    el.style.strokeDasharray = L;
+    el.style.strokeDashoffset = L;
+    el.getAnimations().forEach(a => a.cancel());
+    el.animate(
+      [{ strokeDashoffset: L }, { strokeDashoffset: 0 }],
+      { duration: spec[i].dur, delay: spec[i].delay,
+        easing: spec[i].ease || 'ease-in-out', fill: 'forwards' }
+    );
+  });
+}
+
+const W = 5.0, FW = 3.75;   // stroke widths at this preview scale
+
+const VARIANTS = [
+  { name: 'A — current', total: 900,
+    desc: 'All three subpaths at once. The rim starts on the right while the body starts on the left — this is the "both sides" effect.',
+    spec: [ {d:RIM,  w:W,  delay:0, dur:900},
+            {d:BODY, w:W,  delay:0, dur:900},
+            {d:FOOT, w:FW, delay:0, dur:900} ] },
+
+  { name: 'B — same, faster', total: 650,
+    desc: 'Identical to A but 650ms. Isolates "is it just too slow?" from "is it drawing wrong?"',
+    spec: [ {d:RIM,  w:W,  delay:0, dur:650},
+            {d:BODY, w:W,  delay:0, dur:650},
+            {d:FOOT, w:FW, delay:0, dur:650} ] },
+
+  { name: 'C — body, then rim, then foot', total: 780,
+    desc: 'One stroke at a time. Reads as a single hand drawing the vessel, then finishing the mouth and foot. No two marks ever appear at once.',
+    spec: [ {d:RIM,  w:W,  delay:520, dur:180},
+            {d:BODY, w:W,  delay:0,   dur:520},
+            {d:FOOT, w:FW, delay:700, dur:80} ] },
+
+  { name: 'D — body, then details together', total: 700,
+    desc: 'Body draws, then rim and footring appear together to finish. Slightly brisker than C, still never two marks mid-draw.',
+    spec: [ {d:RIM,  w:W,  delay:480, dur:220},
+            {d:BODY, w:W,  delay:0,   dur:480},
+            {d:FOOT, w:FW, delay:480, dur:220} ] },
+
+  { name: 'E — rim first', total: 760,
+    desc: 'Mouth first, then the body falls from it, foot last. Reads top-down, like the vase being pulled on a wheel.',
+    spec: [ {d:RIM,  w:W,  delay:0,   dur:200},
+            {d:BODY, w:W,  delay:200, dur:480},
+            {d:FOOT, w:FW, delay:680, dur:80} ] },
+
+  { name: 'F — right-hand start', total: 700,
+    desc: 'Like D, but the body draws from the right lip down and around. Worth comparing if the leftward start feels off to you.',
+    spec: [ {d:RIM,  w:W,  delay:480, dur:220},
+            {d:BODY_REV, w:W, delay:0, dur:480},
+            {d:FOOT, w:FW, delay:480, dur:220} ] },
+
+  { name: 'G — brisk sequence', total: 560,
+    desc: 'C\'s ordering compressed. Fastest option that still reads as drawn rather than appearing.',
+    spec: [ {d:RIM,  w:W,  delay:380, dur:130},
+            {d:BODY, w:W,  delay:0,   dur:380},
+            {d:FOOT, w:FW, delay:500, dur:60} ] },
+
+  { name: 'H — ease-out body', total: 700,
+    desc: 'D\'s timing, but the body decelerates into its finish instead of easing both ends — the stroke lands rather than stops.',
+    spec: [ {d:RIM,  w:W,  delay:470, dur:230, ease:'ease-out'},
+            {d:BODY, w:W,  delay:0,   dur:480, ease:'cubic-bezier(.22,.7,.3,1)'},
+            {d:FOOT, w:FW, delay:470, dur:230, ease:'ease-out'} ] },
+];
+
+const grid = document.getElementById('grid');
+VARIANTS.forEach((v, idx) => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<div class="stage" id="st${idx}">${makeStage(v.spec, 200)}</div>
+    <div class="name">${v.name}</div>
+    <div class="dur">${v.total}ms total</div>
+    <div class="desc">${v.desc}</div>
+    <button onclick="play(${idx})">▶ Replay</button>`;
+  grid.appendChild(card);
+});
+
+function play(i) { animate(document.getElementById('st'+i), VARIANTS[i].spec); }
+function playAll() { VARIANTS.forEach((_, i) => play(i)); }
+
+// ---------- transitions ----------
+
+const TRANS = [
+  { name: 'T1 — hard cut', desc: 'Current behaviour. Stroke finishes, journal appears on the next frame.',
+    hold: 0, out: 0, mode: 'cut' },
+  { name: 'T2 — short fade', desc: 'Stroke finishes, 150ms beat, then a 250ms cross-fade to the journal.',
+    hold: 150, out: 250, mode: 'fade' },
+  { name: 'T3 — hold, then fade', desc: 'A 400ms beat lets the finished mark land before a 350ms cross-fade. Most deliberate.',
+    hold: 400, out: 350, mode: 'fade' },
+  { name: 'T4 — mark lifts away', desc: 'The vase fades and scales up slightly as the journal fades in beneath it, as if you moved past it.',
+    hold: 250, out: 400, mode: 'lift' },
+];
+
+const tgrid = document.getElementById('tgrid');
+TRANS.forEach((t, idx) => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<div class="phone" id="ph${idx}">
+      <div class="journal">
+        <div class="jtitle"></div>
+        <div class="jrow" style="width:100%"></div>
+        <div class="jthumb"></div>
+        <div class="jrow" style="width:70%"></div>
+        <div class="jrow" style="width:85%"></div>
+      </div>
+      <div class="splash">${makeStage(VARIANTS[3].spec, 150)}</div>
+    </div>
+    <div class="name">${t.name}</div>
+    <div class="dur">hold ${t.hold}ms · fade ${t.out}ms</div>
+    <div class="desc">${t.desc}</div>
+    <button onclick="playT(${idx})">▶ Replay</button>`;
+  tgrid.appendChild(card);
+});
+
+function playT(i) {
+  const t = TRANS[i];
+  const ph = document.getElementById('ph'+i);
+  const splash = ph.querySelector('.splash');
+  const journal = ph.querySelector('.journal');
+  splash.getAnimations().forEach(a => a.cancel());
+  journal.getAnimations().forEach(a => a.cancel());
+  splash.style.opacity = 1; splash.style.transform = 'none';
+  journal.style.opacity = 0;
+  animate(splash, VARIANTS[3].spec);
+  const drawEnd = 700;
+  const start = drawEnd + t.hold;
+  if (t.mode === 'cut') {
+    splash.animate([{opacity:1},{opacity:1},{opacity:0}],
+      {duration:start+16, easing:'steps(2,end)', fill:'forwards'});
+    journal.animate([{opacity:0},{opacity:0},{opacity:1}],
+      {duration:start+16, easing:'steps(2,end)', fill:'forwards'});
+  } else if (t.mode === 'fade') {
+    splash.animate([{opacity:1},{opacity:0}],
+      {duration:t.out, delay:start, easing:'ease-in-out', fill:'forwards'});
+    journal.animate([{opacity:0},{opacity:1}],
+      {duration:t.out, delay:start, easing:'ease-in-out', fill:'forwards'});
+  } else {
+    splash.animate([{opacity:1, transform:'scale(1)'},
+                    {opacity:0, transform:'scale(1.18)'}],
+      {duration:t.out, delay:start, easing:'cubic-bezier(.4,0,.2,1)', fill:'forwards'});
+    journal.animate([{opacity:0, transform:'scale(.985)'},
+                     {opacity:1, transform:'scale(1)'}],
+      {duration:t.out, delay:start+60, easing:'ease-out', fill:'forwards'});
+  }
+}
+function playAllT() { TRANS.forEach((_, i) => playT(i)); }
+
+window.addEventListener('load', () => { playAll(); playAllT(); });
+</script>
+</body>
+</html>

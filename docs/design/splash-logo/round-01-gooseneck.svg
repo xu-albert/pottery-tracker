@@ -1,0 +1,74 @@
+<svg viewBox="0 0 680 250" width="680" height="250" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="680" height="250" fill="#EDE5DA"/>
+
+  <g fill="none" stroke="#3C3C3C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- A — Classic gooseneck -->
+    <g transform="translate(50, 20)">
+      <path d="
+        M 38 11
+        C 41 18, 43 28, 42 44
+        C 40 55, 29 59, 24 75
+        C 20 89, 27 102, 40 107
+        C 45 109, 55 109, 60 107
+        C 73 102, 80 89, 76 75
+        C 71 59, 60 55, 58 44
+        C 57 28, 59 18, 62 11
+      "/>
+    </g>
+
+    <!-- B — Tall and narrow -->
+    <g transform="translate(210, 20)">
+      <path d="
+        M 40 9
+        C 42 16, 44 26, 43 52
+        C 42 62, 33 66, 29 80
+        C 26 92, 32 103, 43 107
+        C 47 109, 53 109, 57 107
+        C 68 103, 74 92, 71 80
+        C 67 66, 58 62, 57 52
+        C 56 26, 58 16, 60 9
+      "/>
+    </g>
+
+    <!-- C — Full-bellied -->
+    <g transform="translate(370, 20)">
+      <path d="
+        M 39 13
+        C 42 20, 44 27, 43 37
+        C 41 47, 26 52, 20 70
+        C 15 86, 24 102, 39 107
+        C 44 109, 56 109, 61 107
+        C 76 102, 85 86, 80 70
+        C 74 52, 59 47, 57 37
+        C 56 27, 58 20, 61 13
+      "/>
+    </g>
+
+    <!-- D — Asymmetric, leaning -->
+    <g transform="translate(530, 20)">
+      <path d="
+        M 37 12
+        C 40 19, 42 29, 41 45
+        C 39 56, 26 60, 22 76
+        C 18 90, 26 103, 40 107
+        C 45 109, 56 108, 61 106
+        C 74 101, 80 88, 75 74
+        C 70 59, 60 56, 59 44
+        C 58 29, 60 20, 63 10
+      "/>
+    </g>
+
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#3C3C3C" text-anchor="middle">
+    <text x="100" y="205" font-weight="bold">A</text>
+    <text x="260" y="205" font-weight="bold">B</text>
+    <text x="420" y="205" font-weight="bold">C</text>
+    <text x="580" y="205" font-weight="bold">D</text>
+    <text x="100" y="228" font-size="12">classic gooseneck</text>
+    <text x="260" y="228" font-size="12">tall &amp; narrow</text>
+    <text x="420" y="228" font-size="12">full-bellied</text>
+    <text x="580" y="228" font-size="12">asymmetric, leaning</text>
+  </g>
+</svg>

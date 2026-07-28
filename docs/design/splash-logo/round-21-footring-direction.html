@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Splash draw-on — round 21</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #EDE5DA; font-family: -apple-system, Helvetica, Arial, sans-serif;
+         color: #313131; padding: 26px 26px 44px; }
+  h1 { font-size: 15px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       opacity: .55; margin-bottom: 6px; }
+  .hint { font-size: 13px; opacity: .62; margin-bottom: 22px; max-width: 800px; line-height: 1.5; }
+  .grid { display: flex; flex-wrap: wrap; gap: 26px; }
+  .card { width: 236px; }
+  .stage { width: 236px; height: 280px; background: #EDE5DA; border-radius: 14px;
+           display: flex; align-items: center; justify-content: center;
+           border: 1px solid rgba(49,49,49,.14); position: relative; }
+  .card.rec .stage { border-color: rgba(49,49,49,.55); border-width: 2px; }
+  .name { font-size: 14px; font-weight: 700; margin-top: 10px; }
+  .desc { font-size: 12px; opacity: .64; margin-top: 3px; line-height: 1.45; min-height: 62px; }
+  .dur { font-size: 11.5px; opacity: .5; font-family: ui-monospace, Menlo, monospace; }
+  .tag { display:inline-block; font-size:10px; letter-spacing:.05em; text-transform:uppercase;
+         background:rgba(49,49,49,.16); padding:2px 7px; border-radius:999px; margin-left:6px;
+         vertical-align:2px; }
+  button { font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 999px;
+           border: 1px solid rgba(49,49,49,.3); background: transparent; color: #313131;
+           cursor: pointer; margin-top: 8px; }
+  button:hover { background: rgba(49,49,49,.08); }
+  .bar { position: sticky; top: 0; background: #EDE5DA; padding: 10px 0 14px; z-index: 5;
+         border-bottom: 1px solid rgba(49,49,49,.15); margin-bottom: 20px; }
+  .bar button { margin-top: 0; margin-right: 8px; font-size: 13px; padding: 8px 18px; }
+  .note { font-size: 12px; opacity: .6; margin-left: 10px; }
+  .arrow { position:absolute; font-size:17px; opacity:.45; color:#BF7B5E; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <button onclick="playAll()">▶ Replay all</button>
+  <button onclick="toggleSlow()">⏱ <span id="slowlbl">Slow to 4×</span></button>
+  <button onclick="toggleArrows()">➜ <span id="arrlbl">Show directions</span></button>
+  <span class="note" id="note"></span>
+</div>
+
+<h1>Round 21 — footring direction, at easeInOutQuart / 750ms</h1>
+<div class="hint">
+  Everything here is locked to your picks: <b>easeInOutQuart</b>, <b>750ms</b>, rim
+  re-rooted to the top-left. The only variable is the footring. At real speed the
+  difference is subtle — <b>Slow to 4×</b> is the honest way to judge it.
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const RIM_L  = "M 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 Z";
+const BODY   = "M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4";
+const FOOT_L = "M 33 100 C 40 101.5, 60 101.5, 67 100";
+const FOOT_R = "M 67 100 C 60 101.5, 40 101.5, 33 100";
+
+const W = 5.4, FW = 4.05;
+const EASE = 'cubic-bezier(.76,0,.24,1)';   // easeInOutQuart
+const DUR = 750;
+let RATE = 1, ARROWS = false;
+
+function stageSvg(foot, size) {
+  return `<svg width="${size*100/120}" height="${size}" viewBox="0 0 100 120">
+    <g fill="none" stroke="#313131" stroke-linecap="round" stroke-linejoin="round">
+      <path d="${RIM_L}" stroke-width="${W}"/>
+      <path d="${BODY}" stroke-width="${W}"/>
+      <path d="${foot}" stroke-width="${FW}"/>
+    </g></svg>`;
+}
+
+function animate(stageEl, spec) {
+  stageEl.querySelectorAll('path').forEach((el, i) => {
+    const L = el.getTotalLength();
+    el.style.strokeDasharray = L;
+    el.style.strokeDashoffset = L;
+    el.getAnimations().forEach(a => a.cancel());
+    el.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }],
+      { duration: spec[i].dur * RATE, delay: (spec[i].delay || 0) * RATE,
+        easing: EASE, fill: 'forwards' });
+  });
+}
+
+const VARIANTS = [
+  { name: 'P — foot from the left', foot: FOOT_L,
+    spec: [{dur:DUR},{dur:DUR},{dur:DUR}],
+    desc: 'Round 20 as it stands. Every stroke travels left to right, including the footring. Coherent, but uniformly one-directional.' },
+
+  { name: 'Q — foot from the right', foot: FOOT_R, rec: true,
+    spec: [{dur:DUR},{dur:DUR},{dur:DUR}],
+    desc: 'Your idea. Rim and body sweep out from the top-left while the footring runs back the other way — a counterpoint rather than a convoy.' },
+
+  { name: 'R — foot from the right, landing last', foot: FOOT_R,
+    spec: [{dur:DUR},{dur:DUR},{dur:260, delay:490}],
+    desc: 'Same reversal, but the footring holds off and completes at the very end. Makes the opposing direction legible instead of subliminal, and gives the drawing a final beat.' },
+
+  { name: 'S — foot from the right, drawn early', foot: FOOT_R,
+    spec: [{dur:DUR},{dur:DUR},{dur:300, delay:120}],
+    desc: 'The footring arrives early and settles while the body is still travelling — the base feels planted before the vessel finishes rising.' },
+];
+
+const grid = document.getElementById('grid');
+VARIANTS.forEach((v, i) => {
+  const c = document.createElement('div');
+  c.className = 'card' + (v.rec ? ' rec' : '');
+  const arrows = v.foot === FOOT_R
+    ? `<div class="arrow" style="left:16px;top:20px;display:none">➜</div>
+       <div class="arrow" style="right:20px;bottom:44px;display:none">⬅</div>`
+    : `<div class="arrow" style="left:16px;top:20px;display:none">➜</div>
+       <div class="arrow" style="left:20px;bottom:44px;display:none">➜</div>`;
+  c.innerHTML = `<div class="stage" id="s${i}">${stageSvg(v.foot, 226)}${arrows}</div>
+    <div class="name">${v.name}${v.rec ? '<span class="tag">your idea</span>' : ''}</div>
+    <div class="dur">750ms · easeInOutQuart</div>
+    <div class="desc">${v.desc}</div>
+    <button onclick="play(${i})">▶ Replay</button>`;
+  grid.appendChild(c);
+});
+
+function play(i) { animate(document.getElementById('s'+i), VARIANTS[i].spec); }
+function playAll() { VARIANTS.forEach((_, i) => play(i)); }
+function toggleSlow() {
+  RATE = RATE === 1 ? 4 : 1;
+  document.getElementById('slowlbl').textContent = RATE === 1 ? 'Slow to 4×' : 'Back to real speed';
+  document.getElementById('note').textContent = RATE === 1 ? '' : 'Playing 4× slower than ships.';
+  playAll();
+}
+function toggleArrows() {
+  ARROWS = !ARROWS;
+  document.querySelectorAll('.arrow').forEach(a => a.style.display = ARROWS ? 'block' : 'none');
+  document.getElementById('arrlbl').textContent = ARROWS ? 'Hide directions' : 'Show directions';
+}
+window.addEventListener('load', playAll);
+</script>
+</body>
+</html>

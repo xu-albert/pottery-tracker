@@ -3,7 +3,7 @@
 ## Design & Branding
 - [x] **App logo/icon** — custom icon across all platforms
 - [ ] **Re-examine color scheme** — current palette may need refinement once logo is finalized; consider harmonizing with the logo's colors
-- [ ] **In-app branding redesign** — incorporate app icon or other imagery into the app UI (e.g., sign-in screen, empty states, splash screen)
+- [ ] **In-app branding redesign** — splash screen done (animated vase mark that draws itself on at launch); sign-in screen and empty states still to do
 
 ## UX Improvements
 - [ ] **Onboarding walkthrough** — brief tutorial on first launch showing how to create a piece
