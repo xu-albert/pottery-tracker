@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#EDE5DA;font-family:-apple-system,Helvetica,Arial,sans-serif;color:#313131;padding:28px 24px}
+h2{font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.5;margin-bottom:16px}
+.row{display:flex;align-items:flex-end;gap:26px;margin-bottom:26px}
+.cell{text-align:center}
+.tile{overflow:hidden;border-radius:22.5%;box-shadow:0 1px 4px rgba(0,0,0,.16);position:relative;background:#EDE5DA}
+.tile img{position:absolute;top:50%;left:50%;transform-origin:center;image-rendering:auto}
+.lab{font-size:12px;margin-top:8px;opacity:.75}
+.lab b{font-weight:700;opacity:1}
+.band{padding-bottom:8px;margin-bottom:14px;border-bottom:1px solid rgba(49,49,49,.16)}
+</style></head><body>
+<div id="out"></div>
+<script>
+const VARIANTS = [
+  {mark:620, pct:'61%'},
+  {mark:680, pct:'66%'},
+  {mark:740, pct:'72%'},
+  {mark:800, pct:'78%'},
+];
+function tile(px, mark){
+  const k = mark/620;               // stroke scales with markSize, so this is a pure zoom
+  const s = (px/1024)*k;
+  return `<div class="tile" style="width:${px}px;height:${px}px">
+    <img src="icon-gen.png" width="1024" height="1024"
+         style="transform:translate(-50%,-50%) scale(${s})"></div>`;
+}
+let h='';
+for (const size of [180,120,80,60]) {
+  h += `<div class="band"><h2>${size}px tile</h2><div class="row">`;
+  for (const v of VARIANTS) {
+    h += `<div class="cell">${tile(size, v.mark)}
+      <div class="lab"><b>${v.pct}</b><br>markSize ${v.mark}</div></div>`;
+  }
+  h += `</div></div>`;
+}
+document.getElementById('out').innerHTML = h;
+</script>
+</body></html>
