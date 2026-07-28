@@ -9,6 +9,11 @@ const _footringSubpath = 2;
 /// How much lighter the footring draws than the body.
 const _footringWeightRatio = 0.75;
 
+/// Approved stroke weight for the vase mark, shared by [VaseLogo] and
+/// [AnimatedVaseLogo]. This is a locked design value — do not change it
+/// without updating the approved design and regenerating the app icon.
+const kVaseStrokeWidth = 3.6;
+
 /// The vase silhouette centreline, authored in a 100x120 design space and
 /// scaled to [size]. Single source of shape truth for the logo, the splash
 /// animation, and the generated app icon.
@@ -61,7 +66,7 @@ class VaseLogo extends StatelessWidget {
     super.key,
     required this.size,
     this.color,
-    this.strokeWidth = 3.6,
+    this.strokeWidth = kVaseStrokeWidth,
   });
 
   final double size;
@@ -128,7 +133,7 @@ class AnimatedVaseLogo extends StatefulWidget {
     super.key,
     required this.size,
     this.color,
-    this.strokeWidth = 3.6,
+    this.strokeWidth = kVaseStrokeWidth,
     this.duration = const Duration(milliseconds: 900),
     this.onComplete,
   });
@@ -146,7 +151,7 @@ class AnimatedVaseLogo extends StatefulWidget {
 class _AnimatedVaseLogoState extends State<AnimatedVaseLogo>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _progress;
+  late final CurvedAnimation _progress;
 
   @override
   void initState() {
@@ -163,6 +168,7 @@ class _AnimatedVaseLogoState extends State<AnimatedVaseLogo>
 
   @override
   void dispose() {
+    _progress.dispose();
     _controller.dispose();
     super.dispose();
   }
