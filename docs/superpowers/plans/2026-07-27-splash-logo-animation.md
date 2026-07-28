@@ -96,7 +96,20 @@ git commit -m "Add approved gooseneck vase silhouette as design source"
   - `class VaseLogo extends StatelessWidget` with named params `{required double size, Color? color, double strokeWidth}`.
   - `class VaseLogoPainter extends CustomPainter` with named params `{required Color color, required double strokeWidth, required double progress}`. **Public, not private** — Task 7's icon generator reuses it so the icon and the animation cannot drift apart.
 
-**Conversion procedure (SVG `d` → Dart `Path`):** the SVG is authored in a `100×120` viewBox. Scale with `sx = size.width / 100`, `sy = size.height / 120`, and centre vertically with `oy = (size.height - 120 * sy) / 2`. Each SVG `C x1 y1, x2 y2, x y` becomes `path.cubicTo(x(x1), y(y1), x(x2), y(y2), x(x), y(y))`; `M x y` becomes `path.moveTo(x(x), y(y))`.
+**Conversion procedure (SVG `d` → Dart `Path`):** the SVG is authored in a `100×120` viewBox — a 5:6 design space. Each SVG `C x1 y1, x2 y2, x y` becomes `path.cubicTo(x(x1), y(y1), x(x2), y(y2), x(x), y(y))`; `M x y` becomes `path.moveTo(x(x), y(y))`.
+
+**Scale uniformly and centre on both axes.** The design space is 5:6 but callers pass a square box, so scaling x and y independently stretches the mark — an earlier version of this plan did exactly that and rendered the logo 20% too wide (measured aspect 0.699 against the approved 0.582). Use:
+
+```dart
+final s = math.min(size.width / 100, size.height / 120);
+final ox = (size.width - 100 * s) / 2;
+final oy = (size.height - 120 * s) / 2;
+
+double x(double v) => v * s + ox;
+double y(double v) => v * s + oy;
+```
+
+One factor for both axes is what preserves the proportions; the two offsets letterbox the mark inside whatever box it is given. This makes `buildVasePath` correct for any size, square or not, so no caller can distort it. Import `dart:math` as `math`.
 
 **The approved mark has three subpaths**, and all three go into the single `Path` returned by `buildVasePath`, appended in this order:
 
@@ -128,6 +141,20 @@ void main() {
       expect(bounds.top, greaterThanOrEqualTo(0));
       expect(bounds.right, lessThanOrEqualTo(120));
       expect(bounds.bottom, lessThanOrEqualTo(120));
+    });
+
+    test('keeps the approved 5:6 proportions in a square box', () {
+      // The design space is 100x120. Scaling x and y independently to fill a
+      // square stretches the mark; this asserts it does not.
+      final square = buildVasePath(const Size(120, 120)).getBounds();
+      final design = buildVasePath(const Size(100, 120)).getBounds();
+
+      expect(
+        square.width / square.height,
+        closeTo(design.width / design.height, 0.001),
+        reason: 'a square box must letterbox the mark, not stretch it',
+      );
+      expect(square.width / square.height, closeTo(0.582, 0.005));
     });
 
     test('has rim, body and footring as three subpaths in order', () {
@@ -190,12 +217,14 @@ const _footringSubpath = 2;
 const _footringWeightRatio = 0.75;
 
 Path buildVasePath(Size size) {
-  final sx = size.width / 100;
-  final sy = size.height / 120;
-  final oy = (size.height - 120 * sy) / 2;
+  // One factor for both axes: the 5:6 design space must not stretch to fit a
+  // square box. The offsets letterbox the mark inside whatever size is given.
+  final s = math.min(size.width / 100, size.height / 120);
+  final ox = (size.width - 100 * s) / 2;
+  final oy = (size.height - 120 * s) / 2;
 
-  double x(double v) => v * sx;
-  double y(double v) => v * sy + oy;
+  double x(double v) => v * s + ox;
+  double y(double v) => v * s + oy;
 
   final path = Path();
   return path;
@@ -888,7 +917,13 @@ void main() {
   ) async {
     const canvas = 1024.0;
     const markSize = 620.0;
-    const stroke = 18.6;
+
+    // The icon's stroke in design-space units — 1.55x the splash's 3.6, the
+    // uplift the design round settled on for small-size legibility. Converted
+    // to canvas pixels with the same factor buildVasePath uses, so the two
+    // cannot drift apart if markSize changes.
+    const strokeInDesignUnits = 5.6;
+    const stroke = strokeInDesignUnits * markSize / 120;
 
     // A path that spills past the canvas would ship a clipped icon.
     final markBounds = buildVasePath(const Size(markSize, markSize)).getBounds();
@@ -937,7 +972,7 @@ void main() {
 }
 ```
 
-`stroke = 18.6` is the approved 3.6 splash weight carried to this canvas: the mark renders at 620px here versus 120pt on the splash (5.17×), times the 1.55× icon uplift the design round settled on for small-size legibility, then rounded. The footring is drawn by the same painter loop at 0.75× of that.
+Because `buildVasePath` scales uniformly, a square `markSize` letterboxes the 5:6 mark rather than stretching it: the vase occupies 620px of height and about 517px of width, centred. That is intended — the icon canvas is square and the mark is not.
 
 If the icon looks too heavy at real size, the footring gap is what closes first — check it before adjusting anything else.
 
