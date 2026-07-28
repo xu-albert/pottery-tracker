@@ -15,7 +15,13 @@
 - **No TODO/FIXME/HACK comments in code.** Project rule from `CLAUDE.md`. Track follow-ups in Claude memory files only.
 - **No hardcoded user-facing strings** — use `flutter gen-l10n` / `lib/l10n/app_en.arb`. (The splash has no text, so this should not come up; do not add any.)
 - **Package name for imports:** `pottery_tracker` (e.g. `package:pottery_tracker/widgets/vase_logo.dart`).
-- **Palette, exact values:** cream `#EDE5DA` (`AppColors.cream`), charcoal `#3C3C3C` (`AppColors.charcoal`), from `lib/core/constants/app_colors.dart`.
+- **Palette, exact values:** cream `#EDE5DA` (`AppColors.cream`) from `lib/core/constants/app_colors.dart`.
+- **Approved design values (locked 2026-07-27 — do not substitute):**
+  - Silhouette: the three subpaths in `assets/icon/vase_logo.svg`. A *yuhuchunping* — Ming pear-shaped bud vase: trumpet lip, long neck widening downward, belly widest low, raised footring.
+  - Mark colour: **`#313131`**. Add to `lib/core/constants/app_colors.dart` as `AppColors.ink` — it is not in the palette yet.
+  - Splash stroke width: **3.6**; the footring subpath draws at **2.7** (0.75× the body weight).
+  - Icon stroke width: **1.55× the splash weight** (5.58 at equivalent scale).
+  - The footring gap is the tightest part of the drawing and closes up if the stroke is made heavier. Do not increase these weights.
 - **Animation duration:** 900ms, `Curves.easeInOut`.
 - **Fallback timer:** 3 seconds.
 - **Light mode only.** Dark mode is explicitly out of scope per the spec — do not add dark variants or `Theme.of(context).brightness` branches.
@@ -40,9 +46,12 @@
 
 ---
 
-### Task 1: Approve the silhouette (USER GATE — no subagent)
+### Task 1: Approve the silhouette (USER GATE — COMPLETE)
 
-**This task cannot be delegated.** It ends in a human design decision. Every later task consumes its output.
+**Completed 2026-07-27.** Ran as nine design rounds with the user; the approved
+silhouette, stroke weights and colour are recorded in the Global Constraints above and
+in `assets/icon/vase_logo.svg`. The steps below are kept as a record of how the values
+were arrived at — **do not re-run them.**
 
 **Files:**
 - Modify: `assets/icon/vase_logo.svg`
@@ -85,8 +94,19 @@ git commit -m "Add approved gooseneck vase silhouette as design source"
 - Produces:
   - `Path buildVasePath(Size size)` — top-level function.
   - `class VaseLogo extends StatelessWidget` with named params `{required double size, Color? color, double strokeWidth}`.
+  - `class VaseLogoPainter extends CustomPainter` with named params `{required Color color, required double strokeWidth, required double progress}`. **Public, not private** — Task 7's icon generator reuses it so the icon and the animation cannot drift apart.
 
-**Conversion procedure (SVG `d` → Dart `Path`):** the SVG is authored in a `100×120` viewBox. Scale with `sx = size.width / 100`, `sy = size.height / 120`, and centre vertically with `oy = (size.height - 120 * sy) / 2`. Each SVG `C x1 y1, x2 y2, x y` becomes `path.cubicTo(x(x1), y(y1), x(x2), y(y2), x(x), y(y))`; `M x y` becomes `path.moveTo(x(x), y(y))`. Do **not** call `path.close()` — the open ends are the deliberate pen-lift gap.
+**Conversion procedure (SVG `d` → Dart `Path`):** the SVG is authored in a `100×120` viewBox. Scale with `sx = size.width / 100`, `sy = size.height / 120`, and centre vertically with `oy = (size.height - 120 * sy) / 2`. Each SVG `C x1 y1, x2 y2, x y` becomes `path.cubicTo(x(x1), y(y1), x(x2), y(y2), x(x), y(y))`; `M x y` becomes `path.moveTo(x(x), y(y))`.
+
+**The approved mark has three subpaths**, and all three go into the single `Path` returned by `buildVasePath`, appended in this order:
+
+1. **rim** — the mouth ellipse. Ends with `Z`, so call `path.close()` after its last `cubicTo`. This is the only closed subpath.
+2. **body** — the outline: trumpet lip, down the left side, across the base, up the right. Open; do **not** close it. Its two ends stop at the lip where the rim ellipse meets them.
+3. **foot** — the footring line. Open; do **not** close it.
+
+Do not merge, reorder, or drop a subpath — the footring line in particular is load-bearing. Without it the body's foot geometry reads as a drawing error (this was verified during design; see the spec).
+
+The footring strokes thinner than the other two (0.75×). `computeMetrics()` yields metrics in subpath order, so the painter walks them with an index and applies the lighter weight at index 2. That single loop covers both the traced and the finished states — there is no need for a separate `progress >= 1.0` branch, since `extractPath(0, length * 1.0)` is the whole subpath. Name the index as a constant rather than writing a bare `i == 2`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -110,13 +130,18 @@ void main() {
       expect(bounds.bottom, lessThanOrEqualTo(120));
     });
 
-    test('is an open path so the pen-lift gap survives', () {
+    test('has rim, body and footring as three subpaths in order', () {
       final path = buildVasePath(const Size(120, 120));
       final metrics = path.computeMetrics().toList();
 
-      expect(metrics, hasLength(1));
-      expect(metrics.first.isClosed, isFalse);
-      expect(metrics.first.length, greaterThan(0));
+      expect(metrics, hasLength(3));
+      expect(metrics[0].isClosed, isTrue, reason: 'rim ellipse is closed');
+      expect(metrics[1].isClosed, isFalse, reason: 'body outline is open');
+      expect(metrics[2].isClosed, isFalse, reason: 'footring line is open');
+
+      // The footring is much the shortest run; body much the longest.
+      expect(metrics[2].length, lessThan(metrics[0].length));
+      expect(metrics[1].length, greaterThan(metrics[0].length));
     });
   });
 
@@ -127,7 +152,7 @@ void main() {
           home: Scaffold(
             backgroundColor: AppColors.cream,
             body: Center(
-              child: VaseLogo(size: 120, color: AppColors.charcoal),
+              child: VaseLogo(size: 120, color: AppColors.ink),
             ),
           ),
         ),
@@ -149,7 +174,7 @@ Expected: FAIL — `buildVasePath` is not a top-level function yet (the prototyp
 
 - [ ] **Step 3: Rewrite `lib/widgets/vase_logo.dart`**
 
-Replace the file entirely. Keep `VaseLogo` and `_VaseLogoPainter`, promote the path builder to a top-level function, and **delete the `filled` / `fillAfterTrace` / `fillOpacity` fill stage** — the mark is pure line and the option is now dead.
+Replace the file entirely. Keep `VaseLogo` and `VaseLogoPainter`, promote the path builder to a top-level function, and **delete the `filled` / `fillAfterTrace` / `fillOpacity` fill stage** — the mark is pure line and the option is now dead.
 
 ```dart
 import 'package:flutter/material.dart';
@@ -157,6 +182,13 @@ import 'package:flutter/material.dart';
 /// The vase silhouette centreline, authored in a 100x120 design space and
 /// scaled to [size]. Single source of shape truth for the logo, the splash
 /// animation, and the generated app icon.
+/// Index of the footring subpath within [buildVasePath]'s result. It strokes
+/// lighter than the rim and body.
+const _footringSubpath = 2;
+
+/// How much lighter the footring draws than the body.
+const _footringWeightRatio = 0.75;
+
 Path buildVasePath(Size size) {
   final sx = size.width / 100;
   final sy = size.height / 120;
@@ -166,7 +198,6 @@ Path buildVasePath(Size size) {
   double y(double v) => v * sy + oy;
 
   final path = Path();
-  // The path is intentionally left open — the gap is the pen lift.
   return path;
 }
 
@@ -175,7 +206,7 @@ class VaseLogo extends StatelessWidget {
     super.key,
     required this.size,
     this.color,
-    this.strokeWidth = 4.0,
+    this.strokeWidth = 3.6,
   });
 
   final double size;
@@ -186,7 +217,7 @@ class VaseLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomPaint(
       size: Size(size, size),
-      painter: _VaseLogoPainter(
+      painter: VaseLogoPainter(
         color: color ?? Theme.of(context).colorScheme.primary,
         strokeWidth: strokeWidth,
         progress: 1.0,
@@ -195,8 +226,8 @@ class VaseLogo extends StatelessWidget {
   }
 }
 
-class _VaseLogoPainter extends CustomPainter {
-  _VaseLogoPainter({
+class VaseLogoPainter extends CustomPainter {
+  VaseLogoPainter({
     required this.color,
     required this.strokeWidth,
     required this.progress,
@@ -213,34 +244,41 @@ class _VaseLogoPainter extends CustomPainter {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final path = buildVasePath(size);
+    final metrics = buildVasePath(size).computeMetrics().toList();
 
-    if (progress >= 1.0) {
-      canvas.drawPath(path, paint);
-      return;
-    }
-
-    for (final metric in path.computeMetrics()) {
-      canvas.drawPath(metric.extractPath(0, metric.length * progress), paint);
+    for (var i = 0; i < metrics.length; i++) {
+      final metric = metrics[i];
+      paint.strokeWidth = i == _footringSubpath
+          ? strokeWidth * _footringWeightRatio
+          : strokeWidth;
+      canvas.drawPath(
+        metric.extractPath(0, metric.length * progress.clamp(0.0, 1.0)),
+        paint,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(_VaseLogoPainter oldDelegate) =>
+  bool shouldRepaint(VaseLogoPainter oldDelegate) =>
       color != oldDelegate.color ||
       strokeWidth != oldDelegate.strokeWidth ||
       progress != oldDelegate.progress;
 }
 ```
 
-Two values come from Task 1 and must be filled in here:
+Fill in the body of `buildVasePath` from the three `d` attributes in
+`assets/icon/vase_logo.svg`, converting each command into `moveTo` / `cubicTo` /
+`close` calls per the procedure above and appending all three subpaths in order
+(rim, body, foot) between `final path = Path();` and `return path;`.
 
-1. **The path body.** Take the single `d` attribute from `assets/icon/vase_logo.svg` and convert each command into `moveTo`/`cubicTo` calls per the procedure above, inserting them between `final path = Path();` and `return path;`. Keep only the pen-lift comment; do not leave any instruction comments behind (project rule: no TODO/FIXME/HACK in code).
-2. **`strokeWidth`'s default** — the width approved in Task 1 Step 3.
+Add `static const ink = Color(0xFF313131);` to `AppColors` in
+`lib/core/constants/app_colors.dart` — the mark's approved colour, which the palette
+does not yet have.
+
+Leave no instruction comments behind (project rule: no TODO/FIXME/HACK in code).
 
 - [ ] **Step 4: Generate the golden and verify**
 
@@ -265,7 +303,7 @@ git commit -m "Port approved vase silhouette to buildVasePath with golden test"
 - Modify: `test/widgets/vase_logo_test.dart`
 
 **Interfaces:**
-- Consumes: `buildVasePath`, `_VaseLogoPainter` (Task 2).
+- Consumes: `buildVasePath`, `VaseLogoPainter` (Task 2).
 - Produces: `class AnimatedVaseLogo extends StatefulWidget` with named params
   `{required double size, Color? color, double strokeWidth, Duration duration, VoidCallback? onComplete}`.
 
@@ -284,7 +322,7 @@ Append to `test/widgets/vase_logo_test.dart`:
             body: Center(
               child: AnimatedVaseLogo(
                 size: 120,
-                color: AppColors.charcoal,
+                color: AppColors.ink,
                 duration: const Duration(milliseconds: 900),
                 onComplete: () => completed++,
               ),
@@ -320,7 +358,7 @@ class AnimatedVaseLogo extends StatefulWidget {
     super.key,
     required this.size,
     this.color,
-    this.strokeWidth = 4.0,
+    this.strokeWidth = 3.6,
     this.duration = const Duration(milliseconds: 900),
     this.onComplete,
   });
@@ -367,7 +405,7 @@ class _AnimatedVaseLogoState extends State<AnimatedVaseLogo>
       animation: _progress,
       builder: (context, _) => CustomPaint(
         size: Size(widget.size, widget.size),
-        painter: _VaseLogoPainter(
+        painter: VaseLogoPainter(
           color: color,
           strokeWidth: widget.strokeWidth,
           progress: _progress.value,
@@ -378,7 +416,13 @@ class _AnimatedVaseLogoState extends State<AnimatedVaseLogo>
 }
 ```
 
-Match the `strokeWidth` default to `VaseLogo`'s.
+Keep the `strokeWidth` default identical to `VaseLogo`'s (3.6).
+
+**On the three subpaths:** the painter's loop advances every subpath by the same
+*fraction* of its own length, so rim, body and footring all begin and finish together
+rather than drawing one after another. That is intended — it reads as the whole mark
+resolving at once. Do not sequence them; a staggered version was considered and would
+divide the 900ms three ways, leaving each run too fast to register.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -726,7 +770,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       body: Center(
         child: AnimatedVaseLogo(
           size: 120,
-          color: AppColors.charcoal,
+          color: AppColors.ink,
           duration: widget.animationDuration,
           onComplete: _release,
         ),
@@ -736,7 +780,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 }
 ```
 
-Use the stroke width and colour approved in Task 1 — if the approved colour is not `AppColors.charcoal`, add the chosen value to `lib/core/constants/app_colors.dart` as a named constant rather than inlining a hex literal.
+`AppColors.ink` (`#313131`) is added in Task 2; the splash consumes it. Leave `strokeWidth` unset so it takes `AnimatedVaseLogo`'s 3.6 default rather than restating the number here.
 
 Note the removed `CupertinoActivityIndicator`: the draw-on is itself the progress signal, and Android's guidance is that no additional spinner is needed once the splash only dismisses when the app is ready.
 
@@ -844,7 +888,7 @@ void main() {
   ) async {
     const canvas = 1024.0;
     const markSize = 620.0;
-    const stroke = 34.0;
+    const stroke = 18.6;
 
     // A path that spills past the canvas would ship a clipped icon.
     final markBounds = buildVasePath(const Size(markSize, markSize)).getBounds();
@@ -864,15 +908,13 @@ void main() {
     final inset = (canvas - markSize) / 2;
     c.save();
     c.translate(inset, inset);
-    c.drawPath(
-      buildVasePath(const Size(markSize, markSize)),
-      Paint()
-        ..color = AppColors.charcoal
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
+    // Reuse the widget's painter so the icon and the splash animation cannot
+    // drift apart — it already applies the lighter footring weight.
+    VaseLogoPainter(
+      color: AppColors.ink,
+      strokeWidth: stroke,
+      progress: 1.0,
+    ).paint(c, const Size(markSize, markSize));
     c.restore();
 
     final image = await recorder.endRecording().toImage(
@@ -895,7 +937,9 @@ void main() {
 }
 ```
 
-`stroke` is scaled from the approved splash stroke width: the mark renders at 620px here versus 120pt on the splash, so multiply the approved width by ~5.2. Adjust if the result looks too heavy at 60pt.
+`stroke = 18.6` is the approved 3.6 splash weight carried to this canvas: the mark renders at 620px here versus 120pt on the splash (5.17×), times the 1.55× icon uplift the design round settled on for small-size legibility, then rounded. The footring is drawn by the same painter loop at 0.75× of that.
+
+If the icon looks too heavy at real size, the footring gap is what closes first — check it before adjusting anything else.
 
 - [ ] **Step 2: Generate the PNG**
 
