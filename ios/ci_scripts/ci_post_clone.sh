@@ -19,8 +19,9 @@ flutter precache --ios
 flutter pub get
 
 # Regenerate Pods with correct paths for this environment.
-# --no-repo-update skips CDN access (Xcode Cloud can't reach cdn.jsdelivr.net).
-# Pods source code is checked into the repo so no downloads are needed.
+# --no-repo-update skips refreshing the local spec repo; resolution comes from
+# the checked-in Podfile.lock. Note ios/Pods itself is gitignored and untracked,
+# despite what an earlier version of this comment claimed.
 cd ios && pod install --no-repo-update
 
 exit 0
