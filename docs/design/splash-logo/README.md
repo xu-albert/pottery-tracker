@@ -282,6 +282,20 @@ This round is also the first to abandon CSS/Web-Animations per-path timing for a
 paths, not four independent timelines. It carries a **pen-position marker** so the
 relationship can actually be seen rather than assumed.
 
+### Round 23 — `round-23-footring-left-to-right`
+The footring reversal from round 21 was correct while the strokes were independent, and
+wrong once they were synced — a decision that stopped being valid when its premise
+changed.
+
+The pen crosses the base **left to right**, reaching `(33,100)` at 41% and `(67,100)` at
+59%. Once the ring is gated on that window, drawing it right-to-left runs it *against*
+the stroke it is meant to be following, closing toward the pen instead of trailing it.
+The asymmetry that read as deliberate counterpoint among independent marks reads as a
+mistake among synced ones.
+
+The round keeps a `W-rev` tile drawn against the pen, so the difference is visible rather
+than asserted.
+
 ---
 
 ## What generalizes
