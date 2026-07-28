@@ -296,6 +296,29 @@ mistake among synced ones.
 The round keeps a `W-rev` tile drawn against the pen, so the difference is visible rather
 than asserted.
 
+### Round 24 — `round-24-transitions-final-drawon`
+The splash-to-app handoff, re-rendered with the *approved* draw-on rather than the
+placeholder used in round 18 — a transition can only be judged against the animation it
+actually follows.
+
+**T4 was chosen:** a 250ms beat, then the mark fades and scales to 1.16 over 400ms while
+the app arrives beneath it. Reads as moving past the mark rather than the mark being
+switched off.
+
+---
+
+## The shipped animation
+
+| Property | Value |
+| --- | --- |
+| Draw duration | 750ms |
+| Easing | `Curves.easeInOutQuart` |
+| Rim | starts at its leftmost point `(36, 9.9)`, sweeping up over the top |
+| Body | starts at the same point, descending the left side |
+| Footring | left to right, gated on the body's 41%→59% crossing window |
+| Exit hold | 250ms |
+| Exit lift | 400ms, fade to 0 while scaling to 1.16 |
+
 ---
 
 ## What generalizes

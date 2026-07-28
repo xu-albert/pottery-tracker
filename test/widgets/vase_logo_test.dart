@@ -44,6 +44,52 @@ void main() {
     });
   });
 
+  group('footring timing window', () {
+    test('matches where the body stroke crosses the footring ends', () {
+      final metrics = buildVasePath(
+        const Size(120, 120),
+      ).computeMetrics().toList();
+      final body = metrics[1];
+      final foot = metrics[2];
+
+      final footLeft = foot.getTangentForOffset(0)!.position;
+      final footRight = foot.getTangentForOffset(foot.length)!.position;
+
+      double fractionNearest(Offset target) {
+        var best = 0.0;
+        var bestDistance = double.infinity;
+        const samples = 2000;
+        for (var i = 0; i <= samples; i++) {
+          final f = i / samples;
+          final point = body.getTangentForOffset(body.length * f)!.position;
+          final d = (point - target).distanceSquared;
+          if (d < bestDistance) {
+            bestDistance = d;
+            best = f;
+          }
+        }
+        return best;
+      }
+
+      // The painter gates the footring on 0.41 -> 0.59 so the ring appears
+      // under the pen. If the path is ever redrawn these must be re-measured.
+      expect(fractionNearest(footLeft), closeTo(0.41, 0.02));
+      expect(fractionNearest(footRight), closeTo(0.59, 0.02));
+    });
+
+    test('body reaches the footring left end before the right end', () {
+      final metrics = buildVasePath(
+        const Size(120, 120),
+      ).computeMetrics().toList();
+      final foot = metrics[2];
+      // Left-to-right: the ring must run the same way the pen crosses the base.
+      expect(
+        foot.getTangentForOffset(0)!.position.dx,
+        lessThan(foot.getTangentForOffset(foot.length)!.position.dx),
+      );
+    });
+  });
+
   group('VaseLogo', () {
     testWidgets('renders the mark', (tester) async {
       const boundaryKey = Key('vase_logo_golden_boundary');

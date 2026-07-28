@@ -9,10 +9,27 @@ const _footringSubpath = 2;
 /// How much lighter the footring draws than the body.
 const _footringWeightRatio = 0.75;
 
+/// Where along the body subpath the stroke passes the footring's two ends.
+///
+/// The footring is a chord between two points the body outline already travels
+/// through, so it cannot be drawn as part of that stroke without doubling back.
+/// Instead it is gated on these fractions, which makes the ring appear under the
+/// pen as it sweeps the base rather than running on its own clock. Measured from
+/// the path itself; `vase_logo_test.dart` asserts they still match the geometry.
+const _footringWindowStart = 0.41;
+const _footringWindowEnd = 0.59;
+
 /// Approved stroke weight for the vase mark, shared by [VaseLogo] and
 /// [AnimatedVaseLogo]. This is a locked design value — do not change it
 /// without updating the approved design and regenerating the app icon.
 const kVaseStrokeWidth = 3.6;
+
+/// Approved draw-on duration, in milliseconds.
+const kVaseDrawMs = 750;
+
+/// Approved draw-on easing: a pronounced slow-fast-slow, so the stroke starts
+/// and lands softly with a confident middle.
+const kVaseDrawCurve = Curves.easeInOutQuart;
 
 /// The vase silhouette centreline, authored in a 100x120 design space and
 /// scaled to [size]. Single source of shape truth for the logo, the splash
@@ -29,12 +46,14 @@ Path buildVasePath(Size size) {
 
   final path = Path();
 
-  // Rim — closed mouth ellipse.
-  path.moveTo(x(64), y(9.8));
-  path.cubicTo(x(64.3), y(11.8), x(58), y(13.6), x(50), y(13.7));
-  path.cubicTo(x(42), y(13.6), x(35.8), y(12), x(36), y(9.9));
+  // Rim — closed mouth ellipse, rooted at its leftmost point so it begins where
+  // the body begins. The two strokes then leave one point and diverge, the rim
+  // sweeping up over the top while the body descends.
+  path.moveTo(x(36), y(9.9));
   path.cubicTo(x(36.2), y(7.8), x(42.5), y(6.2), x(50.5), y(6.3));
   path.cubicTo(x(58.3), y(6.4), x(63.8), y(8), x(64), y(9.8));
+  path.cubicTo(x(64.3), y(11.8), x(58), y(13.6), x(50), y(13.7));
+  path.cubicTo(x(42), y(13.6), x(35.8), y(12), x(36), y(9.9));
   path.close();
 
   // Body — open outline: trumpet lip, down the left, across the base, up
@@ -107,15 +126,28 @@ class VaseLogoPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
+    final p = progress.clamp(0.0, 1.0);
     final metrics = buildVasePath(size).computeMetrics().toList();
 
     for (var i = 0; i < metrics.length; i++) {
       final metric = metrics[i];
-      paint.strokeWidth = i == _footringSubpath
+      final isFootring = i == _footringSubpath;
+
+      paint.strokeWidth = isFootring
           ? strokeWidth * _footringWeightRatio
           : strokeWidth;
+
+      // Every subpath advances off the same progress value, but the footring is
+      // remapped so it only draws while the body's stroke is crossing the base.
+      final subProgress = isFootring
+          ? ((p - _footringWindowStart) /
+                    (_footringWindowEnd - _footringWindowStart))
+                .clamp(0.0, 1.0)
+          : p;
+      if (subProgress <= 0) continue;
+
       canvas.drawPath(
-        metric.extractPath(0, metric.length * progress.clamp(0.0, 1.0)),
+        metric.extractPath(0, metric.length * subProgress),
         paint,
       );
     }
@@ -134,7 +166,7 @@ class AnimatedVaseLogo extends StatefulWidget {
     required this.size,
     this.color,
     this.strokeWidth = kVaseStrokeWidth,
-    this.duration = const Duration(milliseconds: 900),
+    this.duration = const Duration(milliseconds: kVaseDrawMs),
     this.onComplete,
   });
 
@@ -157,7 +189,7 @@ class _AnimatedVaseLogoState extends State<AnimatedVaseLogo>
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
-    _progress = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _progress = CurvedAnimation(parent: _controller, curve: kVaseDrawCurve);
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         widget.onComplete?.call();
