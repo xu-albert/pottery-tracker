@@ -261,6 +261,27 @@ round ships with a **4× slow-motion toggle** and a direction-arrow overlay, bec
 choice cannot honestly be made at 750ms. Variants R and S delay the footring so the
 opposing direction becomes legible rather than merely felt.
 
+### Round 22 — `round-22-footring-follows-stroke`
+The footring still read as a separate mark. The instinct was that it should be part of
+the pot's stroke rather than drawn independently — correct, but the fix is not the
+obvious one.
+
+**It cannot literally join the stroke.** The footring is a chord between `(33,100)` and
+`(67,100)`, two points the body outline *already passes through*. Making it continuous
+would require the pen to double back over ground it had covered. It is a detail line, not
+part of the silhouette.
+
+What actually made it feel disconnected was timing: it ran its own 750ms, so it finished
+long before the body's stroke arrived at the base. The fix is to drive every subpath from
+**one clock** and gate the footring on the body's own progress. Measuring where the body
+path passes those two points gives a crossing window of **41% → 59%** of its length —
+draw the ring only across that window and it appears under the pen as it sweeps by.
+
+This round is also the first to abandon CSS/Web-Animations per-path timing for a single
+`requestAnimationFrame` loop, because "follows the stroke" is a *relationship* between
+paths, not four independent timelines. It carries a **pen-position marker** so the
+relationship can actually be seen rather than assumed.
+
 ---
 
 ## What generalizes
