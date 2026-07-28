@@ -305,6 +305,16 @@ actually follows.
 the app arrives beneath it. Reads as moving past the mark rather than the mark being
 switched off.
 
+### Round 25 — `round-25-final-device-*`
+The shipped sequence captured on device: a single mark at the top-left, the stroke
+descending and the vessel resolving, a beat on the finished drawing, then the mark fading
+and scaling away as the app arrives. `round-25-final-device-capture.mp4` is the raw
+recording.
+
+Verified against the three complaints that started this stretch of work: the stroke now
+grows from one point rather than appearing on both sides, the eased 750ms reads as
+deliberate rather than slow, and the handoff is a lift rather than a cut.
+
 ---
 
 ## The shipped animation
