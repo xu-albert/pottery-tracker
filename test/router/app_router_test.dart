@@ -3,26 +3,20 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pottery_tracker/app.dart';
 import 'package:pottery_tracker/features/auth/screens/sign_in_screen.dart';
 import 'package:pottery_tracker/l10n/app_localizations.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
 import 'package:pottery_tracker/router/app_router.dart';
-import 'package:pottery_tracker/widgets/vase_logo.dart';
 
 import '../helpers/firebase_mocks.dart';
 
-ProviderContainer _container({
-  required AuthStatus status,
-  required bool splashComplete,
-}) {
+ProviderContainer _container({required AuthStatus status}) {
   return ProviderContainer(
     overrides: [
       authProvider.overrideWith(
         (ref) => AuthNotifier.withState(AuthState(status: status)),
       ),
-      splashCompleteProvider.overrideWith((ref) => splashComplete),
     ],
   );
 }
@@ -30,8 +24,8 @@ ProviderContainer _container({
 /// Pumps the real [routerProvider] inside [container] and returns the
 /// resulting [GoRouter] so tests can inspect where the redirect landed.
 ///
-/// The destination screens (SignInScreen, SplashScreen, ...) are real
-/// widgets that read `AppLocalizations.of(context)`, so this needs the full
+/// The destination screens are real widgets that read
+/// `AppLocalizations.of(context)`, so this needs the full
 /// localization delegate set, matching `test/helpers/test_helpers.dart`.
 Future<GoRouter> _pumpRouter(
   WidgetTester tester,
@@ -72,10 +66,7 @@ void main() {
     testWidgets('the app fades in rather than cutting from the splash', (
       tester,
     ) async {
-      final container = _container(
-        status: AuthStatus.unauthenticated,
-        splashComplete: true,
-      );
+      final container = _container(status: AuthStatus.unauthenticated);
       addTearDown(container.dispose);
 
       final router = container.read(routerProvider);
@@ -96,8 +87,8 @@ void main() {
       );
       await tester.pump();
 
-      // A FadeTransition above the destination means the incoming page is
-      // animating its opacity instead of appearing on a single frame.
+      // Sign-out still swaps routes under the overlay, and after launch it is
+      // a plain navigation, so the destination keeps its own transition.
       expect(
         find.ancestor(
           of: find.byType(SignInScreen),
@@ -112,96 +103,34 @@ void main() {
   });
 
   group('router redirect', () {
-    testWidgets('holds on /splash while auth is unknown', (tester) async {
-      final container = _container(
-        status: AuthStatus.unknown,
-        splashComplete: true,
-      );
+    // These assert where the redirect lands, not that the destination renders.
+    Future<String> pathFor(WidgetTester tester, AuthStatus status) async {
+      final container = _container(status: status);
       addTearDown(container.dispose);
-
       final router = await _pumpRouter(tester, container);
+      // The album subtree reaches for the database, Firebase Storage and the
+      // sync stack, all of which `main()` provides before `runApp` and a test
+      // does not. Its build failure is irrelevant here: the redirect has
+      // already chosen the destination, which is what these tests assert.
+      tester.takeException();
+      return router.routerDelegate.currentConfiguration.uri.path;
+    }
 
-      expect(router.routerDelegate.currentConfiguration.uri.path, '/splash');
+    testWidgets('stays put while auth is still resolving', (tester) async {
+      // The splash overlay covers the app during this window, so the router has
+      // no holding route to sit on — and the album underneath gets a head start
+      // on its query instead of being built later.
+      expect(await pathFor(tester, AuthStatus.unknown), '/');
     });
 
-    testWidgets('holds on /splash while the animation is unfinished', (
+    testWidgets('sends a signed-out user to sign-in once auth resolves', (
       tester,
     ) async {
-      final container = _container(
-        status: AuthStatus.authenticated,
-        splashComplete: false,
-      );
-      addTearDown(container.dispose);
-
-      final router = await _pumpRouter(tester, container);
-
-      expect(router.routerDelegate.currentConfiguration.uri.path, '/splash');
+      expect(await pathFor(tester, AuthStatus.unauthenticated), '/sign-in');
     });
 
-    testWidgets('leaves /splash once both conditions are met', (tester) async {
-      final container = _container(
-        status: AuthStatus.unauthenticated,
-        splashComplete: true,
-      );
-      addTearDown(container.dispose);
-
-      final router = await _pumpRouter(tester, container);
-
-      expect(router.routerDelegate.currentConfiguration.uri.path, '/sign-in');
-    });
-
-    testWidgets('preserves the in-flight splash animation state across a '
-        'routerProvider rebuild', (tester) async {
-      // Regression test for a bug where routerProvider (a plain Provider
-      // that watches authProvider and splashCompleteProvider) minted a
-      // brand-new GoRouter -- with a fresh default GlobalKey<NavigatorState>
-      // -- every time either dependency changed. That discarded and
-      // remounted the whole Navigator subtree, restarting SplashScreen's
-      // AnimatedVaseLogo draw-on animation from zero.
-      //
-      // This test mounts the real, reactive `PotteryTrackerApp` (the same
-      // widget main.dart uses, which does `ref.watch(routerProvider)` in
-      // its build method) so that flipping a watched provider actually
-      // triggers a routerProvider rebuild while the tree is mounted --
-      // unlike the other tests in this file, which read the router once
-      // via a fixed provider override and never let it change.
-      final container = _container(
-        status: AuthStatus.unknown,
-        splashComplete: false,
-      );
-      addTearDown(container.dispose);
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const PotteryTrackerApp(),
-        ),
-      );
-      await tester.pump();
-
-      // Advance partway into the 900ms draw-on animation.
-      await tester.pump(const Duration(milliseconds: 400));
-
-      final logoStateBefore = tester.state(find.byType(AnimatedVaseLogo));
-
-      // Flip splashCompleteProvider while auth is still unknown. The
-      // redirect destination doesn't change -- the router still parks on
-      // /splash -- but this is exactly the trigger that used to make
-      // routerProvider recompute and hand back a brand-new
-      // GoRouter/Navigator mid-animation.
-      container.read(splashCompleteProvider.notifier).state = true;
-      await tester.pump();
-
-      final logoStateAfter = tester.state(find.byType(AnimatedVaseLogo));
-
-      expect(
-        identical(logoStateBefore, logoStateAfter),
-        isTrue,
-        reason:
-            'AnimatedVaseLogo State must survive a routerProvider '
-            'rebuild, otherwise the draw-on animation restarts from '
-            'zero on every launch',
-      );
+    testWidgets('keeps a signed-in user on the album', (tester) async {
+      expect(await pathFor(tester, AuthStatus.authenticated), '/');
     });
   });
 }

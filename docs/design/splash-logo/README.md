@@ -336,6 +336,33 @@ the first frame after the route swap — the splash is a *route*, so the app can
 until the splash stops existing. Closing it properly means making the splash an overlay
 above an already-built app rather than a route beside it.
 
+### Round 27 — `round-27-overlay-crossfade-*` — the splash stops being a route
+Two rounds of tuning could not close the handoff gap, because the gap was
+architectural. The splash was a **route**, so the app could not exist until the splash
+stopped existing — every frame of "blank cream" was Flutter building the shell and album
+*after* the splash had gone.
+
+The splash is now an **overlay**: `MaterialApp.builder` stacks it above the router, so
+the app builds, redirects and loads its data underneath while the mark is still being
+drawn. Lifting the overlay — background and all — reveals a screen that was already
+there. The capture shows the journal visible *through* the fading mark, both on screen at
+once. That is the cross-fade T4 described, and no amount of route-transition tuning could
+have produced it.
+
+Consequences worth noting:
+
+- The router no longer holds anything. `redirect` returns `null` while auth is resolving
+  and the app simply sits on `/`, covered.
+- `/splash` as a route is gone.
+- Router tests changed shape: they now reach real screens, whose subtrees want the
+  database, Firebase Storage and the sync stack. They assert the redirect *destination*
+  and explicitly tolerate the destination failing to build under test.
+
+**Sequence of fixes tried, in order:** add a route transition (no effect — it was fading
+in an empty page); pre-warm the album's query (450ms → 330ms); add motion to the entry
+(no effect — the gap was before the transition); make the splash an overlay (gap gone).
+The first three treated the symptom.
+
 ---
 
 ## The shipped animation
