@@ -232,6 +232,21 @@ Round 19 also carries a **3× slow-motion toggle**, because at 600ms the mechani
 too fast to diagnose by eye — the thing that made the doubling explicable was watching
 it slowed down.
 
+### Round 20 — `round-20-left-start-easing`
+Two refinements to B. The rim ellipse was re-rooted from its rightmost point `(64, 9.8)`
+to its **leftmost** `(36, 9.9)` — the same place the body begins — so both strokes leave
+one point and diverge, the rim sweeping up over the top while the body descends. That
+reads as a single gesture splitting rather than two marks appearing in different places.
+
+The second is easing. `easeInOut` is already slow-fast-slow, just the mildest version;
+the round compares it against `easeInOutCubic`, `Quart` and `Quint`, with each variant's
+speed profile drawn in the corner of its tile so the curve and its effect sit
+side by side. Steeper curves read as more deliberate but risk looking like a stutter at
+short durations.
+
+The footring is the one stroke that cannot share the start point — it lives at the base.
+It starts at its left end instead, so everything still travels left to right.
+
 ---
 
 ## What generalizes

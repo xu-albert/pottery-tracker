@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Splash draw-on — round 20</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #EDE5DA; font-family: -apple-system, Helvetica, Arial, sans-serif;
+         color: #313131; padding: 26px 26px 44px; }
+  h1 { font-size: 15px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       opacity: .55; margin-bottom: 6px; }
+  h2 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       opacity: .5; margin: 32px 0 14px; padding-top: 20px;
+       border-top: 1px solid rgba(49,49,49,.15); }
+  .hint { font-size: 13px; opacity: .62; margin-bottom: 20px; max-width: 780px; line-height: 1.5; }
+  .grid { display: flex; flex-wrap: wrap; gap: 24px; }
+  .card { width: 206px; }
+  .stage { width: 206px; height: 244px; background: #EDE5DA; border-radius: 14px;
+           display: flex; align-items: center; justify-content: center;
+           border: 1px solid rgba(49,49,49,.14); position: relative; }
+  .card.rec .stage { border-color: rgba(49,49,49,.55); border-width: 2px; }
+  .name { font-size: 14px; font-weight: 700; margin-top: 10px; }
+  .desc { font-size: 12px; opacity: .64; margin-top: 3px; line-height: 1.45; min-height: 54px; }
+  .dur { font-size: 11.5px; opacity: .5; font-family: ui-monospace, Menlo, monospace; }
+  .tag { display:inline-block; font-size:10px; letter-spacing:.05em; text-transform:uppercase;
+         background:rgba(49,49,49,.16); padding:2px 7px; border-radius:999px; margin-left:6px;
+         vertical-align:2px; }
+  button { font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 999px;
+           border: 1px solid rgba(49,49,49,.3); background: transparent; color: #313131;
+           cursor: pointer; margin-top: 8px; }
+  button:hover { background: rgba(49,49,49,.08); }
+  .bar { position: sticky; top: 0; background: #EDE5DA; padding: 10px 0 14px; z-index: 5;
+         border-bottom: 1px solid rgba(49,49,49,.15); margin-bottom: 20px; }
+  .bar button { margin-top: 0; margin-right: 8px; font-size: 13px; padding: 8px 18px; }
+  .note { font-size: 12px; opacity: .6; margin-left: 10px; }
+  .curve { position: absolute; right: 8px; bottom: 8px; opacity: .5; }
+  .dot { position:absolute; width:9px; height:9px; border-radius:50%; background:#BF7B5E;
+         left:calc(50% - 63px); top:22px; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <button onclick="playAll()">▶ Replay all</button>
+  <button onclick="toggleSlow()">⏱ <span id="slowlbl">Slow to 3×</span></button>
+  <button onclick="toggleDot()">◉ <span id="dotlbl">Show start point</span></button>
+  <span class="note" id="note"></span>
+</div>
+
+<h1>Round 20 — B, re-rooted to the top-left, with easing options</h1>
+<div class="hint">
+  All variants are <b>B</b>: three subpaths drawing simultaneously. The change is that the
+  rim now starts at its <b>leftmost point</b> — the same place the body starts — and sweeps
+  up over the top while the body descends. The little curve in each corner is that
+  variant's speed profile: flat means constant, steep-in-the-middle means slow&rarr;fast&rarr;slow.
+</div>
+
+<h2>Easing — how pronounced should slow-fast-slow be?</h2>
+<div class="grid" id="grid1"></div>
+
+<h2>Duration — at the recommended easing</h2>
+<div class="grid" id="grid2"></div>
+
+<script>
+// Rim re-rooted to its LEFTMOST point (36, 9.9), sweeping up and over the top.
+const RIM_L = "M 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 Z";
+const BODY  = "M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4";
+const FOOT  = "M 33 100 C 40 101.5, 60 101.5, 67 100";
+
+const W = 5.0, FW = 3.75;
+let RATE = 1, SHOWDOT = false;
+
+const EASES = [
+  { key:'ease-in-out',                 label:'easeInOut',      flutter:'Curves.easeInOut',
+    desc:'What ships today. The gentlest slow-fast-slow — noticeable, but close to even.' },
+  { key:'cubic-bezier(.65,0,.35,1)',   label:'easeInOutCubic', flutter:'Curves.easeInOutCubic',
+    desc:'Clearly eased. Starts and lands softly with a confident middle. The usual sweet spot.' },
+  { key:'cubic-bezier(.76,0,.24,1)',   label:'easeInOutQuart', flutter:'Curves.easeInOutQuart',
+    desc:'Strong. The stroke hesitates, rushes the middle, then settles. Reads as deliberate.' },
+  { key:'cubic-bezier(.83,0,.17,1)',   label:'easeInOutQuint', flutter:'Curves.easeInOutQuint',
+    desc:'Most extreme. Almost a pause at each end. Dramatic — can read as stuttering at short durations.' },
+];
+
+function curveSvg(cb) {
+  const m = cb.match(/cubic-bezier\(([^)]+)\)/);
+  let p = m ? m[1].split(',').map(Number) : [.42,0,.58,1];
+  return `<svg class="curve" width="42" height="42" viewBox="0 0 1 1">
+    <path d="M0,1 C${p[0]},${1-p[1]} ${p[2]},${1-p[3]} 1,0" fill="none"
+      stroke="#313131" stroke-width=".055" stroke-linecap="round"/>
+    <rect x="0" y="0" width="1" height="1" fill="none" stroke="#313131"
+      stroke-width=".02" opacity=".25"/></svg>`;
+}
+
+function makeStage(size) {
+  return `<svg width="${size*100/120}" height="${size}" viewBox="0 0 100 120">
+    <g fill="none" stroke="#313131" stroke-linecap="round" stroke-linejoin="round">
+      <path d="${RIM_L}" stroke-width="${W}"/>
+      <path d="${BODY}" stroke-width="${W}"/>
+      <path d="${FOOT}" stroke-width="${FW}"/>
+    </g></svg>`;
+}
+
+function animate(stageEl, dur, ease) {
+  stageEl.querySelectorAll('path').forEach(el => {
+    const L = el.getTotalLength();
+    el.style.strokeDasharray = L;
+    el.style.strokeDashoffset = L;
+    el.getAnimations().forEach(a => a.cancel());
+    el.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }],
+      { duration: dur * RATE, easing: ease, fill: 'forwards' });
+  });
+}
+
+const SET1 = EASES.map((e, i) => ({
+  name: e.label, dur: 650, ease: e.key, desc: e.desc, flutter: e.flutter,
+  rec: e.label === 'easeInOutCubic'
+}));
+
+const SET2 = [550, 650, 750].map(d => ({
+  name: d + 'ms', dur: d, ease: 'cubic-bezier(.65,0,.35,1)', flutter: 'Curves.easeInOutCubic',
+  desc: d === 550 ? 'Brisk. Least chance of feeling slow, least room for the easing to read.'
+      : d === 650 ? 'Your pick from round 18, now with the eased profile.'
+      : 'A touch more room for the slow ends to register.',
+  rec: d === 650
+}));
+
+function build(containerId, set) {
+  const c = document.getElementById(containerId);
+  set.forEach((v, i) => {
+    const id = containerId + '_' + i;
+    const el = document.createElement('div');
+    el.className = 'card' + (v.rec ? ' rec' : '');
+    el.innerHTML = `<div class="stage" id="${id}">${makeStage(196)}${curveSvg(v.ease)}
+        <div class="dot" style="display:none"></div></div>
+      <div class="name">${v.name}${v.rec ? '<span class="tag">suggested</span>' : ''}</div>
+      <div class="dur">${v.dur}ms · ${v.flutter}</div>
+      <div class="desc">${v.desc}</div>
+      <button onclick="play('${id}',${v.dur},'${v.ease}')">▶ Replay</button>`;
+    c.appendChild(el);
+  });
+}
+build('grid1', SET1);
+build('grid2', SET2);
+
+const ALL = [];
+SET1.forEach((v,i) => ALL.push(['grid1_'+i, v.dur, v.ease]));
+SET2.forEach((v,i) => ALL.push(['grid2_'+i, v.dur, v.ease]));
+
+function play(id, dur, ease) { animate(document.getElementById(id), dur, ease); }
+function playAll() { ALL.forEach(a => play(a[0], a[1], a[2])); }
+function toggleSlow() {
+  RATE = RATE === 1 ? 3 : 1;
+  document.getElementById('slowlbl').textContent = RATE === 1 ? 'Slow to 3×' : 'Back to real speed';
+  document.getElementById('note').textContent = RATE === 1 ? '' : 'Playing 3× slower than ships.';
+  playAll();
+}
+function toggleDot() {
+  SHOWDOT = !SHOWDOT;
+  document.querySelectorAll('.dot').forEach(d => d.style.display = SHOWDOT ? 'block' : 'none');
+  document.getElementById('dotlbl').textContent = SHOWDOT ? 'Hide start point' : 'Show start point';
+}
+window.addEventListener('load', playAll);
+</script>
+</body>
+</html>
