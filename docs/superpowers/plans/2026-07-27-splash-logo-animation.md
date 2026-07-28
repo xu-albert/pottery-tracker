@@ -839,10 +839,19 @@ import 'package:pottery_tracker/widgets/vase_logo.dart';
 /// Renders the approved vase path to assets/icon/icon.png at 1024x1024.
 /// Run with: flutter test tool/generate_icon_test.dart
 void main() {
-  testWidgets('generate app icon', (tester) async {
+  testWidgets('generates a full-bleed 1024px icon with the mark inside', (
+    tester,
+  ) async {
     const canvas = 1024.0;
     const markSize = 620.0;
     const stroke = 34.0;
+
+    // A path that spills past the canvas would ship a clipped icon.
+    final markBounds = buildVasePath(const Size(markSize, markSize)).getBounds();
+    expect(markBounds.left, greaterThanOrEqualTo(-stroke / 2));
+    expect(markBounds.top, greaterThanOrEqualTo(-stroke / 2));
+    expect(markBounds.right, lessThanOrEqualTo(markSize + stroke / 2));
+    expect(markBounds.bottom, lessThanOrEqualTo(markSize + stroke / 2));
 
     final recorder = ui.PictureRecorder();
     final c = Canvas(recorder);
@@ -872,9 +881,16 @@ void main() {
     );
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
 
-    File('assets/icon/icon.png').writeAsBytesSync(
-      bytes!.buffer.asUint8List(),
-    );
+    expect(image.width, 1024);
+    expect(image.height, 1024);
+    expect(bytes, isNotNull);
+
+    final file = File('assets/icon/icon.png')
+      ..writeAsBytesSync(bytes!.buffer.asUint8List());
+
+    // A near-empty PNG means the path failed to render.
+    expect(file.existsSync(), isTrue);
+    expect(file.lengthSync(), greaterThan(2000));
   });
 }
 ```
