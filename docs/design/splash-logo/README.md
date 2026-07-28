@@ -162,6 +162,31 @@ A convenient property made this cheap: because the icon's stroke is derived from
 comparison could therefore be composited in the browser from a single rendered PNG,
 instead of re-rendering four times through Flutter.
 
+### Round 15 — `round-15-device-*` — it actually works
+Captured on the iPhone 16 Pro simulator: the vase app icon zooming open, the cream
+launch screen, then the mark drawing itself on — rim first, down the neck, body, footring
+last — completing once and holding before the app moves on. `round-15-device-launch.mp4`
+is the raw recording; the PNGs are frame sequences at 20fps.
+
+The verification itself produced a lesson worth keeping. The first attempt installed a
+`flutter build ios --simulator --no-codesign` build directly with `simctl`, and the app
+sat on a blank cream screen forever. That looked exactly like a critical bug in this
+feature. It wasn't: an unsigned build has no keychain entitlement, so
+`SecItemCopyMatching` fails with `-34018`, `flutter_secure_storage` cannot read the
+SQLCipher key, and `AppDatabase.open()` throws in `main()` before `runApp` is ever
+called — leaving the native launch screen up indefinitely.
+
+Two things fell out of that:
+
+- **Verify with the same toolchain that ships.** `flutter run` signs the app; a
+  hand-installed unsigned build silently loses entitlements and fails in ways that
+  impersonate application bugs.
+- **A blank launch screen is now an ambiguous failure mode.** Because the native launch
+  screen is deliberately solid cream, "stuck before `runApp`" and "showing the splash"
+  look identical. `main()` awaits `AppDatabase.open()` and `SharedPreferences` with no
+  try/catch, so any failure there is an unrecoverable blank screen with no error UI.
+  Worth guarding — noted as a follow-up, not fixed here since it predates this work.
+
 ---
 
 ## What generalizes
