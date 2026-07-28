@@ -146,6 +146,22 @@ ratio. The fix scales by `min(w/100, h/120)` and centres on both axes, so the ma
 letterboxes in any box and no caller can distort it — plus an aspect assertion so it
 cannot silently return.
 
+### Rounds 13 & 14 — `round-13-icon-at-real-sizes`, `round-14-icon-scale-in-tile`
+Once the mark was in code, the generated `icon.png` had to be judged as an *icon*, not as
+a drawing. Round 13 renders it at the sizes iOS actually uses — 180, 120, 80, 60, 40px.
+Viewed at 1024 the stroke looked far too heavy; at real sizes it reads cleanly all the way
+down. **Judging a mark at its authoring size tells you almost nothing about how it ships.**
+
+Round 14 varies how much of the tile the vase fills — 61%, 66%, 72%, 78% — at four tile
+sizes. 61% (the first generated value) reads timid beside denser home-screen icons; 78%
+crowds the rounded corners. **72% was chosen**, and `markSize` in
+`tool/generate_icon_test.dart` set to 740 of 1024.
+
+A convenient property made this cheap: because the icon's stroke is derived from
+`markSize`, changing it is a pure uniform zoom of the mark within a fixed canvas. The
+comparison could therefore be composited in the browser from a single rendered PNG,
+instead of re-rendering four times through Flutter.
+
 ---
 
 ## What generalizes
