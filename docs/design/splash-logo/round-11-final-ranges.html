@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #EDE5DA;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    color: #3C3C3C;
+    padding: 28px 24px 20px;
+  }
+  h2 { font-size: 12.5px; font-weight: 700; letter-spacing: .06em;
+       text-transform: uppercase; opacity: .5; margin-bottom: 12px; }
+  h2 span { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .8; }
+  .row { display: flex; }
+  .cell { flex: 1; text-align: center; }
+  .label { font-size: 12.5px; margin-top: 6px; }
+  .label b { font-weight: 700; }
+  .label .hex { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .band { padding-bottom: 16px; margin-bottom: 18px;
+          border-bottom: 1px solid rgba(60,60,60,.18); }
+  .band:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+
+<script>
+const RIM  = "M 64 9.8 C 64.3 11.8, 58 13.6, 50 13.7 C 42 13.6, 35.8 12, 36 9.9 C 36.2 7.8, 42.5 6.2, 50.5 6.3 C 58.3 6.4, 63.8 8, 64 9.8 Z";
+const BODY = "M 36 10.4 C 40 13.5, 44 17, 44.5 23 C 44.2 33, 43 42, 42.5 51 C 41.5 59, 36 64, 32 70 C 25.5 78, 20.5 85, 21 91 C 21.5 96, 26 99, 33 100 C 33.5 102, 33 104, 33 105.5 C 38 107.5, 62 107.5, 67 105.5 C 67 104, 66.5 102, 67 100 C 74 99, 78.5 96, 79 91 C 79.5 85, 74.5 78, 68 70 C 64 64, 58.5 59, 57.5 51 C 57 42, 55.8 33, 55.5 23 C 56 17, 60 13.5, 64 10.4";
+const FOOT = "M 33 100 C 40 101.5, 60 101.5, 67 100";
+
+function vase(w, h, sw, color) {
+  const fw = (sw * 0.75).toFixed(2);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 100 120">
+    <g fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+      <path stroke-width="${sw}" d="${RIM}"/>
+      <path stroke-width="${sw}" d="${BODY}"/>
+      <path stroke-width="${fw}" d="${FOOT}"/>
+    </g></svg>`;
+}
+
+const WEIGHTS = [3.0, 3.3, 3.6, 3.9, 4.2, 4.5, 4.8];
+
+// #3C3C3C (60) -> #1A1A1A (26), 7 steps
+const SHADES = [];
+for (let i = 0; i < 7; i++) {
+  const v = Math.round(60 - (60 - 26) * (i / 6));
+  const hex = "#" + v.toString(16).padStart(2, "0").repeat(3).toUpperCase();
+  SHADES.push(hex);
+}
+
+let html = "";
+
+html += `<div class="band"><h2>Stroke weight <span>&mdash; 3.0 to 4.8, shown at #2B2B2B</span></h2><div class="row">`;
+for (const w of WEIGHTS) {
+  html += `<div class="cell">${vase(122, 146, w, "#2B2B2B")}
+    <div class="label"><b>${w.toFixed(1)}</b></div></div>`;
+}
+html += `</div></div>`;
+
+html += `<div class="band"><h2>Shade <span>&mdash; #3C3C3C to #1A1A1A, shown at stroke 4.0</span></h2><div class="row">`;
+for (const c of SHADES) {
+  html += `<div class="cell">${vase(122, 146, 4.0, c)}
+    <div class="label"><span class="hex">${c}</span></div></div>`;
+}
+html += `</div></div>`;
+
+html += `<div class="band"><h2>Icon size (60pt) <span>&mdash; same weights, scaled up 1.55&times; for small-size legibility</span></h2><div class="row">`;
+for (const w of WEIGHTS) {
+  html += `<div class="cell">${vase(60, 72, +(w * 1.55).toFixed(2), "#2B2B2B")}
+    <div class="label"><b>${w.toFixed(1)}</b> &rarr; ${(w * 1.55).toFixed(1)}</div></div>`;
+}
+html += `</div></div>`;
+
+document.getElementById("out").innerHTML = html;
+</script>
+</body>
+</html>
