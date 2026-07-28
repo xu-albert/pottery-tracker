@@ -1,18 +1,36 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pottery_tracker/database/daos/pieces_dao.dart';
 import 'package:pottery_tracker/features/auth/screens/splash_screen.dart';
+import 'package:pottery_tracker/providers/pieces_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
 import 'package:pottery_tracker/widgets/vase_logo.dart';
 
-Future<ProviderContainer> _pumpSplash(WidgetTester tester) async {
-  final container = ProviderContainer();
+/// The splash waits for the album's data before releasing, so tests must supply
+/// it. Pass a controller to hold the data back and release it mid-test.
+Future<ProviderContainer> _pumpSplash(
+  WidgetTester tester, {
+  Stream<List<PieceWithCover>>? pieces,
+  Duration animationDuration = const Duration(milliseconds: kVaseDrawMs),
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      filteredPiecesProvider.overrideWith(
+        (ref) => pieces ?? Stream.value(const <PieceWithCover>[]),
+      ),
+    ],
+  );
   addTearDown(container.dispose);
 
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: SplashScreen()),
+      child: MaterialApp(
+        home: SplashScreen(animationDuration: animationDuration),
+      ),
     ),
   );
   return container;
@@ -82,19 +100,35 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
+  testWidgets('waits for the album data before releasing', (tester) async {
+    final pieces = StreamController<List<PieceWithCover>>();
+    addTearDown(pieces.close);
+
+    final container = await _pumpSplash(tester, pieces: pieces.stream);
+
+    // Draw, hold and lift all complete, but no data has arrived.
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(
+      container.read(splashCompleteProvider),
+      isFalse,
+      reason: 'must not hand over a screen with nothing to paint',
+    );
+
+    pieces.add(const <PieceWithCover>[]);
+    await tester.pump();
+    expect(container.read(splashCompleteProvider), isTrue);
+
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   testWidgets('fallback timer releases the splash if the stroke stalls', (
     tester,
   ) async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(
-          home: SplashScreen(animationDuration: Duration(days: 1)),
-        ),
-      ),
+    final container = await _pumpSplash(
+      tester,
+      animationDuration: const Duration(days: 1),
     );
 
     await tester.pump(const Duration(milliseconds: 950));

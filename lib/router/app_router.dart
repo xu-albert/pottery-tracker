@@ -17,6 +17,46 @@ import '../features/piece_detail/screens/piece_detail_screen.dart';
 import '../features/piece_detail/screens/archived_piece_detail_screen.dart';
 import '../features/feedback/screens/feedback_screen.dart';
 
+/// How long the app takes to arrive behind the departing splash mark.
+///
+/// The splash lifts its mark away and only then releases the router, so without
+/// a transition the app would snap in the instant the mark finished going.
+const _appEntryDuration = Duration(milliseconds: 420);
+
+/// How far the incoming page rises as it arrives, as a fraction of its height.
+///
+/// Opacity alone is not enough here: the app and the splash share the same cream
+/// ground, so the low-opacity half of a fade is invisible and the page reads as
+/// appearing suddenly in the last third of its own animation. A few pixels of
+/// movement are far more legible than faint alpha on a matching background.
+const _appEntryRise = 0.012;
+
+/// Wraps [child] in a page that fades and rises into place.
+CustomTransitionPage<T> _appEntry<T>(GoRouterState state, Widget child) {
+  return CustomTransitionPage<T>(
+    key: state.pageKey,
+    transitionDuration: _appEntryDuration,
+    reverseTransitionDuration: _appEntryDuration,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final eased = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      );
+      return FadeTransition(
+        opacity: eased,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, _appEntryRise),
+            end: Offset.zero,
+          ).animate(eased),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 /// Hoisted so it survives `routerProvider` recomputing. `GoRouter` mints a
 /// fresh `GoRouter` instance (and, without this, a fresh default
 /// `GlobalKey<NavigatorState>`) every time `authProvider` or
@@ -59,11 +99,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/sign-in',
-        builder: (context, state) => const SignInScreen(),
+        pageBuilder: (context, state) => _appEntry(state, const SignInScreen()),
       ),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) =>
-            ShellScreen(navigationShell: navigationShell),
+        pageBuilder: (context, state, navigationShell) =>
+            _appEntry(state, ShellScreen(navigationShell: navigationShell)),
         branches: [
           StatefulShellBranch(
             routes: [

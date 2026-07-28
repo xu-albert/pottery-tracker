@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pottery_tracker/app.dart';
+import 'package:pottery_tracker/features/auth/screens/sign_in_screen.dart';
 import 'package:pottery_tracker/l10n/app_localizations.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
@@ -64,6 +65,49 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       expect(container.read(splashCompleteProvider), isFalse);
+    });
+  });
+
+  group('app entry transition', () {
+    testWidgets('the app fades in rather than cutting from the splash', (
+      tester,
+    ) async {
+      final container = _container(
+        status: AuthStatus.unauthenticated,
+        splashComplete: true,
+      );
+      addTearDown(container.dispose);
+
+      final router = container.read(routerProvider);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en')],
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // A FadeTransition above the destination means the incoming page is
+      // animating its opacity instead of appearing on a single frame.
+      expect(
+        find.ancestor(
+          of: find.byType(SignInScreen),
+          matching: find.byType(FadeTransition),
+        ),
+        findsWidgets,
+        reason: 'destination should fade in, not cut',
+      );
+
+      await tester.pumpAndSettle();
     });
   });
 

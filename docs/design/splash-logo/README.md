@@ -315,6 +315,27 @@ Verified against the three complaints that started this stretch of work: the str
 grows from one point rather than appearing on both sides, the eased 750ms reads as
 deliberate rather than slow, and the handoff is a lift rather than a cut.
 
+### Round 26 — `round-26-handoff-*` — diagnosing the abrupt handoff
+Adding a fade to the destination route did not fix the abruptness, and capturing the
+handoff at 30fps showed why: the mark lifted away cleanly, then **~450ms of blank cream**
+passed before the app appeared in a single frame.
+
+The route fade *was* running. It was fading in an **empty** album — the album's stream
+only starts when the album mounts, so the page had nothing to paint during its own
+transition, and content popped in afterwards. A transition cannot rescue a screen that
+is not ready.
+
+Subscribing to the album's query from the splash, while the mark is still being drawn,
+means the data has arrived by the time the router is released. That cut the gap to
+~330ms. A slight rise was added to the incoming page too, because the app and the splash
+share the same cream ground and the low-opacity half of a pure fade is simply invisible
+against it.
+
+**A gap remains.** What is left is the cost of building the shell and album subtree on
+the first frame after the route swap — the splash is a *route*, so the app cannot exist
+until the splash stops existing. Closing it properly means making the splash an overlay
+above an already-built app rather than a route beside it.
+
 ---
 
 ## The shipped animation
