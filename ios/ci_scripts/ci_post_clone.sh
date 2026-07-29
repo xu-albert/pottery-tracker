@@ -18,6 +18,22 @@ export PATH="$PATH:$HOME/flutter/bin"
 flutter precache --ios
 flutter pub get
 
+# Most pods arrive as HTTP tarballs, but several Firebase pods declare a git
+# source and are fetched with `git clone`. Xcode Cloud has been observed routing
+# git through a proxy on localhost:8088 that nothing is listening on, and
+# rewriting https:// to http:// on the way — while plain HTTP downloads in the
+# same run succeed. That combination fails the build at the first git-sourced
+# pod (FirebaseABTesting), so neutralise it before installing.
+#
+# Every line tolerates being a no-op: on a machine without this config the
+# unsets fail harmlessly, and `set -e` would otherwise abort the script.
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
+git config --global --unset-all http.proxy 2>/dev/null || true
+git config --global --unset-all https.proxy 2>/dev/null || true
+git config --global --remove-section 'url.http://' 2>/dev/null || true
+# Counteract the observed scheme downgrade rather than relying on its absence.
+git config --global url."https://github.com/".insteadOf "http://github.com/"
+
 # Regenerate Pods with correct paths for this environment.
 # --no-repo-update skips refreshing the local spec repo; resolution comes from
 # the checked-in Podfile.lock. Note ios/Pods itself is gitignored and untracked,
