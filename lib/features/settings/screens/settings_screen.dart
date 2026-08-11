@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
@@ -376,10 +377,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // About
           _SectionHeader(title: l10n.about),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: Text(l10n.version('1.0.0')),
-          ),
+          const AppVersionTile(),
 
           // Debug
           const Divider(),
@@ -420,6 +418,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The About row's version line, read from the running build rather than a
+/// literal so it can never drift from `version:` in `pubspec.yaml`, which owns
+/// it. Public only so a widget test can pump it without SettingsScreen's
+/// Firebase-backed AuthService.
+class AppVersionTile extends StatefulWidget {
+  const AppVersionTile({super.key});
+
+  @override
+  State<AppVersionTile> createState() => _AppVersionTileState();
+}
+
+class _AppVersionTileState extends State<AppVersionTile> {
+  // Resolved once, not per build, so a rebuild cannot drop the row back to its
+  // pre-load state.
+  late final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return FutureBuilder<PackageInfo>(
+      future: _packageInfo,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        // Show nothing until the real version is known: a placeholder here
+        // would be a wrong version on screen.
+        if (info == null) return const SizedBox.shrink();
+        return ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: Text(l10n.version(info.version)),
+        );
+      },
     );
   }
 }

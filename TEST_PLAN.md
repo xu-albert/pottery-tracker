@@ -222,7 +222,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
 - [ ] "Cloud sync coming soon" placeholder
 - [ ] "Support Developer — Coming soon" placeholder
-- [ ] Version shows "1.0.0"
+- [ ] Version row shows the `version` from `pubspec.yaml` (the authoritative source), not a hardcoded string
 
 ### Manage Clays Screen (`/settings/clays`)
 - [ ] Shows list of saved clay names in custom sort order
