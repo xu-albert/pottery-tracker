@@ -45,7 +45,7 @@ Every write path must go through `SyncTrigger`; a DAO write without one silently
 - V1 is free with optional donation — no paywalls
 - Firebase Spark (free) plan: 1GB Firestore, 5GB Cloud Storage, 50K reads/day, 20K writes/day
 - Accessibility: screen reader support, system font scaling, minimum touch targets (48dp Android / 44pt iOS)
-- Portrait only, iPhone and iPad. Declared in `ios/Runner/Info.plist` (`UISupportedInterfaceOrientations`, `~ipad` variant, and `UIRequiresFullScreen`) and, in `android/app/src/main/AndroidManifest.xml`, `android:screenOrientation` on `MainActivity` plus the application-level `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` property that keeps it honoured on Android 16 large screens (the platform drops that opt-out at targetSdk 37). There is deliberately no `SystemChrome.setPreferredOrientations` call — do not add one, and do not build landscape layouts.
+- Portrait only, iPhone and iPad. Declared in `ios/Runner/Info.plist` (`UISupportedInterfaceOrientations`, `~ipad` variant, and `UIRequiresFullScreen`) and, in `android/app/src/main/AndroidManifest.xml`, `android:screenOrientation` and `android:resizeableActivity="false"` on `MainActivity` (split-screen/multi-window is deliberately given up, mirroring the iPad `UIRequiresFullScreen` tradeoff) plus the application-level `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` property that keeps it honoured on Android 16 large screens (the platform drops that opt-out at targetSdk 37). There is deliberately no `SystemChrome.setPreferredOrientations` call — do not add one, and do not build landscape layouts.
 
 ## Maintaining this file
 
