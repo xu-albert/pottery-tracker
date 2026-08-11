@@ -6,6 +6,9 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/network_security_config">
+        <!-- Part of the portrait-only lock: without this, Android 16 large screens
+             override the activity's screenOrientation/resizeableActivity below and the
+             app rotates. See "Design Constraints" in AGENTS.md before changing either. -->
         <property
             android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
             android:value="true" />

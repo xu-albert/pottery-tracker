@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository. `CLAUDE.md` is a symlink to it — edit this file, never replace the symlink with a second copy.
 
 ## Rules
 
@@ -45,7 +45,9 @@ Every write path must go through `SyncTrigger`; a DAO write without one silently
 - V1 is free with optional donation — no paywalls
 - Firebase Spark (free) plan: 1GB Firestore, 5GB Cloud Storage, 50K reads/day, 20K writes/day
 - Accessibility: screen reader support, system font scaling, minimum touch targets (48dp Android / 44pt iOS)
-- Portrait only, iPhone and iPad — landscape is never allowed anywhere. Declared in `ios/Runner/Info.plist` (`UISupportedInterfaceOrientations` is portrait alone on iPhone, the `~ipad` variant also allows `PortraitUpsideDown`, plus `UIRequiresFullScreen`) and, in `android/app/src/main/AndroidManifest.xml`, `android:screenOrientation="userPortrait"` — which allows both portrait directions on Android phones too, since the manifest has no phone/tablet variant like iOS's `~ipad` — and `android:resizeableActivity="false"` on `MainActivity` (split-screen/multi-window is deliberately given up, mirroring the iPad `UIRequiresFullScreen` tradeoff) plus the application-level `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` property that keeps it honoured on Android 16 large screens (the platform drops that opt-out at targetSdk 37). There is deliberately no `SystemChrome.setPreferredOrientations` call — do not add one, and do not build landscape layouts.
+- Portrait only, iPhone and iPad — landscape is never allowed anywhere. There is deliberately no `SystemChrome.setPreferredOrientations` call: it would be a no-op against the declarations below, so do not add one, and do not build landscape layouts. Two declaration sites must stay in agreement:
+  - `ios/Runner/Info.plist` — `UISupportedInterfaceOrientations` is portrait alone; the `~ipad` variant also allows `PortraitUpsideDown`. `UIRequiresFullScreen` is load-bearing, not cosmetic: `TARGETED_DEVICE_FAMILY` includes iPad, and an iPad app that supports multitasking must support every orientation, so without opting out of multitasking iOS ignores the `~ipad` restriction and rotates anyway. Accepted cost: no Split View / Slide Over.
+  - `android/app/src/main/AndroidManifest.xml` — `android:screenOrientation="userPortrait"` on `MainActivity`, which allows both portrait directions on phones too since the manifest has no phone/tablet variant like iOS's `~ipad`; `android:resizeableActivity="false"`, giving up split-screen/multi-window in the same tradeoff as `UIRequiresFullScreen`; and the application-level `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` property, without which Android 16 large screens override the lock (the platform drops that opt-out at targetSdk 37).
 
 ## Maintaining this file
 
