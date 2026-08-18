@@ -25,6 +25,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   AuthService get _authService => ref.read(authServiceProvider);
   bool _isLinking = false;
   bool _isSigningOut = false;
+  bool _isDeletingAccount = false;
 
   Future<void> _linkProvider({
     required Future<void> Function() linkFn,
@@ -360,7 +361,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       leading: Icon(icon),
       title: Text(title),
       subtitle: subtitle != null
-          ? Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis)
+          ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
           : null,
       trailing: trailing,
     );
@@ -445,7 +446,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : null,
-              onTap: _isSigningOut ? null : _confirmSignOut,
+              // Both wipe owners have to exclude each other, or two deletes
+              // run at once and each clears the other's guard.
+              onTap: (_isSigningOut || _isDeletingAccount)
+                  ? null
+                  : _confirmSignOut,
             ),
           const Divider(),
 
@@ -509,7 +514,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               );
               if (confirmed != true || !context.mounted) return;
-              await ref.read(syncStateProvider.notifier).deleteAllData();
+              setState(() => _isDeletingAccount = true);
+              try {
+                await ref.read(syncStateProvider.notifier).deleteAllData();
+              } finally {
+                if (mounted) setState(() => _isDeletingAccount = false);
+              }
             },
           ),
         ],

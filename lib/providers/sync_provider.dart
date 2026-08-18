@@ -464,6 +464,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
         errorMessage: e.toString(),
       );
     } finally {
+      // Clear the stale-sync marker too: leaving it set would make the next
+      // wipe keep an already-satisfied flag, and refuse the next sign-in once
+      // for no reason.
+      _staleSyncInFlight = false;
       _wiping = false;
       _syncing = false;
     }
