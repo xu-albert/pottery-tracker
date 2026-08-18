@@ -296,6 +296,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Text(l10n.syncNow),
           ),
         );
+      case SyncStatus.blocked:
+        // Not an error the user caused: the previous account's data is still
+        // on this device, so nothing may be uploaded until it is gone.
+        icon = Icons.cloud_off;
+        title = l10n.syncBlockedWipePending;
+        subtitle = l10n.syncBlockedWipePendingDetail;
+        trailing = TextButton(
+          onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+          child: Text(l10n.syncBlockedRetry),
+        );
       case SyncStatus.disabled:
         icon = Icons.cloud_off;
         title = l10n.syncDisabled;

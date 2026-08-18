@@ -24,7 +24,7 @@ void main() {
   late AppDatabase db;
   late FakeFirebaseFirestore firestore;
   late MockFirebaseStorage storage;
-  late SyncService syncService;
+  late _FlakyWipeSyncService syncService;
   late _TestAuthNotifier auth;
   late ProviderContainer container;
   late SyncNotifier notifier;
@@ -97,7 +97,7 @@ void main() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
     firestore = FakeFirebaseFirestore();
     storage = MockFirebaseStorage();
-    syncService = SyncService(db, firestore, storage);
+    syncService = _FlakyWipeSyncService(db, firestore, storage);
     auth = _TestAuthNotifier(signedInAs(uidA));
 
     container = ProviderContainer(
@@ -214,6 +214,63 @@ void main() {
     },
   );
 
+  test('the wipe is owed from before the session is dropped', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    final prefs = await SharedPreferences.getInstance();
+    bool? flaggedWhenSessionEnded;
+    await notifier.signOutAndWipeLocalData(() async {
+      flaggedWhenSessionEnded = prefs.getBool(SyncNotifier.pendingWipeKey);
+    });
+
+    // If the process dies while the session is going away, the device has to
+    // come back knowing A's rows are still here and must not be pushed.
+    expect(flaggedWhenSessionEnded, isTrue);
+    expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+  });
+
+  test('a wipe that keeps failing stops B from pushing anything', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    syncService.wipeFails = true;
+    await expectLater(
+      notifier.signOutAndWipeLocalData(() async {}),
+      throwsException,
+    );
+    auth.set(const AuthState(status: AuthStatus.unauthenticated));
+    await settle();
+
+    // A's rows survived the failed wipe — which is exactly why B must not push.
+    expect(await db.select(db.pieces).get(), isNotEmpty);
+
+    auth.set(signedInAs(uidB));
+    await settle();
+
+    expect(
+      await cloudPieceIds(uidB),
+      isEmpty,
+      reason: "B must not push A's surviving rows, even on a retried wipe",
+    );
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    // The manual "Sync Now" button is refused for as long as the wipe is owed.
+    await notifier.syncNow(forceFullSync: true);
+    expect(await cloudPieceIds(uidB), isEmpty);
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    // Once the wipe can finally run, the device cleans up and sync resumes.
+    syncService.wipeFails = false;
+    await notifier.syncNow(forceFullSync: true);
+    await settle();
+
+    expect(await db.select(db.pieces).get(), isEmpty);
+    expect(await cloudPieceIds(uidB), isEmpty);
+    expect(await cloudPieceIds(uidA), ['piece-a']);
+    expect(container.read(syncStateProvider).status, SyncStatus.idle);
+  });
+
   test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {
@@ -238,6 +295,21 @@ void main() {
       );
     },
   );
+}
+
+/// The real [SyncService] with one seam: [wipeFails] makes `deleteLocalData`
+/// throw, standing in for the disk error or database failure that leaves the
+/// device owing a wipe it could not perform.
+class _FlakyWipeSyncService extends SyncService {
+  _FlakyWipeSyncService(super.db, super.firestore, super.storage);
+
+  bool wipeFails = false;
+
+  @override
+  Future<void> deleteLocalData() async {
+    if (wipeFails) throw Exception('simulated local wipe failure');
+    return super.deleteLocalData();
+  }
 }
 
 /// An [AuthNotifier] whose state the test drives directly, standing in for

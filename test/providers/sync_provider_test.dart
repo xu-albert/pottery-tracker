@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -96,10 +98,15 @@ _setup({AuthState auth = _signedOut}) {
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    SharedPreferences.setMockInitialValues({});
     registerFallbackValue(
       const SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: ''),
     );
+  });
+
+  // A pending-wipe flag now blocks every push, so it must not leak from one
+  // test into the next.
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
   });
 
   group('SyncNotifier auth state transitions', () {
@@ -554,7 +561,114 @@ void main() {
     });
   });
 
+  group('pending wipe blocks pushing', () {
+    test('syncNow refuses to push while a wipe is still owed', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      // The resumed wipe keeps failing, so the flag survives every attempt.
+      when(
+        () => s.syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk error'));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.syncService);
+
+      await s.notifier.syncNow(forceFullSync: true);
+
+      verifyNever(() => s.syncService.pushAllLocal(any()));
+      expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+    });
+
+    test('the debounced queue push refuses while a wipe is owed', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      when(
+        () => s.syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk error'));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.queue);
+
+      s.notifier.scheduleProcessQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      verifyNever(() => s.queue.getAll());
+      expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
+    });
+
+    test('pushing resumes once the wipe finally succeeds', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.syncService);
+
+      await s.notifier.syncNow(forceFullSync: true);
+
+      verifyInOrder([
+        () => s.syncService.deleteLocalData(),
+        () => s.syncService.pushAllLocal('user-1'),
+      ]);
+      expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+    });
+  });
+
   group('signOutAndWipeLocalData', () {
+    test('flags the wipe before the session is dropped', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      bool? flaggedWhenSessionEnded;
+
+      await s.notifier.signOutAndWipeLocalData(() async {
+        flaggedWhenSessionEnded = prefs.getBool(SyncNotifier.pendingWipeKey);
+      });
+
+      // A process killed while the session is being dropped has to come back
+      // owing the wipe; otherwise the next account pushes what survived.
+      expect(flaggedWhenSessionEnded, isTrue);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+    });
+
+    test('a wipe that gives up on an in-flight sync stays pending', () {
+      fakeAsync((async) {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        SharedPreferences? prefs;
+        unawaited(SharedPreferences.getInstance().then((p) => prefs = p));
+        async.flushMicrotasks();
+
+        // A pull that outlives the wipe's bounded wait, still writing rows
+        // behind the delete.
+        when(
+          () => s.syncService.pullAll(any()),
+        ).thenAnswer((_) => Future<void>.delayed(const Duration(minutes: 5)));
+        unawaited(s.notifier.syncNow(forceFullSync: true));
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        unawaited(s.notifier.signOutAndWipeLocalData(() async {}));
+        async.elapse(const Duration(seconds: 20));
+        async.flushMicrotasks();
+
+        verify(() => s.syncService.deleteLocalData()).called(1);
+        expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
+      });
+    });
+
     test('drops the session before touching the data', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);

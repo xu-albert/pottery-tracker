@@ -145,7 +145,9 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
           description: message,
           color: categoryColors.get(category) ?? DEFAULT_COLOR,
           fields,
-          footer: { text: `doc: ${event.params.docId}` },
+          // The document id is client-chosen too — `doc(id).set()` picks it —
+          // so it gets the same treatment as everything else in the embed.
+          footer: { text: `doc: ${safeText(event.params.docId, 64)}` },
           timestamp: new Date().toISOString(),
         },
       ],

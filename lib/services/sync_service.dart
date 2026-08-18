@@ -84,7 +84,7 @@ class SyncService {
   /// what [pushAllLocal] uploads into the *next* account's cloud tree on its
   /// first sync, so an omission here is a cross-account data leak, not a
   /// cosmetic bug. That is also why this runs on sign-out — see
-  /// `SyncNotifier.wipeLocalDataForSignOut`.
+  /// `SyncNotifier.signOutAndWipeLocalData`.
   ///
   /// The SQLCipher key in secure storage is deliberately left alone: it stays
   /// paired with the (now empty) database file. Rotating it would risk leaving

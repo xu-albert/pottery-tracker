@@ -886,6 +886,24 @@ abstract class AppLocalizations {
   /// **'Sign in to enable cloud backup'**
   String get syncDisabled;
 
+  /// Sync status while a pending local data wipe blocks uploading
+  ///
+  /// In en, this message translates to:
+  /// **'Backup paused'**
+  String get syncBlockedWipePending;
+
+  /// Explains why backup is paused after an unfinished sign-out wipe
+  ///
+  /// In en, this message translates to:
+  /// **'The previous account\'s data still has to be erased from this device before anything is uploaded.'**
+  String get syncBlockedWipePendingDetail;
+
+  /// Button that retries the pending local data wipe and resumes backup
+  ///
+  /// In en, this message translates to:
+  /// **'Erase & Retry'**
+  String get syncBlockedRetry;
+
   /// Manual sync button
   ///
   /// In en, this message translates to:

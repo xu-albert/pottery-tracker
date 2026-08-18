@@ -11,7 +11,9 @@ import '../services/sync_trigger.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
 
-enum SyncStatus { idle, syncing, error, disabled }
+/// [SyncStatus.blocked] is a refusal, not a failure: a local wipe is still
+/// owed, so this device is not allowed to push until it is done.
+enum SyncStatus { idle, syncing, error, blocked, disabled }
 
 class SyncState {
   final SyncStatus status;
@@ -97,6 +99,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     _syncing = true;
     try {
+      if (await _blockedByPendingWipe()) return;
       await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
       if (state.status != SyncStatus.error) {
@@ -130,6 +133,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
     state = state.copyWith(status: SyncStatus.syncing);
 
     try {
+      if (await _blockedByPendingWipe()) return;
+
       final lastPulled = forceFullSync
           ? null
           : await _syncService.getLastPulledAt(uid);
@@ -246,6 +251,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _processTimer?.cancel();
     _wiping = true;
     try {
+      // The flag goes down first, before anything else can fail or be killed.
+      // It has to cover dropping the session and the drain below, not just the
+      // delete: a process killed anywhere past this line comes back with the
+      // wipe still owed, and nothing may push until it is done.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(pendingWipeKey, true);
+
       try {
         await endSession();
       } catch (e) {
@@ -258,7 +270,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
 
-      await _wipeLocalData();
+      // A sync that outlived the wait can still be inserting rows and writing
+      // photo files behind the delete, so the device is not provably clean.
+      // Wipe anyway, but keep the flag: the next sign-in wipes again before it
+      // is allowed to push.
+      await _wipeLocalData(clearFlagWhenDone: !_syncing);
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
     } finally {
       _wiping = false;
@@ -266,18 +282,42 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   /// Deletes every local store, flagged so an interruption is recoverable.
-  Future<void> _wipeLocalData() async {
+  ///
+  /// [clearFlagWhenDone] is false when something else may still be writing to
+  /// the stores this just emptied: the delete runs, but the device stays
+  /// flagged so it is repeated before anything is pushed.
+  Future<void> _wipeLocalData({bool clearFlagWhenDone = true}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(pendingWipeKey, true);
     await _queue.clear();
     await _syncService.deleteLocalData();
-    await prefs.remove(pendingWipeKey);
+    if (clearFlagWhenDone) await prefs.remove(pendingWipeKey);
+  }
+
+  /// Whether an owed local wipe has to stop this device from pushing.
+  ///
+  /// Every push path goes through here, not just sign-in, because the manual
+  /// "Sync Now" button reaches [syncNow] and the debounce reaches [_pushQueue]
+  /// without one. While the flag is set the rows on this device may still be
+  /// the signed-out account's, and pushing them would put them in the current
+  /// account's cloud tree. Retries the wipe first, so a transient failure
+  /// heals on the next sync attempt instead of wedging the device.
+  Future<bool> _blockedByPendingWipe() async {
+    await _finishInterruptedWipe();
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(pendingWipeKey) != true) return false;
+    debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');
+    state = state.copyWith(status: SyncStatus.blocked);
+    return true;
   }
 
   /// Re-runs a wipe that was started but never confirmed complete.
   ///
   /// Cheap in the normal case: one preference read and nothing else.
   Future<void> _finishInterruptedWipe() {
+    // An explicit sign-out wipe already owns the flag; a second pass would
+    // race its delete and could clear the flag before it is finished.
+    if (_wiping) return Future<void>.value();
     return _wipeInFlight ??= _finishInterruptedWipeOnce().whenComplete(() {
       _wipeInFlight = null;
     });
@@ -285,15 +325,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   Future<void> _finishInterruptedWipeOnce() async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(pendingWipeKey) != true) return;
+    // Re-check `_wiping` here, not only on the way in: a wipe can start while
+    // this is still waiting on preferences, and it raises the flag it owns
+    // only after its own first await.
+    if (_wiping || prefs.getBool(pendingWipeKey) != true) return;
     debugPrint('SyncNotifier: finishing an interrupted local data wipe');
     try {
       await _queue.clear();
       await _syncService.deleteLocalData();
       await prefs.remove(pendingWipeKey);
     } catch (e) {
-      // Leave the flag set so the next sign-in tries again rather than
-      // pushing whatever survived.
+      // Leave the flag set: [_blockedByPendingWipe] then refuses every push
+      // until a later attempt succeeds, rather than uploading what survived.
       debugPrint('SyncNotifier: resumed wipe failed, still pending: $e');
     }
   }
@@ -301,6 +344,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> deleteAllData() async {
     if (_syncing) return;
     _syncing = true;
+    // This owns the wipe too, so a resumed one does not run alongside it and
+    // clear the flag out from under the delete below.
+    _wiping = true;
     state = state.copyWith(status: SyncStatus.syncing);
 
     try {
@@ -331,6 +377,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         errorMessage: e.toString(),
       );
     } finally {
+      _wiping = false;
       _syncing = false;
     }
   }

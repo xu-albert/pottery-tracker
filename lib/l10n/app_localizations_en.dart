@@ -438,6 +438,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncDisabled => 'Sign in to enable cloud backup';
 
   @override
+  String get syncBlockedWipePending => 'Backup paused';
+
+  @override
+  String get syncBlockedWipePendingDetail =>
+      'The previous account\'s data still has to be erased from this device before anything is uploaded.';
+
+  @override
+  String get syncBlockedRetry => 'Erase & Retry';
+
+  @override
   String get syncNow => 'Sync Now';
 
   @override
