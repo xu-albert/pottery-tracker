@@ -390,7 +390,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// account's cloud tree. Retries the wipe first, so a transient failure
   /// heals on the next sync attempt instead of wedging the device.
   Future<bool> _blockedByPendingWipe() async {
-    await _finishInterruptedWipe();
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(pendingWipeKey) != true) return false;
     debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');

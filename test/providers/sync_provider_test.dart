@@ -604,7 +604,7 @@ void main() {
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
     });
 
-    test('pushing resumes once the wipe finally succeeds', () async {
+    test('a sync attempt never carries the wipe with it', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
@@ -615,13 +615,51 @@ void main() {
 
       await s.notifier.syncNow(forceFullSync: true);
 
-      verifyInOrder([
-        () => s.syncService.deleteLocalData(),
-        () => s.syncService.pushAllLocal('user-1'),
-      ]);
-      expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
-      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+      // Refused, and nothing was deleted: a wipe on the push path could land
+      // in the middle of a later session, on the current account's own work.
+      verifyNever(() => s.syncService.deleteLocalData());
+      verifyNever(() => s.syncService.pushAllLocal(any()));
+      expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
     });
+
+    test('the debounced queue push never carries the wipe either', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.syncService);
+
+      s.notifier.scheduleProcessQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      verifyNever(() => s.syncService.deleteLocalData());
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+    });
+
+    test(
+      'the explicit erase clears the wipe and lets pushing resume',
+      () async {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        await Future<void>.delayed(Duration.zero);
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+        clearInteractions(s.syncService);
+
+        await s.notifier.eraseLocalDataNow();
+
+        verifyInOrder([
+          () => s.syncService.deleteLocalData(),
+          () => s.syncService.pushAllLocal('user-1'),
+        ]);
+        expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+      },
+    );
   });
 
   group('signOutAndWipeLocalData', () {

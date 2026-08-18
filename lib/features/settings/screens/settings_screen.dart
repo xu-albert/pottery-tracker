@@ -341,10 +341,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             );
           case SyncBlockedReason.pendingWipe:
           case null:
+            // "Sync Now" no longer carries the retry — a delete on the push
+            // path could land mid-session — so the retry is this button, and
+            // it confirms first.
             title = l10n.syncBlockedWipePending;
             subtitle = l10n.syncBlockedWipePendingDetail;
             trailing = TextButton(
-              onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+              onPressed: _confirmEraseLocalData,
               child: Text(l10n.syncBlockedRetry),
             );
         }

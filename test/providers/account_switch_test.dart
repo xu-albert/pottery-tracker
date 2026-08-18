@@ -260,9 +260,16 @@ void main() {
     expect(await cloudPieceIds(uidB), isEmpty);
     expect(container.read(syncStateProvider).status, SyncStatus.blocked);
 
-    // Once the wipe can finally run, the device cleans up and sync resumes.
+    // Even once the wipe could succeed, "Sync Now" does not carry it: a delete
+    // must never ride the push path, or it lands mid-session on whatever the
+    // current account has since made.
     syncService.wipeFails = false;
     await notifier.syncNow(forceFullSync: true);
+    expect(await db.select(db.pieces).get(), isNotEmpty);
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    // The explicit, confirmed erase is the way out.
+    await notifier.eraseLocalDataNow();
     await settle();
 
     expect(await db.select(db.pieces).get(), isEmpty);
@@ -375,6 +382,69 @@ void main() {
       expect(await cloudPieceIds(uidB), ['piece-local']);
     },
   );
+
+  test(
+    'a debounced push never resumes the wipe under the current account',
+    () async {
+      // The failure this guards: a wipe owed from A's sign-out must not fire
+      // 500ms after B's own edit and delete the piece B just made.
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      syncService.wipeFails = true;
+      await expectLater(
+        notifier.signOutAndWipeLocalData(() async {}),
+        throwsException,
+      );
+      auth.set(const AuthState(status: AuthStatus.unauthenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+      // B works while backup is paused, then the wipe becomes possible again.
+      await insertPieceWithPhoto('piece-b', "B's bowl");
+      syncService.wipeFails = false;
+      notifier.scheduleProcessQueue();
+      await settle();
+
+      expect(
+        (await db.select(db.pieces).get()).map((p) => p.id),
+        containsAll(['piece-b']),
+        reason: "the debounced push must not delete B's work",
+      );
+      expect(
+        await cloudPieceIds(uidB),
+        isEmpty,
+        reason: "and it must still refuse to upload A's data",
+      );
+    },
+  );
+
+  test('the explicit erase is the way out of an owed wipe', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    syncService.wipeFails = true;
+    await expectLater(
+      notifier.signOutAndWipeLocalData(() async {}),
+      throwsException,
+    );
+    auth.set(const AuthState(status: AuthStatus.unauthenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    syncService.wipeFails = false;
+    await notifier.eraseLocalDataNow();
+    await settle();
+
+    expect(await db.select(db.pieces).get(), isEmpty);
+    expect(container.read(syncStateProvider).status, SyncStatus.idle);
+    expect(await cloudPieceIds(uidB), isEmpty);
+    expect(await cloudPieceIds(uidA), ['piece-a']);
+  });
 
   test(
     'a wipe interrupted before it finished is completed on next sign-in',
