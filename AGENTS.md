@@ -34,6 +34,11 @@ than re-deriving it.
 - Release signing reads `android/key.properties` (gitignored, never committed). With no such file the
   build falls back to the Android **debug** key so a clean checkout still builds — pass
   `-PrequireReleaseSigning=true` for anything destined for Play and the build fails instead.
+- The SQLCipher guard (`configureSqlCipher` in `lib/database/sqlcipher_guard.dart`) is what stops the
+  app writing a plaintext database when SQLCipher is not the library that loaded. Its own behaviour is
+  tested, but its single call site — the `setup:` callback in `AppDatabase.open()` — is not covered by
+  any test, because that path needs a real SQLCipher-backed database. Do not remove or refactor that
+  call away without verifying on a device.
 - Major dependency upgrades (Firebase 3->4/5->6, `go_router`, `google_sign_in`, `sign_in_with_apple`,
   `flutter_secure_storage`, Riverpod 3, `sqlite3` 3) are deliberately frozen until Android is on a
   Play track, so an Android regression is never confounded with an upgrade. `drift` is already at its

@@ -13,6 +13,31 @@ class SqlCipherUnavailableException implements Exception {
       'every piece, photo and note in the clear.';
 }
 
+/// Thrown when sqlite3 rejects the keying statement itself.
+///
+/// Distinct from [SqlCipherUnavailableException]: SQLCipher may well be
+/// present, the key just could not be applied. The sqlite3 result code and
+/// message are preserved, but the statement that caused them never is — it
+/// contains the database key, and this error is rendered on screen and
+/// reported to Crashlytics.
+class SqlCipherKeyingException implements Exception {
+  const SqlCipherKeyingException({
+    required this.extendedResultCode,
+    required this.message,
+  });
+
+  /// The sqlite3 extended result code of the underlying failure.
+  final int extendedResultCode;
+
+  /// The underlying failure's description, with any key material removed.
+  final String message;
+
+  @override
+  String toString() =>
+      'SqlCipherKeyingException($extendedResultCode): $message '
+      '(causing statement withheld — it carries the database key)';
+}
+
 /// Verifies that SQLCipher, and not plain sqlite3, answered the
 /// `PRAGMA cipher_version` probe.
 ///
@@ -34,7 +59,43 @@ void assertSqlCipherBacksSqlite3(List<List<Object?>> cipherVersionRows) {
 /// The two statements belong together: `PRAGMA key` is silently ignored by a
 /// plain sqlite3 build, so without the probe that follows it the database would
 /// be created in the clear with nothing to signal it.
+///
+/// sqlite3 offers no way to bind [key] as a parameter — its pragma parser
+/// rejects `PRAGMA key = ?` at prepare time — so the key has to be a literal,
+/// and every sqlite3 failure of that one statement is rewritten into a
+/// [SqlCipherKeyingException] that cannot carry it. Anything else thrown here,
+/// including from the probe, propagates untouched.
 void configureSqlCipher(CommonDatabase db, String key) {
-  db.execute("PRAGMA key = '$key'");
+  try {
+    db.execute("PRAGMA key = '${key.replaceAll("'", "''")}'");
+  } on SqliteException catch (error) {
+    throw SqlCipherKeyingException(
+      extendedResultCode: error.extendedResultCode,
+      message: _withoutKeyMaterial(
+        [error.message, error.explanation].whereType<String>().join(', '),
+        key,
+      ),
+    );
+  }
+
   assertSqlCipherBacksSqlite3(db.select('PRAGMA cipher_version').rows);
+}
+
+const _withheldMessage =
+    'sqlite3 rejected the keying statement; its description is withheld '
+    'because it quotes the database key';
+
+String _withoutKeyMaterial(String text, String key) {
+  final redacted = text.replaceAll(key, '<redacted>');
+  return _containsFragmentOf(redacted, key) ? _withheldMessage : redacted;
+}
+
+bool _containsFragmentOf(String text, String key, {int shortestRun = 8}) {
+  if (key.isEmpty) return false;
+  if (key.length <= shortestRun) return text.contains(key);
+
+  for (var start = 0; start + shortestRun <= key.length; start++) {
+    if (text.contains(key.substring(start, start + shortestRun))) return true;
+  }
+  return false;
 }

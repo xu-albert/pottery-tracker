@@ -165,4 +165,106 @@ void main() {
       verify(() => db.execute("PRAGMA key = 'k3y'")).called(1);
     });
   });
+
+  group('configureSqlCipher key redaction', () {
+    const key = 'sJ3kQ9zL2mR7tV4wX8bN6cF1dG5hP0aY';
+
+    test('strips the key from a sqlite3 failure that quotes it', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any())).thenThrow(
+        SqliteException(
+          26,
+          'file is not a database',
+          'the file is encrypted or is not a database',
+          "PRAGMA key = '$key'",
+          null,
+          'preparing statement',
+        ),
+      );
+
+      Object? thrown;
+      try {
+        configureSqlCipher(db, key);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown, isA<SqlCipherKeyingException>());
+      expect(thrown.toString(), isNot(contains(key)));
+      expect((thrown! as SqlCipherKeyingException).extendedResultCode, 26);
+      expect(thrown.toString(), contains('file is not a database'));
+    });
+
+    test('withholds a failure description that quotes part of the key', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any())).thenThrow(
+        SqliteException(
+          1,
+          'near "${key.substring(4, 20)}": syntax error',
+          null,
+          "PRAGMA key = '$key'",
+          null,
+          'preparing statement',
+        ),
+      );
+
+      Object? thrown;
+      try {
+        configureSqlCipher(db, key);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown, isA<SqlCipherKeyingException>());
+      for (var start = 0; start + 8 <= key.length; start++) {
+        expect(
+          thrown.toString(),
+          isNot(contains(key.substring(start, start + 8))),
+          reason: 'no run of the key may survive redaction',
+        );
+      }
+    });
+
+    test('keeps the keying failure distinct from the not-encrypted failure', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any()))
+          .thenThrow(SqliteException(21, 'bad parameter or other API misuse'));
+
+      expect(
+        () => configureSqlCipher(db, key),
+        throwsA(
+          isA<SqlCipherKeyingException>()
+              .having((e) => e.extendedResultCode, 'extendedResultCode', 21),
+        ),
+      );
+    });
+
+    test('lets a non-sqlite3 failure propagate as itself', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any())).thenThrow(StateError('database is closed'));
+
+      expect(
+        () => configureSqlCipher(db, key),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('keys a connection whose key contains a quote', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any())).thenAnswer((_) {});
+      when(() => db.select(any())).thenReturn(
+        ResultSet(
+          ['cipher_version'],
+          null,
+          [
+            ['4.10.0 community'],
+          ],
+        ),
+      );
+
+      expect(() => configureSqlCipher(db, "it's-a-key"), returnsNormally);
+
+      verify(() => db.execute("PRAGMA key = 'it''s-a-key'")).called(1);
+    });
+  });
 }

@@ -329,7 +329,7 @@ These are genuine product choices. Nothing in the repo presumes an answer to any
 
 ## 9. Still unverified — needs a physical Android device
 
-The 181-test suite is host-VM only. These cannot be answered without hardware, and the first one is
+The 199-test suite is host-VM only. These cannot be answered without hardware, and the first one is
 the highest-risk unknown in the whole Android launch:
 
 1. **Does the encrypted database open on Android?** `lib/database/database.dart` opens
@@ -340,6 +340,9 @@ the highest-risk unknown in the whole Android launch:
    That text means the SQLCipher `.so`/framework did not link — not that the database is corrupt, and
    not that the app is broken. It is the guard doing its job: without it the app would have quietly
    written every piece, photo and note to disk in the clear.
+   A `SqlCipherKeyingException` instead means the opposite: SQLCipher is there, but it rejected the
+   key. Its sqlite3 result code is shown; the statement is not, because that statement quotes the
+   database key and this error reaches both the screen and Crashlytics.
 2. Does an *existing* encrypted database still open after the `sqlcipher_flutter_libs` 0.5.7 → 0.6.8
    swap? This changes the underlying native library from `net.zetetic:android-database-sqlcipher:4.5.4`
    to `net.zetetic:sqlcipher-android:4.10.0` — **so this needs re-testing on iOS too, not just
