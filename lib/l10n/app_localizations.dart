@@ -805,14 +805,38 @@ abstract class AppLocalizations {
   /// Sign out confirmation title
   ///
   /// In en, this message translates to:
-  /// **'Sign out of everything?'**
+  /// **'Sign out and erase this device?'**
   String get signOutConfirmTitle;
 
-  /// Sign out confirmation message
+  /// Sign out confirmation message, warning that local data is destroyed
   ///
   /// In en, this message translates to:
-  /// **'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.'**
+  /// **'Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.'**
   String get signOutConfirmMessage;
+
+  /// Destructive confirm button in the sign out dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Sign Out & Erase'**
+  String get signOutAndErase;
+
+  /// Progress message shown while the local wipe runs
+  ///
+  /// In en, this message translates to:
+  /// **'Signing out and erasing this device…'**
+  String get signingOut;
+
+  /// Shown when the local wipe on sign-out did not finish
+  ///
+  /// In en, this message translates to:
+  /// **'Signed out, but some data on this device could not be deleted. It will be removed the next time you sign in.'**
+  String get signOutWipeFailed;
+
+  /// Explains why the last remaining provider cannot be disconnected
+  ///
+  /// In en, this message translates to:
+  /// **'Your only sign-in method — connect another first'**
+  String get lastProviderCannotDisconnect;
 
   /// List view mode label for accessibility
   ///

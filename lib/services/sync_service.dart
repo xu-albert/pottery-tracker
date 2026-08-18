@@ -21,8 +21,13 @@ class SyncService {
   CollectionReference _col(String uid, String name) =>
       _userDoc(uid).collection(name);
 
+  /// Prefix of the per-uid "last successful pull" watermarks written by
+  /// [_saveLastPulledAt]. Shared with [deleteLocalData], which has to clear
+  /// every one of them.
+  static const _lastPulledAtPrefix = 'lastPulledAt_';
+
   // ════════════════════════════════════════════
-  // Delete all data (for testing)
+  // Delete all data
   // ════════════════════════════════════════════
 
   Future<void> deleteCloudData(String uid) async {
@@ -73,17 +78,44 @@ class SyncService {
     }
   }
 
+  /// Destroys this device's entire local copy of the account's data.
+  ///
+  /// Every local store the app owns must be listed here. Whatever survives is
+  /// what [pushAllLocal] uploads into the *next* account's cloud tree on its
+  /// first sync, so an omission here is a cross-account data leak, not a
+  /// cosmetic bug. That is also why this runs on sign-out — see
+  /// `SyncNotifier.wipeLocalDataForSignOut`.
+  ///
+  /// The SQLCipher key in secure storage is deliberately left alone: it stays
+  /// paired with the (now empty) database file. Rotating it would risk leaving
+  /// a key that no longer opens the file, which bricks the app permanently.
   Future<void> deleteLocalData() async {
     debugPrint('SyncService: deleting all local data');
 
-    await _db.delete(_db.pieceTags).go();
-    await _db.delete(_db.pieceGlazes).go();
-    await _db.delete(_db.photos).go();
-    await _db.delete(_db.pieces).go();
-    await _db.delete(_db.clayOptions).go();
-    await _db.delete(_db.glazeOptions).go();
-    await _db.delete(_db.tagOptions).go();
+    await _db.transaction(() async {
+      await _db.delete(_db.pieceTags).go();
+      await _db.delete(_db.pieceGlazes).go();
+      await _db.delete(_db.deletedJunctions).go();
+      await _db.delete(_db.photos).go();
+      await _db.delete(_db.pieces).go();
+      await _db.delete(_db.clayOptions).go();
+      await _db.delete(_db.glazeOptions).go();
+      await _db.delete(_db.tagOptions).go();
+    });
 
+    // Hand the freed pages back to the filesystem rather than leaving deleted
+    // rows sitting in the database file's free list.
+    try {
+      await _db.customStatement('VACUUM');
+    } catch (e) {
+      debugPrint('SyncService: VACUUM after wipe failed: $e');
+    }
+
+    await _deleteLocalPhotoFiles();
+    await _clearSyncWatermarks();
+  }
+
+  Future<void> _deleteLocalPhotoFiles() async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${appDir.path}/photos');
@@ -93,6 +125,40 @@ class SyncService {
       }
     } catch (e) {
       debugPrint('SyncService: local file cleanup error: $e');
+    }
+
+    // image_picker copies every picked photo into the platform temp directory
+    // and those copies outlive the pick, so they are user photos too.
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (tempDir.existsSync()) {
+        for (final entity in tempDir.listSync()) {
+          try {
+            entity.deleteSync(recursive: true);
+          } catch (_) {
+            // A single undeletable cache entry must not abort the wipe.
+          }
+        }
+        debugPrint('SyncService: cleared cached image files');
+      }
+    } catch (e) {
+      debugPrint('SyncService: temp file cleanup error: $e');
+    }
+  }
+
+  /// Clears every per-uid pull watermark.
+  ///
+  /// Leaving one behind is not just untidy: the same account signing back in
+  /// would take the *incremental* pull branch and never re-download the pieces
+  /// this wipe just deleted.
+  Future<void> _clearSyncWatermarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stale = prefs
+        .getKeys()
+        .where((k) => k.startsWith(_lastPulledAtPrefix))
+        .toList();
+    for (final key in stale) {
+      await prefs.remove(key);
     }
   }
 
@@ -433,7 +499,7 @@ class SyncService {
 
   Future<DateTime?> getLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    final ms = prefs.getInt('lastPulledAt_$uid');
+    final ms = prefs.getInt('$_lastPulledAtPrefix$uid');
     if (ms == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(ms);
   }
@@ -441,7 +507,7 @@ class SyncService {
   Future<void> _saveLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(
-      'lastPulledAt_$uid',
+      '$_lastPulledAtPrefix$uid',
       DateTime.now().millisecondsSinceEpoch,
     );
   }

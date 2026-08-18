@@ -760,4 +760,35 @@ void main() {
       expect(clays, isEmpty);
     });
   });
+
+  // ── deleteLocalData ────────────────────────────
+
+  group('deleteLocalData', () {
+    test('leaves no junction tombstones behind', () async {
+      await insertPiece(id: 'p1');
+      await insertGlaze(id: 'g1', name: 'Celadon');
+      await db.materialsDao.setGlazesForPiece('p1', ['g1']);
+      // Removing the glaze writes a tombstone row that the sync pushes later.
+      await db.materialsDao.setGlazesForPiece('p1', []);
+      expect(await db.select(db.deletedJunctions).get(), isNotEmpty);
+
+      await syncService.deleteLocalData();
+
+      expect(await db.select(db.deletedJunctions).get(), isEmpty);
+      expect(await db.select(db.pieceGlazes).get(), isEmpty);
+    });
+
+    test('clears every pull watermark, not just the current uid', () async {
+      await syncService.pullAll(_uid);
+      await syncService.pullAll('other-user');
+      expect(await syncService.getLastPulledAt(_uid), isNotNull);
+
+      await syncService.deleteLocalData();
+
+      // A surviving watermark would send the returning account down the
+      // incremental branch, which never re-downloads what was deleted here.
+      expect(await syncService.getLastPulledAt(_uid), isNull);
+      expect(await syncService.getLastPulledAt('other-user'), isNull);
+    });
+  });
 }

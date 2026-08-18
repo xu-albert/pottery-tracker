@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/auth_service.dart';
+
 enum AuthStatus { unknown, unauthenticated, authenticated }
 
 class AuthState {
@@ -140,3 +142,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier();
 });
+
+/// The Firebase/Google session handle. Lazily created, so nothing touches
+/// FirebaseAuth until a screen actually asks for it, and overridable in tests.
+final authServiceProvider = Provider<AuthService>((ref) => AuthService());

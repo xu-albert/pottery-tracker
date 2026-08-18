@@ -58,6 +58,9 @@ dart run build_runner build --delete-conflicting-outputs
 
 # Generate localization files
 flutter gen-l10n
+
+# Cloud Function typecheck + tests (feedback sanitiser)
+cd functions && npm ci && npm test
 ```
 
 ## Architecture
@@ -67,6 +70,14 @@ flutter gen-l10n
 All data lives in local SQLite first. Writes never block on the network: every DAO write enqueues an entry via `SyncTrigger`, and `SyncNotifier` drains the queue on a short debounce, on sign-in, and on explicit `syncNow()`. Failed operations retry with exponential backoff and are re-attempted on the next full sync, so there is no connectivity listener — offline is just a failed attempt that stays queued. Conflict resolution is last-write-wins based on `updatedAt`.
 
 Every write path must go through `SyncTrigger`; a DAO write without one silently never reaches the cloud.
+
+Sign-out is destructive by design (captain decision, 2026-08-18): `SyncNotifier.signOutAndWipeLocalData`
+ends the session and then deletes the local database, the photo and cache files, the sync queue and
+every pull watermark. It has to, because the *next* account's first sync calls `pushAllLocal`, which
+would otherwise upload the previous account's pieces into that account's cloud tree. Two consequences
+for any future change: a new local store must be added to `SyncService.deleteLocalData` or it becomes
+a cross-account leak, and the sign-out confirmation must keep saying plainly that local data is
+deleted. `test/providers/account_switch_test.dart` is the end-to-end guard.
 
 ## Design Constraints
 

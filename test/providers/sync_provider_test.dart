@@ -553,4 +553,75 @@ void main() {
       expect(state.errorMessage, contains('permission denied'));
     });
   });
+
+  group('signOutAndWipeLocalData', () {
+    test('drops the session before touching the data', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final order = <String>[];
+      when(() => s.syncService.deleteLocalData()).thenAnswer((_) async {
+        order.add('wipe');
+      });
+
+      await s.notifier.signOutAndWipeLocalData(() async {
+        order.add('endSession');
+      });
+
+      // The session has to go first: if the process dies between the two, the
+      // device comes back signed out with the wipe still pending, rather than
+      // signed in with the data already gone.
+      expect(order, ['endSession', 'wipe']);
+      expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+    });
+
+    test('completes the wipe even when ending the session fails', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      await s.notifier.signOutAndWipeLocalData(
+        () async => throw Exception('network down'),
+      );
+
+      verify(() => s.syncService.deleteLocalData()).called(1);
+    });
+
+    test(
+      'leaves the wipe pending when it fails, and retries on sign-in',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(SyncNotifier.pendingWipeKey);
+
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        await Future<void>.delayed(Duration.zero);
+
+        when(
+          () => s.syncService.deleteLocalData(),
+        ).thenThrow(Exception('disk error'));
+
+        await expectLater(
+          s.notifier.signOutAndWipeLocalData(() async {}),
+          throwsException,
+        );
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+
+        // Next sign-in: the wipe runs again, and it runs before any push.
+        when(() => s.syncService.deleteLocalData()).thenAnswer((_) async {});
+        s.container.read(authProvider.notifier).state = const AuthState(
+          status: AuthStatus.authenticated,
+          uid: 'user-2',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        verifyInOrder([
+          () => s.syncService.deleteLocalData(),
+          () => s.syncService.pushAllLocal('user-2'),
+        ]);
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+      },
+    );
+  });
 }

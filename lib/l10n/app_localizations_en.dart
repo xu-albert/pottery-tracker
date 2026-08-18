@@ -391,11 +391,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appleDisconnected => 'Apple account disconnected';
 
   @override
-  String get signOutConfirmTitle => 'Sign out of everything?';
+  String get signOutConfirmTitle => 'Sign out and erase this device?';
 
   @override
   String get signOutConfirmMessage =>
-      'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.';
+      'Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.';
+
+  @override
+  String get signOutAndErase => 'Sign Out & Erase';
+
+  @override
+  String get signingOut => 'Signing out and erasing this device…';
+
+  @override
+  String get signOutWipeFailed =>
+      'Signed out, but some data on this device could not be deleted. It will be removed the next time you sign in.';
+
+  @override
+  String get lastProviderCannotDisconnect =>
+      'Your only sign-in method — connect another first';
 
   @override
   String get viewModeList => 'List view';

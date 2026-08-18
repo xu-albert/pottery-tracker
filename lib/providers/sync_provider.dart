@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/sync_queue.dart';
 import '../services/sync_service.dart';
 import '../services/sync_trigger.dart';
@@ -41,11 +42,18 @@ class SyncState {
 }
 
 class SyncNotifier extends StateNotifier<SyncState> {
+  /// Set for the duration of a local wipe so an interrupted one (crash, kill,
+  /// failed delete) can be finished before anything is ever pushed again.
+  @visibleForTesting
+  static const pendingWipeKey = 'pendingLocalDataWipe';
+
   final Ref _ref;
   final SyncQueue _queue;
   final SyncService _syncService;
   bool _syncing = false;
+  bool _wiping = false;
   Timer? _processTimer;
+  Future<void>? _wipeInFlight;
 
   SyncNotifier(this._ref, this._queue, this._syncService)
     : super(const SyncState()) {
@@ -54,11 +62,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
         _onAuthChanged(next.uid!);
       } else if (!next.isSignedIn) {
         state = const SyncState(status: SyncStatus.disabled);
+        // Signed out or local-only: finish a wipe that never completed, so the
+        // app does not sit on the previous account's pieces.
+        unawaited(_finishInterruptedWipe());
       }
     }, fireImmediately: true);
   }
 
   Future<void> _onAuthChanged(String uid) async {
+    // Before this uid can push anything, make sure no earlier account's data
+    // is still lying around from a wipe that was cut short.
+    await _finishInterruptedWipe();
     state = state.copyWith(status: SyncStatus.idle);
     await _refreshPendingCount();
     await syncNow();
@@ -77,7 +91,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   Future<void> _pushQueue() async {
-    if (_syncing) return;
+    if (_syncing || _wiping) return;
     final auth = _ref.read(authProvider);
     if (!auth.isSignedIn || auth.uid == null) return;
 
@@ -109,7 +123,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = const SyncState(status: SyncStatus.disabled);
       return;
     }
-    if (_syncing) return;
+    if (_syncing || _wiping) return;
     _syncing = true;
 
     final uid = auth.uid!;
@@ -215,6 +229,75 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
   }
 
+  /// Signs the account out of this device and destroys its local data.
+  ///
+  /// Sign-out is destructive by design. Whatever survives it is uploaded into
+  /// the *next* account's cloud tree by `pushAllLocal` on that account's first
+  /// sync, so "sign out" and "wipe" cannot be separated. Callers must warn the
+  /// user first — see `SettingsScreen._confirmSignOut`.
+  ///
+  /// [endSession] drops the Firebase/Google session and runs *before* the
+  /// wipe: if the process dies in between, the device comes back signed out
+  /// with the pending-wipe flag set, and the next sign-in finishes the wipe
+  /// before it pushes anything.
+  Future<void> signOutAndWipeLocalData(
+    Future<void> Function() endSession,
+  ) async {
+    _processTimer?.cancel();
+    _wiping = true;
+    try {
+      try {
+        await endSession();
+      } catch (e) {
+        debugPrint('SyncNotifier: ending the session failed: $e');
+      }
+
+      // Let an in-flight sync unwind — its session is gone, so it fails fast —
+      // rather than letting its writes land after the tables are emptied.
+      for (var i = 0; i < 50 && _syncing; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+
+      await _wipeLocalData();
+      state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
+    } finally {
+      _wiping = false;
+    }
+  }
+
+  /// Deletes every local store, flagged so an interruption is recoverable.
+  Future<void> _wipeLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(pendingWipeKey, true);
+    await _queue.clear();
+    await _syncService.deleteLocalData();
+    await prefs.remove(pendingWipeKey);
+  }
+
+  /// Re-runs a wipe that was started but never confirmed complete.
+  ///
+  /// Cheap in the normal case: one preference read and nothing else.
+  Future<void> _finishInterruptedWipe() {
+    return _wipeInFlight ??= _finishInterruptedWipeOnce().whenComplete(() {
+      _wipeInFlight = null;
+    });
+  }
+
+  Future<void> _finishInterruptedWipeOnce() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(pendingWipeKey) != true) return;
+    debugPrint('SyncNotifier: finishing an interrupted local data wipe');
+    try {
+      await _queue.clear();
+      await _syncService.deleteLocalData();
+      await prefs.remove(pendingWipeKey);
+    } catch (e) {
+      // Leave the flag set so the next sign-in tries again rather than
+      // pushing whatever survived.
+      debugPrint('SyncNotifier: resumed wipe failed, still pending: $e');
+    }
+  }
+
   Future<void> deleteAllData() async {
     if (_syncing) return;
     _syncing = true;
@@ -236,8 +319,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
 
       // Always delete local data
-      await _syncService.deleteLocalData();
-      await _queue.clear();
+      await _wipeLocalData();
 
       // Sign out locally
       await _ref.read(authProvider.notifier).signOut();
