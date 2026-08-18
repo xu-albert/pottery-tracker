@@ -119,17 +119,12 @@ On send failure: show toast "Couldn't send — try again later" and leave the fo
 
 ### Firestore rules
 
-```
-match /feedback/{docId} {
-  allow create: if request.resource.data.message is string
-                && request.resource.data.message.size() > 0
-                && request.resource.data.message.size() <= 2000
-                && request.resource.data.category in ["bug", "feature", "other", "praise"];
-  allow read, update, delete: if false;
-}
-```
+Anyone may create a `feedback/{docId}`; nobody may read, update or delete one. There is no
+`auth != null` gate — anonymous users can submit feedback.
 
-No `auth != null` gate — anonymous users can submit feedback.
+`firestore.rules` is the authoritative copy and has since been tightened well past what this
+spec described (fixed key set, per-field length caps, server-set `createdAt`, and a `uid` that
+must be the caller's own or absent) — read the rule there, not a snippet here.
 
 ## Failure Modes
 

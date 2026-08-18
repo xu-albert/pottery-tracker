@@ -15,7 +15,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 
 ### Edge Cases
 - [ ] Force-quit and relaunch — user stays authenticated
-- [ ] Sign out from Settings → redirected back to sign-in screen
+- [ ] Sign out from Settings → local data erased, redirected back to sign-in screen
 
 ---
 
@@ -218,9 +218,13 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ## 7. Settings Screen
 
 - [ ] Shows "Signed in as {name}" or "Not signed in"
-- [ ] "Sign Out" button → clears auth, redirects to sign-in
+- [ ] "Sign Out" → confirmation says every piece, photo and material on this device is deleted; "Cancel" is the default action and tapping outside the dialog does not sign out
+- [ ] Confirming "Sign Out & Erase" clears auth, deletes the local library and photo files, and redirects to sign-in
+- [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
+- [ ] Force-quit mid-wipe → the next sign-in finishes the wipe before uploading anything; while it is still owed, sync shows "Backup paused" with an "Erase & Retry" action
+- [ ] The only connected sign-in provider cannot be disconnected — its row is disabled and explains why
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
-- [ ] "Cloud sync coming soon" placeholder
+- [ ] "Cloud Backup" section shows the current sync status and a "Sync Now" action
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version row shows the `version` from `pubspec.yaml` (the authoritative source), not a hardcoded string
 
@@ -418,6 +422,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Successful submit → toast, pops back, doc lands in Firestore `feedback/`.
 - [ ] Failed submit (airplane mode) → error toast, form stays open.
 - [ ] Anonymous user submit → doc has `uid: null`.
+- [ ] Reply email field stops accepting input at 254 characters (the cap `firestore.rules` enforces).
 
 ### Settings entry
 - [ ] Settings → "Send Feedback" → /feedback opens directly (no soft-ask).
@@ -456,3 +461,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |
 | 2026-05-09 | In-app review prompt + feedback form |
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |
+| 2026-08-18 | Sign-out erases this device's local data behind a "Sign Out & Erase" confirmation, an unfinished wipe pauses backup until it completes, the last remaining sign-in provider cannot be disconnected, and the feedback reply email is capped at 254 characters |
