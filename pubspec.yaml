@@ -18,7 +18,7 @@ dependencies:
 
   # Database
   drift: ^2.22.1
-  sqlcipher_flutter_libs: ^0.5.1
+  sqlcipher_flutter_libs: ^0.6.8
 
   # Routing
   go_router: ^15.1.2
