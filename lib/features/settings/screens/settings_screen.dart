@@ -282,6 +282,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final IconData icon;
     final String title;
     String? subtitle;
+    int? subtitleMaxLines = 3;
     Widget? trailing;
 
     switch (syncState.status) {
@@ -330,6 +331,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         // Not an error the user caused: this device is holding data it is not
         // allowed to upload. The two reasons need different ways out.
         icon = Icons.cloud_off;
+        // Both explanations end in the only recovery instruction the user is
+        // ever given, so this state's subtitle is never cut short. A taller
+        // tile in a state this rare is the accepted cost.
+        subtitleMaxLines = null;
         switch (syncState.blockedReason) {
           case SyncBlockedReason.foreignLocalData:
             // Nothing was deleted here — the session was lost, not signed out
@@ -361,7 +366,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       leading: Icon(icon),
       title: Text(title),
       subtitle: subtitle != null
-          ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
+          ? Text(
+              subtitle,
+              maxLines: subtitleMaxLines,
+              overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
+            )
           : null,
       trailing: trailing,
     );

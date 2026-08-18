@@ -468,11 +468,19 @@ void main() {
       // the sign-in sync. That is the async gap the debounced push slips
       // through in production; holding it open just makes the order certain.
       queue.pendingCountDelay = const Duration(milliseconds: 1000);
+      syncService.pushAllLocalCalls.clear();
       auth.set(signedInAs(uidB));
       await Future<void>.delayed(const Duration(milliseconds: 2200));
       queue.pendingCountDelay = Duration.zero;
       await settle();
 
+      expect(
+        syncService.pushAllLocalCalls,
+        isEmpty,
+        reason:
+            'the sign-in sync has to lose this race, or the test is no longer '
+            'exercising the debounced push the stamp fix is about',
+      );
       expect(
         await cloudPieceIds(uidB),
         ['piece-b'],
@@ -540,10 +548,21 @@ class _FlakyWipeSyncService extends SyncService {
 
   bool wipeFails = false;
 
+  /// Every uid `pushAllLocal` has run for. Only [SyncNotifier.syncNow] takes
+  /// that branch, so it is how a test tells which of the two push paths did an
+  /// upload — both leave the same rows in the cloud.
+  final List<String> pushAllLocalCalls = [];
+
   @override
   Future<void> deleteLocalData() async {
     if (wipeFails) throw Exception('simulated local wipe failure');
     return super.deleteLocalData();
+  }
+
+  @override
+  Future<void> pushAllLocal(String uid) {
+    pushAllLocalCalls.add(uid);
+    return super.pushAllLocal(uid);
   }
 }
 

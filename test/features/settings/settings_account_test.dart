@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -186,6 +187,44 @@ void main() {
       // The session still ends; the user is told the device is not clean yet.
       expect(authService.signOutCalls, 1);
       expect(find.textContaining('could not be deleted'), findsOneWidget);
+    });
+  });
+
+  group('blocked sync tile', () {
+    // Verbatim `syncBlockedForeignDataDetail`: its last sentence is the only
+    // place the user is ever told how to get backup working again.
+    const foreignDetail =
+        'This device still holds pottery from another account, so nothing is '
+        'uploaded. Sign in as that account to continue, or erase this device.';
+
+    testWidgets('shows the whole explanation on a narrow phone', (
+      tester,
+    ) async {
+      // 390pt is an iPhone 14/15's width — the narrowest the tile has to fit.
+      tester.view.physicalSize = const Size(390, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      when(
+        () => syncService.getLocalDataOwner(),
+      ).thenAnswer((_) async => 'user-b');
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(find.text(foreignDetail), findsOneWidget);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.text(foreignDetail),
+      );
+      expect(
+        paragraph.didExceedMaxLines,
+        isFalse,
+        reason:
+            'an ellipsis here cuts the recovery instruction off mid-sentence, '
+            'leaving the user no stated way out of the blocked state',
+      );
     });
   });
 
