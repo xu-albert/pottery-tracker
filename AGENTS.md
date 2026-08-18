@@ -44,6 +44,11 @@ than re-deriving it.
   Play track, so an Android regression is never confounded with an upgrade. `drift` is already at its
   ceiling (2.31.0) because >= 2.32.0 requires `sqlite3` 3.x, and `intl` is pinned by
   `flutter_localizations` inside the Flutter SDK — neither is an independent upgrade.
+- `path_provider_foundation` is held at exactly **2.5.1** as an Apple-side workaround, not a design
+  choice: 2.6.0 reimplements the plugin on `package:objective_c`, which drags in Dart's build-hooks /
+  native-assets toolchain (`hooks`, `code_assets`, `native_toolchain_c`). Lifting the pin can only be
+  validated by an iOS build, so it stays until the `package:sqlite3` 3.x migration above, which needs
+  that toolchain anyway.
 
 ## Common Commands
 

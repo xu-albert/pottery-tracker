@@ -31,6 +31,7 @@ dependencies:
   # Utilities
   uuid: ^4.6.0
   path_provider: ^2.1.6
+  # Exact pin on purpose — see the "Android release" section of AGENTS.md.
   path_provider_foundation: 2.5.1
   path: ^1.9.1
   shared_preferences: ^2.5.5
