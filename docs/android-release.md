@@ -100,10 +100,20 @@ The `-PrequireReleaseSigning=true` flag makes the build **fail** rather than qui
 Android debug key. Use it for every artifact you intend to upload. (CI can set the environment
 variable `POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING` instead, which does the same thing.)
 
-Both switches fail closed: either one counts as **on** whenever it is present in any form —
-`-PrequireReleaseSigning` with no value, `=true`, `=1`, `=yes`, `=on`, any casing. Only an explicit
-`false`, `0`, `no` or `off` turns strict signing back off, so a typo can never silently downgrade an
-upload artifact to the debug key.
+Both switches fail closed on their **value**: either one counts as **on** whenever it is present in
+any form — `-PrequireReleaseSigning` with no value, `=true`, `=1`, `=yes`, `=on`, any casing. Only an
+explicit `false`, `0`, `no` or `off` turns strict signing back off, so a mistyped *value* can never
+silently downgrade an upload artifact to the debug key.
+
+A mistyped **flag name** is a different matter and the build cannot catch it: Gradle silently ignores
+unknown `-P` properties, so `-PrequireReleaseSighing=true` leaves strict signing off and the build
+falls back to the debug key. Never treat the flag as proof on its own — the certificate check below
+(and `jarsigner -verify` in section 7 for the `.aab`) is what actually confirms an upload artifact is
+signed with your key.
+
+The warning and the strict-mode failure apply to release work only. A debug or profile build with no
+`key.properties` stays silent, since nothing it produces is uploadable. When the build cannot be
+positively identified as debug or profile, it is treated as a release.
 
 Then confirm the certificate is yours and not the debug one:
 
@@ -324,6 +334,12 @@ the highest-risk unknown in the whole Android launch:
 
 1. **Does the encrypted database open on Android?** `lib/database/database.dart` opens
    `libsqlcipher.so` via `openCipherOnAndroid`, which has never executed on an Android device.
+   The app no longer fails silently here: if the library that loads is *not* SQLCipher, the first
+   database access throws `SqlCipherUnavailableException` and the album screen renders
+   `Error: SqlCipherUnavailableException: the local database is NOT encrypted…` instead of crashing.
+   That text means the SQLCipher `.so`/framework did not link — not that the database is corrupt, and
+   not that the app is broken. It is the guard doing its job: without it the app would have quietly
+   written every piece, photo and note to disk in the clear.
 2. Does an *existing* encrypted database still open after the `sqlcipher_flutter_libs` 0.5.7 → 0.6.8
    swap? This changes the underlying native library from `net.zetetic:android-database-sqlcipher:4.5.4`
    to `net.zetetic:sqlcipher-android:4.10.0` — **so this needs re-testing on iOS too, not just

@@ -56,18 +56,33 @@ if (keystorePropertiesFile.exists() && missingSigningKeys.isNotEmpty()) {
     )
 }
 
+// Scoped to release work, conservatively: the resolved task graph has to positively
+// identify the build as debug/profile before the warning and the strict-mode failure are
+// skipped. An empty, unrecognised or mixed graph is treated exactly like a release, because
+// staying silent on a real release is far worse than a redundant warning on a debug build.
+fun buildsReleaseArtifact(scheduledTaskNames: List<String>): Boolean {
+    val names = scheduledTaskNames.map { it.substringAfterLast(':').lowercase() }
+    if (names.any { it.contains("release") }) return true
+    return names.none { it.contains("debug") || it.contains("profile") }
+}
+
 if (!hasReleaseSigning) {
-    if (releaseSigningRequired) {
-        throw GradleException(
-            "Release signing was required but android/key.properties does not exist. " +
-                "See docs/android-release.md section 2 to generate the upload keystore.",
+    val buildLogger = logger
+    gradle.taskGraph.whenReady {
+        if (!buildsReleaseArtifact(allTasks.map { it.name })) return@whenReady
+
+        if (releaseSigningRequired) {
+            throw GradleException(
+                "Release signing was required but android/key.properties does not exist. " +
+                    "See docs/android-release.md section 2 to generate the upload keystore.",
+            )
+        }
+        buildLogger.quiet(
+            "WARNING: android/key.properties not found — release builds will be signed with the " +
+                "Android debug key. Google Play rejects debug-signed uploads. See " +
+                "docs/android-release.md section 2.",
         )
     }
-    logger.quiet(
-        "WARNING: android/key.properties not found — release builds will be signed with the " +
-            "Android debug key. Google Play rejects debug-signed uploads. See " +
-            "docs/android-release.md section 2.",
-    )
 }
 
 android {

@@ -1,6 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:pottery_tracker/database/sqlcipher_guard.dart';
+import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart';
+
+class _RecordingDatabase extends Mock implements CommonDatabase {}
 
 void main() {
   group('assertSqlCipherBacksSqlite3', () {
@@ -97,6 +101,68 @@ void main() {
       expect(thrown, isA<SqlCipherUnavailableException>());
       expect(thrown.toString(), isNot(contains(key)));
       expect(thrown.toString(), isNot(contains('super-secret')));
+    });
+  });
+
+  group('configureSqlCipher', () {
+    test('rejects a real plain-sqlite3 connection it just tried to key', () {
+      final db = sqlite3.openInMemory();
+      addTearDown(db.dispose);
+
+      expect(
+        () => configureSqlCipher(db, 'not-a-real-key'),
+        throwsA(isA<SqlCipherUnavailableException>()),
+      );
+    });
+
+    test('never names the key it was given when it refuses', () {
+      const key = 'super-secret-encryption-key-value';
+      final db = sqlite3.openInMemory();
+      addTearDown(db.dispose);
+
+      Object? thrown;
+      try {
+        configureSqlCipher(db, key);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown, isA<SqlCipherUnavailableException>());
+      expect(thrown.toString(), isNot(contains(key)));
+    });
+
+    test('keys the connection first, then probes for SQLCipher', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any())).thenAnswer((_) {});
+      when(() => db.select(any())).thenReturn(
+        ResultSet(
+          ['cipher_version'],
+          null,
+          [
+            ['4.10.0 community'],
+          ],
+        ),
+      );
+
+      expect(() => configureSqlCipher(db, 'k3y'), returnsNormally);
+
+      verifyInOrder([
+        () => db.execute("PRAGMA key = 'k3y'"),
+        () => db.select('PRAGMA cipher_version'),
+      ]);
+    });
+
+    test('still refuses when a keyed connection reports no cipher version', () {
+      final db = _RecordingDatabase();
+      when(() => db.execute(any())).thenAnswer((_) {});
+      when(() => db.select(any()))
+          .thenReturn(ResultSet(['cipher_version'], null, const []));
+
+      expect(
+        () => configureSqlCipher(db, 'k3y'),
+        throwsA(isA<SqlCipherUnavailableException>()),
+      );
+      verify(() => db.execute("PRAGMA key = 'k3y'")).called(1);
     });
   });
 }

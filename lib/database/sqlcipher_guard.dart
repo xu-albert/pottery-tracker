@@ -1,3 +1,5 @@
+import 'package:sqlite3/common.dart';
+
 /// Thrown when the sqlite3 library backing the app is not SQLCipher, which
 /// means `PRAGMA key` was silently ignored and the database is plaintext.
 class SqlCipherUnavailableException implements Exception {
@@ -25,4 +27,14 @@ void assertSqlCipherBacksSqlite3(List<List<Object?>> cipherVersionRows) {
   if (version != null && version.toString().trim().isNotEmpty) return;
 
   throw const SqlCipherUnavailableException();
+}
+
+/// Keys [db] and then refuses to hand back a connection that is not encrypted.
+///
+/// The two statements belong together: `PRAGMA key` is silently ignored by a
+/// plain sqlite3 build, so without the probe that follows it the database would
+/// be created in the clear with nothing to signal it.
+void configureSqlCipher(CommonDatabase db, String key) {
+  db.execute("PRAGMA key = '$key'");
+  assertSqlCipherBacksSqlite3(db.select('PRAGMA cipher_version').rows);
 }

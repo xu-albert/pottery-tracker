@@ -63,10 +63,7 @@ class AppDatabase extends _$AppDatabase {
 
     final executor = NativeDatabase(
       file,
-      setup: (rawDb) {
-        rawDb.execute("PRAGMA key = '$key'");
-        assertSqlCipherBacksSqlite3(rawDb.select('PRAGMA cipher_version').rows);
-      },
+      setup: (rawDb) => configureSqlCipher(rawDb, key),
     );
 
     return AppDatabase(executor);
