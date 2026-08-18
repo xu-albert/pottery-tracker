@@ -55,7 +55,7 @@ if (!hasReleaseSigning) {
                 "See docs/android-release.md section 2 to generate the upload keystore.",
         )
     }
-    logger.warn(
+    logger.quiet(
         "WARNING: android/key.properties not found — release builds will be signed with the " +
             "Android debug key. Google Play rejects debug-signed uploads. See " +
             "docs/android-release.md section 2.",

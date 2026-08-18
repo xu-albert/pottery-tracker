@@ -169,7 +169,7 @@ Photo
 
 | Requirement | Specification |
 |-------------|---------------|
-| Platforms | iOS 12+, Android 7.0+ (API 24+) |
+| Platforms | iOS 15+, Android 7.0+ (API 24+) |
 | Framework | Flutter (latest stable) |
 | Language | Dart |
 | Local Storage | Drift (SQLite) or sqflite |

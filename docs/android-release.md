@@ -249,7 +249,7 @@ Android.
 | **Privacy policy URL** | you | Play requires a publicly hosted URL. None exists yet — see section 8. |
 | **Data Safety form** | you | See the declaration notes below. Mismatches get apps pulled. |
 | **Content rating** | you | IARC questionnaire, tied to the account. Asks honestly about user-generated content. |
-| App icon 512×512 | asset exists | `assets/icon/icon.png` |
+| App icon 512×512 | to export | `assets/icon/icon.png` is 1024×1024. Play requires exactly 512×512 PNG and rejects other sizes, so downscale a 512×512 copy from that source before uploading. |
 | Feature graphic 1024×500 | to create | — |
 | ≥2 phone screenshots | needs a device | Cannot be produced headlessly. |
 | Title, short + full description | to write | — |
@@ -317,8 +317,8 @@ These are genuine product choices. Nothing in the repo presumes an answer to any
 The 181-test suite is host-VM only. These cannot be answered without hardware, and the first one is
 the highest-risk unknown in the whole Android launch:
 
-1. **Does the encrypted database open on Android?** `lib/database/database.dart` calls
-   `DynamicLibrary.open('libsqlcipher.so')`, which has never executed on an Android device.
+1. **Does the encrypted database open on Android?** `lib/database/database.dart` opens
+   `libsqlcipher.so` via `openCipherOnAndroid`, which has never executed on an Android device.
 2. Does an *existing* encrypted database still open after the `sqlcipher_flutter_libs` 0.5.7 → 0.6.8
    swap? This changes the underlying native library from `net.zetetic:android-database-sqlcipher:4.5.4`
    to `net.zetetic:sqlcipher-android:4.10.0` — **so this needs re-testing on iOS too, not just
