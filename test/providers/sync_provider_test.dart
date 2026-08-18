@@ -666,6 +666,26 @@ void main() {
 
         verify(() => s.syncService.deleteLocalData()).called(1);
         expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
+
+        // SettingsScreen._confirmSignOut drops the auth state immediately
+        // afterwards, which wakes the resumed wipe. It must not clear the flag
+        // while the abandoned pull is still writing rows behind the delete.
+        s.container.read(authProvider.notifier).state = _signedOut;
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
+
+        // So the next account still finds the wipe owed, and pushes nothing.
+        clearInteractions(s.syncService);
+        s.container.read(authProvider.notifier).state = const AuthState(
+          status: AuthStatus.authenticated,
+          uid: 'user-2',
+        );
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+
+        verifyNever(() => s.syncService.pushAllLocal(any()));
+        expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
       });
     });
 

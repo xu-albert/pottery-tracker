@@ -54,6 +54,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
   final SyncService _syncService;
   bool _syncing = false;
   bool _wiping = false;
+
+  /// True while a sync that started *before* a wipe is still running. It can
+  /// still be inserting rows and downloading photos behind the delete, so the
+  /// device is not provably clean and the pending-wipe flag has to outlive it.
+  /// Every site that clears the flag has to honour this, not just the wipe
+  /// that noticed it.
+  bool _staleSyncInFlight = false;
   Timer? _processTimer;
   Future<void>? _wipeInFlight;
 
@@ -116,6 +123,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         errorMessage: e.toString(),
       );
     } finally {
+      _staleSyncInFlight = false;
       _syncing = false;
     }
   }
@@ -166,6 +174,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         errorMessage: e.toString(),
       );
     } finally {
+      _staleSyncInFlight = false;
       _syncing = false;
     }
   }
@@ -272,9 +281,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // A sync that outlived the wait can still be inserting rows and writing
       // photo files behind the delete, so the device is not provably clean.
-      // Wipe anyway, but keep the flag: the next sign-in wipes again before it
-      // is allowed to push.
-      await _wipeLocalData(clearFlagWhenDone: !_syncing);
+      // Wipe anyway, but keep the flag: nothing may clear it until that sync
+      // is gone and a later wipe has run clean.
+      if (_syncing) _staleSyncInFlight = true;
+
+      await _wipeLocalData();
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
     } finally {
       _wiping = false;
@@ -283,15 +294,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   /// Deletes every local store, flagged so an interruption is recoverable.
   ///
-  /// [clearFlagWhenDone] is false when something else may still be writing to
-  /// the stores this just emptied: the delete runs, but the device stays
-  /// flagged so it is repeated before anything is pushed.
-  Future<void> _wipeLocalData({bool clearFlagWhenDone = true}) async {
+  /// The single place the pending-wipe flag is ever cleared. A wipe running
+  /// alongside [_staleSyncInFlight] deletes as usual but leaves the flag set,
+  /// because that sync can write more rows after this delete has passed them;
+  /// the wipe that runs once it has unwound is the one allowed to clear it.
+  Future<void> _wipeLocalData() async {
+    final staleSync = _staleSyncInFlight;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(pendingWipeKey, true);
     await _queue.clear();
     await _syncService.deleteLocalData();
-    if (clearFlagWhenDone) await prefs.remove(pendingWipeKey);
+    if (!staleSync) await prefs.remove(pendingWipeKey);
   }
 
   /// Whether an owed local wipe has to stop this device from pushing.
@@ -331,9 +344,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (_wiping || prefs.getBool(pendingWipeKey) != true) return;
     debugPrint('SyncNotifier: finishing an interrupted local data wipe');
     try {
-      await _queue.clear();
-      await _syncService.deleteLocalData();
-      await prefs.remove(pendingWipeKey);
+      await _wipeLocalData();
     } catch (e) {
       // Leave the flag set: [_blockedByPendingWipe] then refuses every push
       // until a later attempt succeeds, rather than uploading what survived.
@@ -342,7 +353,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   Future<void> deleteAllData() async {
-    if (_syncing) return;
+    if (_syncing || _wiping) return;
     _syncing = true;
     // This owns the wipe too, so a resumed one does not run alongside it and
     // clear the flag out from under the delete below.

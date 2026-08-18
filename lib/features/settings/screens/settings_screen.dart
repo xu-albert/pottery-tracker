@@ -433,6 +433,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
           _SectionHeader(title: 'Account'),
           ListTile(
+            enabled: !_isSigningOut,
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text(
               'Delete Account & Data',
