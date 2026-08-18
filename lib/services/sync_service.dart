@@ -162,11 +162,6 @@ class SyncService {
     }
   }
 
-  /// Clears every per-uid pull watermark.
-  ///
-  /// Leaving one behind is not just untidy: the same account signing back in
-  /// would take the *incremental* pull branch and never re-download the pieces
-  /// this wipe just deleted.
   /// The uid this device's local data belongs to, or null when it belongs to
   /// nobody yet — a fresh install, a local-only user who has never signed in,
   /// or a device that has just been wiped.
@@ -183,6 +178,11 @@ class SyncService {
     await prefs.setString(_localDataOwnerKey, uid);
   }
 
+  /// Clears every per-uid pull watermark.
+  ///
+  /// Leaving one behind is not just untidy: the same account signing back in
+  /// would take the *incremental* pull branch and never re-download the pieces
+  /// this wipe just deleted.
   Future<void> _clearSyncWatermarks() async {
     final prefs = await SharedPreferences.getInstance();
     final stale = prefs

@@ -126,8 +126,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     _syncing = true;
     try {
-      if (await _blockedByPendingWipe()) return;
-      if (await _blockedByForeignLocalData(auth.uid!)) return;
+      if (await _claimOrBlock(auth.uid!)) return;
       await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
       if (state.status != SyncStatus.error) {
@@ -162,13 +161,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     state = state.copyWith(status: SyncStatus.syncing);
 
     try {
-      if (await _blockedByPendingWipe()) return;
-      if (await _blockedByForeignLocalData(uid)) return;
-
-      // Allowed to sync, so this account owns what is on the device from here
-      // on. Claiming it before the push matters: if the process dies mid-sync,
-      // the stamp is already correct.
-      await _syncService.setLocalDataOwner(uid);
+      if (await _claimOrBlock(uid)) return;
 
       final lastPulled = forceFullSync
           ? null
@@ -359,6 +352,27 @@ class SyncNotifier extends StateNotifier<SyncState> {
     await _queue.clear();
     await _syncService.deleteLocalData();
     if (!staleSync) await prefs.remove(pendingWipeKey);
+  }
+
+  /// Whether this device is refused for [uid] — and, when it is not, the one
+  /// place that claims the device for it.
+  ///
+  /// Both push paths go through here, so the invariant "a device that has
+  /// pushed for uid X is stamped X" holds structurally rather than by the
+  /// caller remembering to stamp. Splitting the checks from the claim is what
+  /// left a hole: the debounced [_pushQueue] can win the race against the
+  /// sign-in [syncNow] — which then returns on `_syncing` and never runs its
+  /// stamp — so the device would upload for an account it was not marked as
+  /// owning, and a later involuntary sign-out would let the next account push
+  /// those same rows into its own cloud tree.
+  ///
+  /// Claiming before the push also means a process that dies mid-push comes
+  /// back with the stamp already correct.
+  Future<bool> _claimOrBlock(String uid) async {
+    if (await _blockedByPendingWipe()) return true;
+    if (await _blockedByForeignLocalData(uid)) return true;
+    await _syncService.setLocalDataOwner(uid);
+    return false;
   }
 
   /// Whether this device's data belongs to an account other than [uid].

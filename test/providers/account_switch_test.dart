@@ -25,6 +25,7 @@ void main() {
   late FakeFirebaseFirestore firestore;
   late MockFirebaseStorage storage;
   late _FlakyWipeSyncService syncService;
+  late _StallableSyncQueue queue;
   late _TestAuthNotifier auth;
   late ProviderContainer container;
   late SyncNotifier notifier;
@@ -33,6 +34,7 @@ void main() {
 
   const uidA = 'account-a';
   const uidB = 'account-b';
+  const uidC = 'account-c';
 
   AuthState signedInAs(String uid) =>
       AuthState(status: AuthStatus.authenticated, uid: uid);
@@ -98,12 +100,13 @@ void main() {
     firestore = FakeFirebaseFirestore();
     storage = MockFirebaseStorage();
     syncService = _FlakyWipeSyncService(db, firestore, storage);
+    queue = _StallableSyncQueue();
     auth = _TestAuthNotifier(signedInAs(uidA));
 
     container = ProviderContainer(
       overrides: [
         authProvider.overrideWith((_) => auth),
-        syncQueueProvider.overrideWithValue(SyncQueue()),
+        syncQueueProvider.overrideWithValue(queue),
         syncServiceProvider.overrideWithValue(syncService),
       ],
     );
@@ -447,6 +450,63 @@ void main() {
   });
 
   test(
+    'a queued push that beats the sign-in sync still claims the device',
+    () async {
+      // The device is unowned — A's sign-out wiped it — which is also the
+      // state a fresh install is in.
+      await notifier.signOutAndWipeLocalData(() async {});
+      auth.set(const AuthState(status: AuthStatus.unauthenticated));
+      await settle();
+      expect(await syncService.getLocalDataOwner(), isNull);
+
+      // B makes a piece as the sign-in lands, so its debounced push is already
+      // scheduled when the auth state flips.
+      await insertPieceWithPhoto('piece-b', "B's bowl");
+      await container.read(syncTriggerProvider).afterPieceWrite('piece-b');
+
+      // Stall the pending-count read `_onAuthChanged` awaits before it starts
+      // the sign-in sync. That is the async gap the debounced push slips
+      // through in production; holding it open just makes the order certain.
+      queue.pendingCountDelay = const Duration(milliseconds: 1000);
+      auth.set(signedInAs(uidB));
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      queue.pendingCountDelay = Duration.zero;
+      await settle();
+
+      expect(
+        await cloudPieceIds(uidB),
+        ['piece-b'],
+        reason: 'the debounced push, not the sign-in sync, did the upload',
+      );
+      expect(
+        await syncService.getLocalDataOwner(),
+        uidB,
+        reason:
+            'a device that has pushed for an account must be stamped with '
+            'it, whichever push path did the pushing',
+      );
+
+      // Without that stamp the next account is free to take the device over.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidC));
+      await settle();
+
+      expect(
+        await cloudPieceIds(uidC),
+        isEmpty,
+        reason: "C must not upload B's bowl",
+      );
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+      expect(
+        container.read(syncStateProvider).blockedReason,
+        SyncBlockedReason.foreignLocalData,
+      );
+      expect((await db.select(db.pieces).get()).map((p) => p.id), ['piece-b']);
+    },
+  );
+
+  test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {
       await insertPieceWithPhoto('piece-a', "A's mug");
@@ -484,6 +544,21 @@ class _FlakyWipeSyncService extends SyncService {
   Future<void> deleteLocalData() async {
     if (wipeFails) throw Exception('simulated local wipe failure');
     return super.deleteLocalData();
+  }
+}
+
+/// The real [SyncQueue] with one seam: [pendingCountDelay] stalls the pending
+/// count read that `_onAuthChanged` awaits before it starts the sign-in sync,
+/// which is the window a debounced push slips through in production.
+class _StallableSyncQueue extends SyncQueue {
+  Duration pendingCountDelay = Duration.zero;
+
+  @override
+  Future<int> get pendingCount async {
+    if (pendingCountDelay > Duration.zero) {
+      await Future<void>.delayed(pendingCountDelay);
+    }
+    return super.pendingCount;
   }
 }
 
