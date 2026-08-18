@@ -71,13 +71,25 @@ All data lives in local SQLite first. Writes never block on the network: every D
 
 Every write path must go through `SyncTrigger`; a DAO write without one silently never reaches the cloud.
 
-Sign-out is destructive by design (captain decision, 2026-08-18): `SyncNotifier.signOutAndWipeLocalData`
-ends the session and then deletes the local database, the photo and cache files, the sync queue and
-every pull watermark. It has to, because the *next* account's first sync calls `pushAllLocal`, which
-would otherwise upload the previous account's pieces into that account's cloud tree. Two consequences
-for any future change: a new local store must be added to `SyncService.deleteLocalData` or it becomes
-a cross-account leak, and the sign-out confirmation must keep saying plainly that local data is
-deleted. `test/providers/account_switch_test.dart` is the end-to-end guard.
+No account may push another account's data. The *next* account's first sync calls `pushAllLocal`, so
+whatever is on the device gets uploaded into whichever cloud tree is signed in — three captain
+decisions (2026-08-18) settle how that is prevented, and they differ by how the session ended:
+
+- **Explicit sign-out is destructive.** `SyncNotifier.signOutAndWipeLocalData` ends the session and
+  then deletes the local database, the photo and cache files, the sync queue and every pull
+  watermark. A new local store must be added to `SyncService.deleteLocalData` or it becomes a
+  cross-account leak, and the confirmation must keep saying plainly that local data is deleted.
+- **Involuntary session loss destroys nothing.** `AuthNotifier._init` signs out when `reload()`
+  fails or times out — which includes an ordinary offline launch — so it wipes nothing and relies on
+  the `localDataOwnerUid` stamp instead: every push path refuses while the stamp names someone else
+  (`SyncStatus.blocked` with `SyncBlockedReason.foreignLocalData`). The way out is signing back in
+  as the owner, or an explicit erase.
+- **An owed wipe is only ever retried where the user expects it** — at an auth transition, or from
+  the confirmed `eraseLocalDataNow`. Never from `syncNow` or the debounced `_pushQueue`: a delete on
+  the push path fires 500ms after any edit and would destroy the *current* account's work.
+
+`test/providers/account_switch_test.dart` is the end-to-end guard for all three, against a real
+Drift database.
 
 ## Design Constraints
 
