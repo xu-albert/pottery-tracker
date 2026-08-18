@@ -20,6 +20,26 @@ Local-only (Phase 1) and Firebase sync (Phase 2) are both shipped. Firebase Auth
 - Image pipeline uses in-memory compression (`compressWithList`) with raw-bytes fallback for reliability
 - Camera crashes on iOS simulator — use Photo Library for testing
 
+### Android release
+
+Android builds and produces a Play-shaped `.aab`, but has never run on a device — the encrypted-DB
+path in `lib/database/database.dart` is the highest-risk unverified item. Everything a human has to
+do in the Firebase or Play console is in `docs/android-release.md`; keep that file current rather
+than re-deriving it.
+
+- `sqlcipher_flutter_libs` must stay at **>= 0.6.8**. Below that the package sets `compileSdkVersion 28`
+  and `flutter build apk --release` fails on `android:attr/lStar`, and its `libsqlcipher.so` is
+  4 KB-aligned, which Play rejects. 0.6.8 is also the last release before the `0.7.0+eol` tombstone;
+  the real destination is `package:sqlite3` 3.x with SQLCipher built in.
+- Release signing reads `android/key.properties` (gitignored, never committed). With no such file the
+  build falls back to the Android **debug** key so a clean checkout still builds — pass
+  `-PrequireReleaseSigning=true` for anything destined for Play and the build fails instead.
+- Major dependency upgrades (Firebase 3->4/5->6, `go_router`, `google_sign_in`, `sign_in_with_apple`,
+  `flutter_secure_storage`, Riverpod 3, `sqlite3` 3) are deliberately frozen until Android is on a
+  Play track, so an Android regression is never confounded with an upgrade. `drift` is already at its
+  ceiling (2.31.0) because >= 2.32.0 requires `sqlite3` 3.x, and `intl` is pinned by
+  `flutter_localizations` inside the Flutter SDK — neither is an independent upgrade.
+
 ## Common Commands
 
 ```bash

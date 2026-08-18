@@ -32,6 +32,7 @@
         "lib/firebase_options.dart": {
           "projectId": "pottery-tracker-31b1f",
           "configurations": {
+            "android": "1:22629038852:android:fc0f7acedf9b618b0fae51",
             "ios": "1:22629038852:ios:f3cd8152c04934a70fae51"
           }
         }
