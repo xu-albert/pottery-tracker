@@ -10,6 +10,7 @@ import 'package:sqlite3/open.dart' as sqlite_open;
 import 'package:uuid/uuid.dart';
 
 import '../services/encryption_key_service.dart';
+import 'sqlcipher_guard.dart';
 import 'tables/pieces_table.dart';
 import 'tables/photos_table.dart';
 import 'tables/clay_options_table.dart';
@@ -64,6 +65,7 @@ class AppDatabase extends _$AppDatabase {
       file,
       setup: (rawDb) {
         rawDb.execute("PRAGMA key = '$key'");
+        assertSqlCipherBacksSqlite3(rawDb.select('PRAGMA cipher_version').rows);
       },
     );
 

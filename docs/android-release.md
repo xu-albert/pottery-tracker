@@ -98,7 +98,12 @@ flutter build apk --release -PrequireReleaseSigning=true
 
 The `-PrequireReleaseSigning=true` flag makes the build **fail** rather than quietly fall back to the
 Android debug key. Use it for every artifact you intend to upload. (CI can set the environment
-variable `POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING=1` instead, which does the same thing.)
+variable `POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING` instead, which does the same thing.)
+
+Both switches fail closed: either one counts as **on** whenever it is present in any form —
+`-PrequireReleaseSigning` with no value, `=true`, `=1`, `=yes`, `=on`, any casing. Only an explicit
+`false`, `0`, `no` or `off` turns strict signing back off, so a typo can never silently downgrade an
+upload artifact to the debug key.
 
 Then confirm the certificate is yours and not the debug one:
 

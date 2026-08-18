@@ -18,9 +18,10 @@ plugins {
 //
 // Without that file the build falls back to the Android debug key so a clean checkout
 // still builds. That fallback is a developer convenience, not a shippable state: pass
-// -PrequireReleaseSigning=true (or set POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING=1) for any
-// artifact destined for Play, and the build fails instead of silently producing a
-// debug-signed upload candidate.
+// -PrequireReleaseSigning (or set POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING) for any artifact
+// destined for Play, and the build fails instead of silently producing a debug-signed
+// upload candidate. Either switch counts as on whenever it is present in any form; only an
+// explicit false/0/no/off turns it back off.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties =
     Properties().apply {
@@ -34,9 +35,16 @@ val missingSigningKeys =
     requiredSigningKeys.filter { keystoreProperties.getProperty(it).isNullOrBlank() }
 val hasReleaseSigning = keystorePropertiesFile.exists() && missingSigningKeys.isEmpty()
 
+fun strictSigningRequestedBy(rawValue: String?): Boolean =
+    when (rawValue?.trim()?.lowercase()) {
+        null -> false
+        "false", "0", "no", "off" -> false
+        else -> true
+    }
+
 val releaseSigningRequired =
-    project.findProperty("requireReleaseSigning")?.toString().toBoolean() ||
-        System.getenv("POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING") == "1"
+    strictSigningRequestedBy(project.findProperty("requireReleaseSigning")?.toString()) ||
+        strictSigningRequestedBy(System.getenv("POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING"))
 
 // A key.properties that exists but is incomplete is always an error — it is a
 // misconfiguration, never an intentional state, and silently falling back would hide it.
