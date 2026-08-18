@@ -55,6 +55,9 @@ _setup({AuthState auth = _signedOut}) {
   when(() => syncService.deleteAllData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
+  // Unowned by default: the device belongs to whoever signs in first.
+  when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
+  when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});

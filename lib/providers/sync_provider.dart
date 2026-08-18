@@ -11,9 +11,23 @@ import '../services/sync_trigger.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
 
-/// [SyncStatus.blocked] is a refusal, not a failure: a local wipe is still
-/// owed, so this device is not allowed to push until it is done.
+/// [SyncStatus.blocked] is a refusal, not a failure: this device is not
+/// allowed to push yet. [SyncBlockedReason] says which of the two reasons
+/// applies, because the way out differs.
 enum SyncStatus { idle, syncing, error, blocked, disabled }
+
+/// Why a device is refusing to push.
+enum SyncBlockedReason {
+  /// A wipe owed by an explicit sign-out has not finished. The way out is to
+  /// let it finish — the user can force it from the sync tile.
+  pendingWipe,
+
+  /// The local data belongs to a different account, because a session was
+  /// lost involuntarily rather than signed out of. Nothing is deleted for
+  /// this: the way out is to sign back in as the owner, or to erase the
+  /// device deliberately.
+  foreignLocalData,
+}
 
 class SyncState {
   final SyncStatus status;
@@ -21,11 +35,15 @@ class SyncState {
   final DateTime? lastSyncedAt;
   final String? errorMessage;
 
+  /// Set only when [status] is [SyncStatus.blocked].
+  final SyncBlockedReason? blockedReason;
+
   const SyncState({
     this.status = SyncStatus.disabled,
     this.pendingCount = 0,
     this.lastSyncedAt,
     this.errorMessage,
+    this.blockedReason,
   });
 
   SyncState copyWith({
@@ -33,12 +51,14 @@ class SyncState {
     int? pendingCount,
     DateTime? lastSyncedAt,
     String? errorMessage,
+    SyncBlockedReason? blockedReason,
   }) {
     return SyncState(
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       errorMessage: errorMessage,
+      blockedReason: blockedReason,
     );
   }
 }
@@ -107,6 +127,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _syncing = true;
     try {
       if (await _blockedByPendingWipe()) return;
+      if (await _blockedByForeignLocalData(auth.uid!)) return;
       await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
       if (state.status != SyncStatus.error) {
@@ -142,6 +163,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     try {
       if (await _blockedByPendingWipe()) return;
+      if (await _blockedByForeignLocalData(uid)) return;
+
+      // Allowed to sync, so this account owns what is on the device from here
+      // on. Claiming it before the push matters: if the process dies mid-sync,
+      // the stamp is already correct.
+      await _syncService.setLocalDataOwner(uid);
 
       final lastPulled = forceFullSync
           ? null
@@ -292,6 +319,33 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
   }
 
+  /// Erases what this device still holds, at the user's explicit request.
+  ///
+  /// This is the deliberate way out of both blocked states, and it destroys
+  /// data, so it must only ever be reached from a confirmation the user
+  /// answered — see `SettingsScreen._confirmEraseLocalData`.
+  Future<void> eraseLocalDataNow() async {
+    if (_syncing || _wiping) return;
+    _processTimer?.cancel();
+    _wiping = true;
+    try {
+      await _wipeLocalData();
+      state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
+    } catch (e) {
+      debugPrint('SyncNotifier: explicit erase failed: $e');
+      state = state.copyWith(
+        status: SyncStatus.error,
+        errorMessage: e.toString(),
+      );
+      return;
+    } finally {
+      _wiping = false;
+    }
+    // The device is clean and unclaimed now, so the signed-in account can take
+    // it over and back up normally.
+    await syncNow();
+  }
+
   /// Deletes every local store, flagged so an interruption is recoverable.
   ///
   /// The single place the pending-wipe flag is ever cleared. A wipe running
@@ -307,6 +361,26 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (!staleSync) await prefs.remove(pendingWipeKey);
   }
 
+  /// Whether this device's data belongs to an account other than [uid].
+  ///
+  /// This is what the captain's ruling for the *involuntary* sign-out path
+  /// buys: `AuthNotifier._init` drops the session when `reload()` fails or
+  /// times out — a revoked token, but just as easily an offline launch — and
+  /// deliberately destroys nothing, because the user never asked to lose
+  /// anything. The stamp left behind is what stops the next account pushing
+  /// the previous one's pieces into its own cloud tree. The way out is to
+  /// sign back in as the owner, or to erase the device on purpose.
+  Future<bool> _blockedByForeignLocalData(String uid) async {
+    final owner = await _syncService.getLocalDataOwner();
+    if (owner == null || owner == uid) return false;
+    debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
+    state = state.copyWith(
+      status: SyncStatus.blocked,
+      blockedReason: SyncBlockedReason.foreignLocalData,
+    );
+    return true;
+  }
+
   /// Whether an owed local wipe has to stop this device from pushing.
   ///
   /// Every push path goes through here, not just sign-in, because the manual
@@ -320,7 +394,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(pendingWipeKey) != true) return false;
     debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');
-    state = state.copyWith(status: SyncStatus.blocked);
+    state = state.copyWith(
+      status: SyncStatus.blocked,
+      blockedReason: SyncBlockedReason.pendingWipe,
+    );
     return true;
   }
 

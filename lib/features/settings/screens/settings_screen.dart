@@ -172,6 +172,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// Erasing is destructive and the user did not ask for the situation that
+  /// led here, so it is never a bare tap: the dialog says exactly what goes,
+  /// Cancel is the default action, and the barrier is inert.
+  Future<void> _confirmEraseLocalData() async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(l10n.eraseLocalDataConfirmTitle),
+        content: Text(l10n.eraseLocalDataConfirmMessage),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.eraseLocalDataConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref.read(syncStateProvider.notifier).eraseLocalDataNow();
+  }
+
   Widget _providerTile({
     required IconData icon,
     required String name,
@@ -297,15 +326,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         );
       case SyncStatus.blocked:
-        // Not an error the user caused: the previous account's data is still
-        // on this device, so nothing may be uploaded until it is gone.
+        // Not an error the user caused: this device is holding data it is not
+        // allowed to upload. The two reasons need different ways out.
         icon = Icons.cloud_off;
-        title = l10n.syncBlockedWipePending;
-        subtitle = l10n.syncBlockedWipePendingDetail;
-        trailing = TextButton(
-          onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
-          child: Text(l10n.syncBlockedRetry),
-        );
+        switch (syncState.blockedReason) {
+          case SyncBlockedReason.foreignLocalData:
+            // Nothing was deleted here — the session was lost, not signed out
+            // of — so the first offer is to get the owner back, not to erase.
+            title = l10n.syncBlockedForeignData;
+            subtitle = l10n.syncBlockedForeignDataDetail;
+            trailing = TextButton(
+              onPressed: _confirmEraseLocalData,
+              child: Text(l10n.syncBlockedErase),
+            );
+          case SyncBlockedReason.pendingWipe:
+          case null:
+            title = l10n.syncBlockedWipePending;
+            subtitle = l10n.syncBlockedWipePendingDetail;
+            trailing = TextButton(
+              onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+              child: Text(l10n.syncBlockedRetry),
+            );
+        }
       case SyncStatus.disabled:
         icon = Icons.cloud_off;
         title = l10n.syncDisabled;

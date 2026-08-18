@@ -898,6 +898,42 @@ abstract class AppLocalizations {
   /// **'The previous account\'s data still has to be erased from this device before anything is uploaded.'**
   String get syncBlockedWipePendingDetail;
 
+  /// Sync status when this device's data belongs to another account
+  ///
+  /// In en, this message translates to:
+  /// **'Signed in as a different account'**
+  String get syncBlockedForeignData;
+
+  /// Explains why backup is blocked after an involuntary sign-out
+  ///
+  /// In en, this message translates to:
+  /// **'This device still holds pottery from another account, so nothing is uploaded. Sign in as that account to continue, or erase this device.'**
+  String get syncBlockedForeignDataDetail;
+
+  /// Button that erases the other account's data from this device
+  ///
+  /// In en, this message translates to:
+  /// **'Erase Device'**
+  String get syncBlockedErase;
+
+  /// Title of the confirmation shown before erasing local data
+  ///
+  /// In en, this message translates to:
+  /// **'Erase this device?'**
+  String get eraseLocalDataConfirmTitle;
+
+  /// Warning shown before an explicit local data erase
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.'**
+  String get eraseLocalDataConfirmMessage;
+
+  /// Destructive confirm button for erasing local data
+  ///
+  /// In en, this message translates to:
+  /// **'Erase'**
+  String get eraseLocalDataConfirm;
+
   /// Button that retries the pending local data wipe and resumes backup
   ///
   /// In en, this message translates to:

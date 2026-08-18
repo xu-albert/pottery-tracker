@@ -26,6 +26,17 @@ class SyncService {
   /// every one of them.
   static const _lastPulledAtPrefix = 'lastPulledAt_';
 
+  /// The uid whose data this device's local database holds.
+  ///
+  /// Stamped by the first account allowed to sync here and cleared by
+  /// [deleteLocalData]. It is what makes an *involuntary* loss of session
+  /// (a revoked token, or just an offline launch — see
+  /// `AuthNotifier._init`) safe: that path deliberately does not wipe, so the
+  /// stamp is the only thing left that knows whose pieces these are, and
+  /// `SyncNotifier` refuses to push for anyone else until the owner signs
+  /// back in.
+  static const _localDataOwnerKey = 'localDataOwnerUid';
+
   // ════════════════════════════════════════════
   // Delete all data
   // ════════════════════════════════════════════
@@ -113,6 +124,11 @@ class SyncService {
 
     await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
+
+    // The data is gone, so nobody owns this device any more: the next account
+    // to sign in starts from a clean slate rather than inheriting the claim.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_localDataOwnerKey);
   }
 
   Future<void> _deleteLocalPhotoFiles() async {
@@ -151,6 +167,22 @@ class SyncService {
   /// Leaving one behind is not just untidy: the same account signing back in
   /// would take the *incremental* pull branch and never re-download the pieces
   /// this wipe just deleted.
+  /// The uid this device's local data belongs to, or null when it belongs to
+  /// nobody yet — a fresh install, a local-only user who has never signed in,
+  /// or a device that has just been wiped.
+  Future<String?> getLocalDataOwner() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_localDataOwnerKey);
+  }
+
+  /// Claims this device's local data for [uid]. Only ever called for an
+  /// account that is allowed to sync here, so it never overwrites another
+  /// account's claim.
+  Future<void> setLocalDataOwner(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_localDataOwnerKey, uid);
+  }
+
   Future<void> _clearSyncWatermarks() async {
     final prefs = await SharedPreferences.getInstance();
     final stale = prefs

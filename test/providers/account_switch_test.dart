@@ -272,6 +272,111 @@ void main() {
   });
 
   test(
+    'an involuntary session loss keeps the data and blocks the next account',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+      expect(await cloudPieceIds(uidA), ['piece-a']);
+
+      // Involuntary sign-out: AuthNotifier._init's reload()-failure path drops
+      // the session without wiping, so A's data is still here and the owner
+      // stamp is the only thing that knows whose it is.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      expect(
+        (await db.select(db.pieces).get()).map((p) => p.id),
+        ['piece-a'],
+        reason: 'an involuntary sign-out must not destroy anything',
+      );
+
+      auth.set(signedInAs(uidB));
+      await settle();
+
+      expect(
+        await cloudPieceIds(uidB),
+        isEmpty,
+        reason: "B must not upload A's pieces",
+      );
+      expect(
+        container.read(syncStateProvider).status,
+        SyncStatus.blocked,
+        reason: 'B is refused, not silently failing',
+      );
+      expect(
+        container.read(syncStateProvider).blockedReason,
+        SyncBlockedReason.foreignLocalData,
+      );
+      expect((await db.select(db.pieces).get()).map((p) => p.id), ['piece-a']);
+      expect(await cloudPieceIds(uidA), ['piece-a']);
+    },
+  );
+
+  test('the owner signing back in resumes backup normally', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    // Re-authenticating as the owner is the way out, with nothing deleted.
+    auth.set(signedInAs(uidA));
+    await settle();
+
+    expect(container.read(syncStateProvider).status, SyncStatus.idle);
+    expect((await db.select(db.pieces).get()).map((p) => p.id), ['piece-a']);
+  });
+
+  test(
+    'an explicit erase releases the device to the signed-in account',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+      await notifier.eraseLocalDataNow();
+      await settle();
+
+      expect(await db.select(db.pieces).get(), isEmpty);
+      expect(
+        await cloudPieceIds(uidB),
+        isEmpty,
+        reason: "the erase must not push A's data on the way out",
+      );
+      expect(await cloudPieceIds(uidA), ['piece-a']);
+
+      // B now owns a clean device and backs up its own work.
+      await insertPieceWithPhoto('piece-b', "B's bowl");
+      await notifier.syncNow(forceFullSync: true);
+      expect(await cloudPieceIds(uidB), ['piece-b']);
+    },
+  );
+
+  test(
+    'a local-only user signing in for the first time still uploads',
+    () async {
+      // The upgrade path the leak fix must not regress: unowned local data
+      // belongs to whoever signs in first.
+      await notifier.signOutAndWipeLocalData(() async {});
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+
+      await insertPieceWithPhoto('piece-local', 'Made before signing in');
+      auth.set(signedInAs(uidB));
+      await settle();
+
+      expect(await cloudPieceIds(uidB), ['piece-local']);
+    },
+  );
+
+  test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {
       await insertPieceWithPhoto('piece-a', "A's mug");

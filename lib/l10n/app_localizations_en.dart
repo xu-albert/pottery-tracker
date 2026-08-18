@@ -445,6 +445,26 @@ class AppLocalizationsEn extends AppLocalizations {
       'The previous account\'s data still has to be erased from this device before anything is uploaded.';
 
   @override
+  String get syncBlockedForeignData => 'Signed in as a different account';
+
+  @override
+  String get syncBlockedForeignDataDetail =>
+      'This device still holds pottery from another account, so nothing is uploaded. Sign in as that account to continue, or erase this device.';
+
+  @override
+  String get syncBlockedErase => 'Erase Device';
+
+  @override
+  String get eraseLocalDataConfirmTitle => 'Erase this device?';
+
+  @override
+  String get eraseLocalDataConfirmMessage =>
+      'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.';
+
+  @override
+  String get eraseLocalDataConfirm => 'Erase';
+
+  @override
   String get syncBlockedRetry => 'Erase & Retry';
 
   @override
