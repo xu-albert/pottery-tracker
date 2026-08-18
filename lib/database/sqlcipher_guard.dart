@@ -47,7 +47,9 @@ class SqlCipherKeyingException implements Exception {
 /// the question is whether SQLCipher is present, never which release it is.
 void assertSqlCipherBacksSqlite3(List<List<Object?>> cipherVersionRows) {
   final firstRow = cipherVersionRows.isEmpty ? null : cipherVersionRows.first;
-  final version = (firstRow == null || firstRow.isEmpty) ? null : firstRow.first;
+  final version = (firstRow == null || firstRow.isEmpty)
+      ? null
+      : firstRow.first;
 
   if (version != null && version.toString().trim().isNotEmpty) return;
 

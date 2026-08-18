@@ -155,8 +155,9 @@ void main() {
     test('still refuses when a keyed connection reports no cipher version', () {
       final db = _RecordingDatabase();
       when(() => db.execute(any())).thenAnswer((_) {});
-      when(() => db.select(any()))
-          .thenReturn(ResultSet(['cipher_version'], null, const []));
+      when(
+        () => db.select(any()),
+      ).thenReturn(ResultSet(['cipher_version'], null, const []));
 
       expect(
         () => configureSqlCipher(db, 'k3y'),
@@ -225,28 +226,32 @@ void main() {
       }
     });
 
-    test('keeps the keying failure distinct from the not-encrypted failure', () {
-      final db = _RecordingDatabase();
-      when(() => db.execute(any()))
-          .thenThrow(SqliteException(21, 'bad parameter or other API misuse'));
+    test(
+      'keeps the keying failure distinct from the not-encrypted failure',
+      () {
+        final db = _RecordingDatabase();
+        when(
+          () => db.execute(any()),
+        ).thenThrow(SqliteException(21, 'bad parameter or other API misuse'));
 
-      expect(
-        () => configureSqlCipher(db, key),
-        throwsA(
-          isA<SqlCipherKeyingException>()
-              .having((e) => e.extendedResultCode, 'extendedResultCode', 21),
-        ),
-      );
-    });
+        expect(
+          () => configureSqlCipher(db, key),
+          throwsA(
+            isA<SqlCipherKeyingException>().having(
+              (e) => e.extendedResultCode,
+              'extendedResultCode',
+              21,
+            ),
+          ),
+        );
+      },
+    );
 
     test('lets a non-sqlite3 failure propagate as itself', () {
       final db = _RecordingDatabase();
       when(() => db.execute(any())).thenThrow(StateError('database is closed'));
 
-      expect(
-        () => configureSqlCipher(db, key),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => configureSqlCipher(db, key), throwsA(isA<StateError>()));
     });
 
     test('keys a connection whose key contains a quote', () {

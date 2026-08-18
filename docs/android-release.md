@@ -329,8 +329,8 @@ These are genuine product choices. Nothing in the repo presumes an answer to any
 
 ## 9. Still unverified — needs a physical Android device
 
-The 199-test suite is host-VM only. These cannot be answered without hardware, and the first one is
-the highest-risk unknown in the whole Android launch:
+The automated test suite is host-VM only. These cannot be answered without hardware, and the
+first one is the highest-risk unknown in the whole Android launch:
 
 1. **Does the encrypted database open on Android?** `lib/database/database.dart` opens
    `libsqlcipher.so` via `openCipherOnAndroid`, which has never executed on an Android device.
