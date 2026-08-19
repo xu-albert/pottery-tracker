@@ -7,9 +7,8 @@ import 'package:pottery_tracker/services/sync_trigger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The one boundary that decides whether a material write is owed to the
-/// backup. Picking an existing material writes nothing, and queueing it anyway
-/// is what records the owner's own material as another account's on a device
-/// somebody has been refused on.
+/// backup. Picking an existing material returns the row untouched, so queueing
+/// it anyway would report a write that never happened and push a no-op.
 void main() {
   late AppDatabase db;
   late SyncQueue queue;

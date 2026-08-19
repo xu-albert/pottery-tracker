@@ -505,8 +505,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// "Sync Now" button reaches [syncNow] and the debounce reaches [_pushQueue]
   /// without one. While the flag is set the rows on this device may still be
   /// the signed-out account's, and pushing them would put them in the current
-  /// account's cloud tree. Retries the wipe first, so a transient failure
-  /// heals on the next sync attempt instead of wedging the device.
+  /// account's cloud tree. The owed wipe is deliberately *not* retried here:
+  /// a delete on the push path would fire on the debounce after any edit and
+  /// destroy the current account's work. It is retried at an auth transition
+  /// and from the confirmed [eraseLocalDataNow], nowhere else.
   Future<bool> _blockedByPendingWipe() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(pendingWipeKey) != true) return false;
@@ -639,14 +641,6 @@ final syncTriggerProvider = Provider<SyncTrigger>((ref) {
   );
 });
 
-/// Whether this device is locked read-only because its pottery belongs to a
-/// different account.
-///
-/// The lock is enforced at the router rather than screen by screen: a refused
-/// account never reaches the album, the create flow, the piece editor or the
-/// material screens, so there is no write surface left to guard one at a time.
-/// That is the whole point of the read-only ruling — the earlier design let a
-/// refused account write and then tried to keep track of what it had touched.
 /// The uid this device's local data belongs to, or null when it belongs to
 /// nobody yet.
 ///
