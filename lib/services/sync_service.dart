@@ -55,16 +55,23 @@ class SyncService {
   /// lock from it before `runApp`.
   static const deviceContestedKey = 'localDataContested';
 
-  /// Set when a confirmed account deletion removed the cloud tree but could
-  /// not remove the Firebase account itself — almost always because Firebase
-  /// wants a recent sign-in first.
+  /// The uid of an account a confirmed deletion removed the cloud tree for
+  /// but could not remove itself — almost always because Firebase wants a
+  /// recent sign-in first.
   ///
   /// The user is told at the time, but that message is a passing one and two
   /// of the three partial outcomes redirect away from the screen that showed
   /// it. This is what makes the fact survive: a half-finished deletion the
   /// user confirmed has to still be discoverable a minute later, on whichever
-  /// screen they end up on. Cleared when the account is finally deleted, or
-  /// by [deleteLocalData] when the device is erased.
+  /// screen they end up on — including after the erase those screens tell
+  /// them to do first.
+  ///
+  /// So [deleteLocalData] deliberately leaves it alone: this is about a cloud
+  /// account, whose existence has nothing to do with whether local data is
+  /// present, and erasing a device deletes no account. It stores the uid
+  /// rather than a flag for the same reason — the next account to sign in
+  /// here must not be told that *their* account survived a deletion they
+  /// never asked for. Cleared when that account is finally deleted.
   static const accountDeletionOwedKey = 'accountDeletionOwed';
 
   // ════════════════════════════════════════════
@@ -161,7 +168,6 @@ class SyncService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(localDataOwnerKey);
     await prefs.remove(deviceContestedKey);
-    await prefs.remove(accountDeletionOwedKey);
   }
 
   Future<void> _deleteLocalPhotoFiles() async {

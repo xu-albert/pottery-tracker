@@ -157,8 +157,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final prefs = await SharedPreferences.getInstance();
     _publishPendingWipe(prefs.getBool(pendingWipeKey) == true);
     if (!mounted) return;
-    _ref.read(accountDeletionOwedProvider.notifier).state =
-        prefs.getBool(SyncService.accountDeletionOwedKey) == true;
+    _ref.read(accountDeletionOwedProvider.notifier).state = prefs.getString(
+      SyncService.accountDeletionOwedKey,
+    );
   }
 
   Future<void> _onAuthChanged(String uid) async {
@@ -468,9 +469,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // device now and there is nothing left here to be refused over.
     _publishLocalDataOwner(null);
     _publishDeviceContested(false);
-    if (mounted) {
-      _ref.read(accountDeletionOwedProvider.notifier).state = false;
-    }
     if (!staleSync) await prefs.remove(pendingWipeKey);
     await _publishOwedWipe();
   }
@@ -534,17 +532,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _ref.read(pendingLocalWipeProvider.notifier).state = pending;
   }
 
-  /// Records, in preferences and in [accountDeletionOwedProvider], whether an
-  /// account the user asked to have deleted is still there.
-  Future<void> _setAccountDeletionOwed(bool owed) async {
+  /// Records which account the user asked to have deleted is still there, or
+  /// clears the record once it is gone.
+  Future<void> _setAccountDeletionOwed(String? uid) async {
     final prefs = await SharedPreferences.getInstance();
-    if (owed) {
-      await prefs.setBool(SyncService.accountDeletionOwedKey, true);
+    if (uid != null) {
+      await prefs.setString(SyncService.accountDeletionOwedKey, uid);
     } else {
       await prefs.remove(SyncService.accountDeletionOwedKey);
     }
     if (!mounted) return;
-    _ref.read(accountDeletionOwedProvider.notifier).state = owed;
+    _ref.read(accountDeletionOwedProvider.notifier).state = uid;
   }
 
   /// Whether this device's data belongs to an account other than [uid].
@@ -656,8 +654,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
         }
         // Persisted before anything else can redirect the user away from the
         // message about to be shown. A confirmed deletion that half-failed is
-        // not reported once and forgotten.
-        await _setAccountDeletionOwed(accountSurvived);
+        // not reported once and forgotten — and a deletion that finally went
+        // through is what clears it.
+        await _setAccountDeletionOwed(accountSurvived ? auth.uid : null);
       }
 
       // Always delete local data. Past this point the cloud side is already
@@ -751,12 +750,51 @@ final deviceContestedProvider = StateProvider<bool>((ref) => false);
 /// [SyncNotifier.pendingWipeKey], and synchronous for the same reason.
 final pendingLocalWipeProvider = StateProvider<bool>((ref) => false);
 
-/// Whether an account deletion the user confirmed removed the cloud tree but
-/// left the account itself. Backed by [SyncService.accountDeletionOwedKey].
+/// The uid of an account a confirmed deletion removed the cloud tree for but
+/// left standing, or null when nothing is outstanding. Backed by
+/// [SyncService.accountDeletionOwedKey].
+final accountDeletionOwedProvider = StateProvider<String?>((ref) => null);
+
+/// Whether the account signed in *here* is the one still waiting to be
+/// deleted — the question both screens that report it actually have.
 ///
-/// Read by every screen the partial outcomes can land on, so the fact outlives
-/// the message that first carried it.
-final accountDeletionOwedProvider = StateProvider<bool>((ref) => false);
+/// Scoped to the session because the record is about a cloud account rather
+/// than this device. Erasing the device deletes no account, so the record
+/// outlives the erase the user is told to do first; and the next account to
+/// sign in on the same device must not be told that theirs survived a
+/// deletion they never asked for.
+final accountDeletionOwedForSessionProvider = Provider<bool>((ref) {
+  final owed = ref.watch(accountDeletionOwedProvider);
+  if (owed == null) return false;
+  return owed == ref.watch(authProvider).uid;
+});
+
+/// Every provider `main()` seeds from preferences before `runApp`, in one
+/// place so a test can launch the app the way the app launches itself.
+///
+/// These four are read synchronously by the router on the first frame — the
+/// read-only lock and the outstanding-deletion notice both have to be right
+/// before anything renders. Seeding them inline at the one call site made the
+/// wiring unprovable: a test that supplies a provider from the same
+/// preference it then asserts passes whether or not `main` ever reads it, so
+/// dropping one here would silently stop a persisted fact surviving a
+/// relaunch.
+List<Override> deviceStateOverrides(SharedPreferences prefs) {
+  return [
+    localDataOwnerProvider.overrideWith(
+      (ref) => prefs.getString(SyncService.localDataOwnerKey),
+    ),
+    deviceContestedProvider.overrideWith(
+      (ref) => prefs.getBool(SyncService.deviceContestedKey) ?? false,
+    ),
+    pendingLocalWipeProvider.overrideWith(
+      (ref) => prefs.getBool(SyncNotifier.pendingWipeKey) ?? false,
+    ),
+    accountDeletionOwedProvider.overrideWith(
+      (ref) => prefs.getString(SyncService.accountDeletionOwedKey),
+    ),
+  ];
+}
 
 /// Whether some account already has a stake in what is on this device.
 ///

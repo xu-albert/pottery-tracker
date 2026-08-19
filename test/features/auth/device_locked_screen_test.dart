@@ -78,7 +78,7 @@ void main() {
     if (owedWipe || accountOwed) {
       SharedPreferences.setMockInitialValues({
         if (owedWipe) SyncNotifier.pendingWipeKey: true,
-        if (accountOwed) SyncService.accountDeletionOwedKey: true,
+        if (accountOwed) SyncService.accountDeletionOwedKey: 'someone',
       });
     }
     await tester.pumpWidget(
@@ -94,7 +94,9 @@ void main() {
           syncQueueProvider.overrideWithValue(queue),
           localDataOwnerProvider.overrideWith((ref) => 'the-owner'),
           pendingLocalWipeProvider.overrideWith((ref) => owedWipe),
-          accountDeletionOwedProvider.overrideWith((ref) => accountOwed),
+          accountDeletionOwedProvider.overrideWith(
+            (ref) => accountOwed ? 'someone' : null,
+          ),
         ],
         child: const MaterialApp(
           localizationsDelegates: [

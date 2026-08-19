@@ -199,6 +199,52 @@ void main() {
   });
 
   group('delete account tile', () {
+    testWidgets('says an outstanding deletion is still outstanding', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // A previous attempt removed the cloud tree but not the account, and
+      // the message that said so is long gone. Settings is where the retry
+      // lives, so this is where the user has to be able to find it again.
+      SharedPreferences.setMockInitialValues({
+        SyncService.accountDeletionOwedKey: 'user-a',
+      });
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.textContaining('removed your data but not your account'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Permanently deletes your account and all data'),
+        findsNothing,
+        reason: 'the generic subtitle would read as nothing being outstanding',
+      );
+    });
+
+    testWidgets('says nothing outstanding when nothing is', (tester) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.text('Permanently deletes your account and all data'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a wipe that fails after the cloud went still reports', (
       tester,
     ) async {

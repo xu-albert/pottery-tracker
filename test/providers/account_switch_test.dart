@@ -731,15 +731,10 @@ void main() {
           authProvider.overrideWith((_) => _TestAuthNotifier(session)),
           syncQueueProvider.overrideWithValue(SyncQueue()),
           syncServiceProvider.overrideWithValue(syncService),
-          localDataOwnerProvider.overrideWith(
-            (_) => prefs.getString(SyncService.localDataOwnerKey),
-          ),
-          deviceContestedProvider.overrideWith(
-            (_) => prefs.getBool(SyncService.deviceContestedKey) ?? false,
-          ),
-          pendingLocalWipeProvider.overrideWith(
-            (_) => prefs.getBool(SyncNotifier.pendingWipeKey) ?? false,
-          ),
+          // The same seeding `main` does, not a hand-copied version of it: a
+          // container that supplies a provider from the preference the test
+          // then asserts proves only that the key was written.
+          ...deviceStateOverrides(prefs),
         ],
       );
     }
@@ -793,6 +788,32 @@ void main() {
         );
       },
     );
+
+    test('an owed wipe still locks the device after a relaunch', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // The wipe A confirmed fails and the process dies. The flag is on disk;
+      // the lock has to be back up on the next launch's first frame, which is
+      // what seeding it before `runApp` buys.
+      syncService.wipeFails = true;
+      await expectLater(
+        notifier.signOutAndWipeLocalData(() async {}),
+        throwsException,
+      );
+      await settle();
+
+      final relaunched = await relaunch(signedInAs(uidA));
+      addTearDown(relaunched.dispose);
+
+      expect(
+        relaunched.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            'A asked for this library to be destroyed, so it must not come '
+            'back browsable because the app was restarted',
+      );
+    });
 
     test('the owner reclaiming the device lifts the refusal', () async {
       await refuseB();
@@ -1132,60 +1153,90 @@ void main() {
     },
   );
 
-  test('a surviving account outlives the message that reported it', () async {
-    await insertPieceWithPhoto('piece-a', "A's mug");
-    await notifier.syncNow(forceFullSync: true);
+  group('a half-finished account deletion', () {
+    /// Relaunches the app the way `main` does — every persisted input seeded
+    /// through the same helper, so dropping one there fails here.
+    Future<ProviderContainer> relaunchAs(String uid) async {
+      final prefs = await SharedPreferences.getInstance();
+      final fresh = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith((_) => _TestAuthNotifier(signedInAs(uid))),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+          syncServiceProvider.overrideWithValue(syncService),
+          ...deviceStateOverrides(prefs),
+        ],
+      );
+      addTearDown(fresh.dispose);
+      return fresh;
+    }
 
-    syncService.wipeFails = true;
-    expect(
-      await notifier.deleteAllData(),
-      DeleteAllDataResult.accountAndLocalDataSurvived,
-    );
-    await settle();
+    test('survives the local wipe, which deletes no account', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
 
-    // The snackbar that said so is gone within seconds, and this outcome
-    // redirects to the lock screen. Whatever the user does next, the fact has
-    // to still be there — including across a relaunch.
-    expect(container.read(accountDeletionOwedProvider), isTrue);
+      // The cloud tree goes, the account does not, and the local wipe
+      // succeeds — so the whole recovery is a later retry, and this is the
+      // outcome that used to keep nothing.
+      expect(
+        await notifier.deleteAllData(),
+        DeleteAllDataResult.accountSurvived,
+      );
+      await settle();
 
-    final prefs = await SharedPreferences.getInstance();
-    final relaunched = ProviderContainer(
-      overrides: [
-        authProvider.overrideWith((_) => _TestAuthNotifier(signedInAs(uidA))),
-        syncQueueProvider.overrideWithValue(SyncQueue()),
-        syncServiceProvider.overrideWithValue(syncService),
-        accountDeletionOwedProvider.overrideWith(
-          (_) => prefs.getBool(SyncService.accountDeletionOwedKey) ?? false,
-        ),
-      ],
-    );
-    addTearDown(relaunched.dispose);
+      expect(
+        container.read(accountDeletionOwedProvider),
+        uidA,
+        reason:
+            'erasing local data deletes no Firebase account, so it must not '
+            'erase the record that one is still standing',
+      );
+      expect(
+        (await relaunchAs(uidA)).read(accountDeletionOwedForSessionProvider),
+        isTrue,
+        reason:
+            'A signs back in to retry, and the delete-account surface has to '
+            'still say the deletion is outstanding',
+      );
+    });
 
-    expect(
-      relaunched.read(accountDeletionOwedProvider),
-      isTrue,
-      reason:
-          'a confirmed deletion that half-failed must still be discoverable '
-          'on the next launch, not only in the moment it happened',
-    );
-  });
+    test('survives the erase the lock screen tells the user to do', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
 
-  test('erasing the device clears the surviving-account record', () async {
-    await insertPieceWithPhoto('piece-a', "A's mug");
-    await notifier.syncNow(forceFullSync: true);
+      syncService.wipeFails = true;
+      expect(
+        await notifier.deleteAllData(),
+        DeleteAllDataResult.accountAndLocalDataSurvived,
+      );
+      await settle();
 
-    syncService.wipeFails = true;
-    await notifier.deleteAllData();
-    await settle();
-    expect(container.read(accountDeletionOwedProvider), isTrue);
+      // Step one of the instruction is the erase. It must not destroy the
+      // memory of step two.
+      syncService.wipeFails = false;
+      expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.erased);
+      await settle();
 
-    syncService.wipeFails = false;
-    expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.erased);
-    await settle();
+      expect(container.read(accountDeletionOwedProvider), uidA);
+      expect(
+        (await relaunchAs(uidA)).read(accountDeletionOwedForSessionProvider),
+        isTrue,
+      );
+    });
 
-    final prefs = await SharedPreferences.getInstance();
-    expect(container.read(accountDeletionOwedProvider), isFalse);
-    expect(prefs.getBool(SyncService.accountDeletionOwedKey), isNull);
+    test('is not reported to the next account to sign in here', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+      await notifier.deleteAllData();
+      await settle();
+
+      expect(
+        (await relaunchAs(uidB)).read(accountDeletionOwedForSessionProvider),
+        isFalse,
+        reason:
+            "B never asked for anything to be deleted, and B's account did "
+            'not survive anything',
+      );
+    });
   });
 
   test(

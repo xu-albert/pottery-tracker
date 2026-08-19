@@ -456,7 +456,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               style: TextStyle(color: Colors.red),
             ),
             subtitle: Text(
-              ref.watch(accountDeletionOwedProvider)
+              ref.watch(accountDeletionOwedForSessionProvider)
                   ? l10n.deleteAccountStillExists
                   : 'Permanently deletes your account and all data',
             ),

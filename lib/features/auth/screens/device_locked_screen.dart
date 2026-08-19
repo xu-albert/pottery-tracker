@@ -126,7 +126,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
     // A "Delete Account & Data" whose local wipe failed lands here, and the
     // message that said the account survived is long gone. The fact is
     // persisted, so this screen can still say it.
-    final accountOwed = ref.watch(accountDeletionOwedProvider);
+    final accountOwed = ref.watch(accountDeletionOwedForSessionProvider);
 
     return Scaffold(
       body: SafeArea(

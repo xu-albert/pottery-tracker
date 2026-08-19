@@ -11,7 +11,6 @@ import 'database/database.dart';
 import 'firebase_options.dart';
 import 'providers/database_provider.dart';
 import 'providers/sync_provider.dart';
-import 'services/sync_service.dart';
 import 'providers/pieces_provider.dart';
 
 void main() async {
@@ -60,17 +59,6 @@ void main() async {
     );
   }
 
-  // Read before runApp so the read-only lock is correct on the first frame:
-  // a device belonging to another account must never render the album, not
-  // even for the frame before an async read resolves. All three are persisted
-  // for exactly that reason — see `deviceLockReasonProvider`.
-  final localDataOwner = prefs.getString(SyncService.localDataOwnerKey);
-  final deviceContested =
-      prefs.getBool(SyncService.deviceContestedKey) ?? false;
-  final pendingLocalWipe = prefs.getBool(SyncNotifier.pendingWipeKey) ?? false;
-  final accountDeletionOwed =
-      prefs.getBool(SyncService.accountDeletionOwedKey) ?? false;
-
   final savedMode = prefs.getString('view_mode');
   final initialViewMode = savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
 
@@ -78,10 +66,10 @@ void main() async {
     ProviderScope(
       overrides: [
         databaseProvider.overrideWithValue(db),
-        localDataOwnerProvider.overrideWith((ref) => localDataOwner),
-        deviceContestedProvider.overrideWith((ref) => deviceContested),
-        pendingLocalWipeProvider.overrideWith((ref) => pendingLocalWipe),
-        accountDeletionOwedProvider.overrideWith((ref) => accountDeletionOwed),
+        // Read before runApp so the read-only lock is correct on the first
+        // frame: a device belonging to another account must never render the
+        // album, not even for the frame before an async read resolves.
+        ...deviceStateOverrides(prefs),
         viewModeProvider.overrideWith((ref) => initialViewMode),
       ],
       child: const PotteryTrackerApp(),
