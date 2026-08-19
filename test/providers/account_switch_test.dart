@@ -1132,6 +1132,62 @@ void main() {
     },
   );
 
+  test('a surviving account outlives the message that reported it', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    syncService.wipeFails = true;
+    expect(
+      await notifier.deleteAllData(),
+      DeleteAllDataResult.accountAndLocalDataSurvived,
+    );
+    await settle();
+
+    // The snackbar that said so is gone within seconds, and this outcome
+    // redirects to the lock screen. Whatever the user does next, the fact has
+    // to still be there — including across a relaunch.
+    expect(container.read(accountDeletionOwedProvider), isTrue);
+
+    final prefs = await SharedPreferences.getInstance();
+    final relaunched = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith((_) => _TestAuthNotifier(signedInAs(uidA))),
+        syncQueueProvider.overrideWithValue(SyncQueue()),
+        syncServiceProvider.overrideWithValue(syncService),
+        accountDeletionOwedProvider.overrideWith(
+          (_) => prefs.getBool(SyncService.accountDeletionOwedKey) ?? false,
+        ),
+      ],
+    );
+    addTearDown(relaunched.dispose);
+
+    expect(
+      relaunched.read(accountDeletionOwedProvider),
+      isTrue,
+      reason:
+          'a confirmed deletion that half-failed must still be discoverable '
+          'on the next launch, not only in the moment it happened',
+    );
+  });
+
+  test('erasing the device clears the surviving-account record', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    syncService.wipeFails = true;
+    await notifier.deleteAllData();
+    await settle();
+    expect(container.read(accountDeletionOwedProvider), isTrue);
+
+    syncService.wipeFails = false;
+    expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.erased);
+    await settle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(container.read(accountDeletionOwedProvider), isFalse);
+    expect(prefs.getBool(SyncService.accountDeletionOwedKey), isNull);
+  });
+
   test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {

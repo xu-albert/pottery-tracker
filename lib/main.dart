@@ -68,6 +68,8 @@ void main() async {
   final deviceContested =
       prefs.getBool(SyncService.deviceContestedKey) ?? false;
   final pendingLocalWipe = prefs.getBool(SyncNotifier.pendingWipeKey) ?? false;
+  final accountDeletionOwed =
+      prefs.getBool(SyncService.accountDeletionOwedKey) ?? false;
 
   final savedMode = prefs.getString('view_mode');
   final initialViewMode = savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
@@ -79,6 +81,7 @@ void main() async {
         localDataOwnerProvider.overrideWith((ref) => localDataOwner),
         deviceContestedProvider.overrideWith((ref) => deviceContested),
         pendingLocalWipeProvider.overrideWith((ref) => pendingLocalWipe),
+        accountDeletionOwedProvider.overrideWith((ref) => accountDeletionOwed),
         viewModeProvider.overrideWith((ref) => initialViewMode),
       ],
       child: const PotteryTrackerApp(),

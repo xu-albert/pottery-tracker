@@ -910,6 +910,12 @@ abstract class AppLocalizations {
   /// **'The pottery stored here was made by a different account, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.'**
   String get deviceLockedMessage;
 
+  /// Shown on the lock screen when a confirmed account deletion left the account behind, naming the steps in the order the lock permits
+  ///
+  /// In en, this message translates to:
+  /// **'Your account itself was not deleted — Firebase wanted a more recent sign-in. Erase this device first, then sign in again and use Delete Account & Data to remove it.'**
+  String get deviceLockedAccountStillExists;
+
   /// Leaves the current session without deleting anything
   ///
   /// In en, this message translates to:
@@ -957,6 +963,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your cloud data was deleted. Your account and the copy on this device were not — erase this device to finish, then sign in again and retry to remove the account.'**
   String get deleteAccountAndLocalSurvived;
+
+  /// Replaces the delete-account tile's subtitle while an account deletion the user confirmed is still outstanding
+  ///
+  /// In en, this message translates to:
+  /// **'Your last attempt removed your data but not your account. Sign in again first if this does not work.'**
+  String get deleteAccountStillExists;
 
   /// Shown when an account deletion failed
   ///

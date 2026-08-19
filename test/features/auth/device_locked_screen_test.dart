@@ -70,10 +70,15 @@ void main() {
   /// from, so the screen's own branch is what decides what is drawn — and the
   /// owed wipe is seeded on disk too, because opening the screen retries it
   /// and re-reads the flag from there.
-  Future<void> pumpLocked(WidgetTester tester, {bool owedWipe = false}) async {
-    if (owedWipe) {
+  Future<void> pumpLocked(
+    WidgetTester tester, {
+    bool owedWipe = false,
+    bool accountOwed = false,
+  }) async {
+    if (owedWipe || accountOwed) {
       SharedPreferences.setMockInitialValues({
-        SyncNotifier.pendingWipeKey: true,
+        if (owedWipe) SyncNotifier.pendingWipeKey: true,
+        if (accountOwed) SyncService.accountDeletionOwedKey: true,
       });
     }
     await tester.pumpWidget(
@@ -89,6 +94,7 @@ void main() {
           syncQueueProvider.overrideWithValue(queue),
           localDataOwnerProvider.overrideWith((ref) => 'the-owner'),
           pendingLocalWipeProvider.overrideWith((ref) => owedWipe),
+          accountDeletionOwedProvider.overrideWith((ref) => accountOwed),
         ],
         child: const MaterialApp(
           localizationsDelegates: [
@@ -278,29 +284,39 @@ void main() {
       verifyNever(() => syncService.deleteLocalData());
     });
 
-    testWidgets('offers the step the delete-account message names first', (
+    testWidgets('says the account survived, on the screen it redirects to', (
       tester,
     ) async {
-      // A "Delete Account & Data" whose local wipe failed lands here with a
-      // message telling the user what to do. The first thing it names has to
-      // be something this screen actually offers — every other route
-      // redirects straight back to it.
-      await pumpLocked(tester, owedWipe: true);
+      // A "Delete Account & Data" whose local wipe failed raises this lock and
+      // redirects here, taking the message about the surviving account with
+      // it. The fact is persisted, so the user can still find it.
+      await pumpLocked(tester, owedWipe: true, accountOwed: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
 
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      final message = l10n.deleteAccountAndLocalSurvived;
-      final erase = message.indexOf('erase this device');
-      final signIn = message.indexOf('sign in again');
-
-      expect(erase, isNonNegative);
       expect(
-        erase < signIn,
-        isTrue,
+        find.textContaining('account itself was not deleted'),
+        findsOneWidget,
         reason:
-            'the lock offers the erase and nothing else, so naming the '
-            'account retry first sends the user at a step they cannot take',
+            'otherwise nothing anywhere records that the account still '
+            'exists once the message that said so has gone',
       );
-      expect(find.text('Erase This Device'), findsOneWidget);
+    });
+
+    testWidgets('says nothing about an account that was deleted', (
+      tester,
+    ) async {
+      await pumpLocked(tester, owedWipe: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.textContaining('account itself was not deleted'),
+        findsNothing,
+        reason: 'an ordinary owed wipe has no surviving account to report',
+      );
     });
 
     testWidgets('the erase is the primary action', (tester) async {

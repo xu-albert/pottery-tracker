@@ -123,6 +123,10 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
     final l10n = AppLocalizations.of(context)!;
     final reason = ref.watch(deviceLockReasonProvider);
     final owedWipe = reason == DeviceLockReason.pendingWipe;
+    // A "Delete Account & Data" whose local wipe failed lands here, and the
+    // message that said the account survived is long gone. The fact is
+    // persisted, so this screen can still say it.
+    final accountOwed = ref.watch(accountDeletionOwedProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -152,6 +156,14 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                if (owedWipe && accountOwed) ...[
+                  const SizedBox(height: AppSizes.md),
+                  Text(
+                    l10n.deviceLockedAccountStillExists,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
                 const SizedBox(height: AppSizes.xl),
                 if (owedWipe)
                   FilledButton(

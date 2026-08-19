@@ -452,6 +452,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'The pottery stored here was made by a different account, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.';
 
   @override
+  String get deviceLockedAccountStillExists =>
+      'Your account itself was not deleted — Firebase wanted a more recent sign-in. Erase this device first, then sign in again and use Delete Account & Data to remove it.';
+
+  @override
   String get deviceLockedSwitchAccount => 'Sign In As Another Account';
 
   @override
@@ -478,6 +482,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get deleteAccountAndLocalSurvived =>
       'Your cloud data was deleted. Your account and the copy on this device were not — erase this device to finish, then sign in again and retry to remove the account.';
+
+  @override
+  String get deleteAccountStillExists =>
+      'Your last attempt removed your data but not your account. Sign in again first if this does not work.';
 
   @override
   String get deleteAccountFailed =>

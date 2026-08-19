@@ -156,6 +156,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _publishDeviceContested(await _syncService.getDeviceContested());
     final prefs = await SharedPreferences.getInstance();
     _publishPendingWipe(prefs.getBool(pendingWipeKey) == true);
+    if (!mounted) return;
+    _ref.read(accountDeletionOwedProvider.notifier).state =
+        prefs.getBool(SyncService.accountDeletionOwedKey) == true;
   }
 
   Future<void> _onAuthChanged(String uid) async {
@@ -465,6 +468,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // device now and there is nothing left here to be refused over.
     _publishLocalDataOwner(null);
     _publishDeviceContested(false);
+    if (mounted) {
+      _ref.read(accountDeletionOwedProvider.notifier).state = false;
+    }
     if (!staleSync) await prefs.remove(pendingWipeKey);
     await _publishOwedWipe();
   }
@@ -526,6 +532,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
   void _publishPendingWipe(bool pending) {
     if (!mounted) return;
     _ref.read(pendingLocalWipeProvider.notifier).state = pending;
+  }
+
+  /// Records, in preferences and in [accountDeletionOwedProvider], whether an
+  /// account the user asked to have deleted is still there.
+  Future<void> _setAccountDeletionOwed(bool owed) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (owed) {
+      await prefs.setBool(SyncService.accountDeletionOwedKey, true);
+    } else {
+      await prefs.remove(SyncService.accountDeletionOwedKey);
+    }
+    if (!mounted) return;
+    _ref.read(accountDeletionOwedProvider.notifier).state = owed;
   }
 
   /// Whether this device's data belongs to an account other than [uid].
@@ -635,6 +654,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
           debugPrint('SyncNotifier: Firebase account deletion failed: $e');
           accountSurvived = true;
         }
+        // Persisted before anything else can redirect the user away from the
+        // message about to be shown. A confirmed deletion that half-failed is
+        // not reported once and forgotten.
+        await _setAccountDeletionOwed(accountSurvived);
       }
 
       // Always delete local data. Past this point the cloud side is already
@@ -727,6 +750,13 @@ final deviceContestedProvider = StateProvider<bool>((ref) => false);
 /// Whether a local wipe the user asked for is still owed. Backed by
 /// [SyncNotifier.pendingWipeKey], and synchronous for the same reason.
 final pendingLocalWipeProvider = StateProvider<bool>((ref) => false);
+
+/// Whether an account deletion the user confirmed removed the cloud tree but
+/// left the account itself. Backed by [SyncService.accountDeletionOwedKey].
+///
+/// Read by every screen the partial outcomes can land on, so the fact outlives
+/// the message that first carried it.
+final accountDeletionOwedProvider = StateProvider<bool>((ref) => false);
 
 /// Whether some account already has a stake in what is on this device.
 ///
@@ -824,7 +854,10 @@ final deviceRefusalRecorderProvider = Provider<void>((ref) {
   // another one while it is building, so the opening read waits a microtask.
   // Nothing is lost: the lock itself reads the stamp directly and is right on
   // that first frame; only the record of it is a beat behind.
-  Future.microtask(() => record(ref.read(deviceLockReasonProvider)));
+  Future.microtask(() {
+    if (!alive) return;
+    record(ref.read(deviceLockReasonProvider));
+  });
 });
 
 /// Writes the marker straight to preferences rather than through

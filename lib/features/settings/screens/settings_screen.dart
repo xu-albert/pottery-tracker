@@ -14,6 +14,14 @@ import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../widgets/app_snackbar.dart';
 
+/// How long a partial-failure message stays up.
+///
+/// These carry an instruction rather than an acknowledgement — two sequential
+/// steps, in one case — so they get longer than the default. It is not the
+/// whole answer for the outcomes that redirect: what survives the message is
+/// [accountDeletionOwedProvider], which the screen they land on reads.
+const _partialOutcomeDuration = Duration(seconds: 8);
+
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -165,7 +173,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // the device is clean.
       debugPrint('SettingsScreen: sign-out wipe failed: $e');
       if (mounted) {
-        AppSnackbar.show(context, message: l10n.signOutWipeFailed);
+        AppSnackbar.show(
+          context,
+          message: l10n.signOutWipeFailed,
+          duration: _partialOutcomeDuration,
+        );
       }
     } finally {
       await ref.read(authProvider.notifier).signOut();
@@ -443,8 +455,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               'Delete Account & Data',
               style: TextStyle(color: Colors.red),
             ),
-            subtitle: const Text(
-              'Permanently deletes your account and all data',
+            subtitle: Text(
+              ref.watch(accountDeletionOwedProvider)
+                  ? l10n.deleteAccountStillExists
+                  : 'Permanently deletes your account and all data',
             ),
             onTap: () async {
               final confirmed = await showCupertinoDialog<bool>(
@@ -490,16 +504,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     AppSnackbar.show(
                       context,
                       message: l10n.deleteAccountSurvived,
+                      duration: _partialOutcomeDuration,
                     );
                   case DeleteAllDataResult.localDataSurvived:
                     AppSnackbar.show(
                       context,
                       message: l10n.deleteAccountLocalSurvived,
+                      duration: _partialOutcomeDuration,
                     );
                   case DeleteAllDataResult.accountAndLocalDataSurvived:
                     AppSnackbar.show(
                       context,
                       message: l10n.deleteAccountAndLocalSurvived,
+                      duration: _partialOutcomeDuration,
                     );
                 }
               } finally {
