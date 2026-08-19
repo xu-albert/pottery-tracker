@@ -32,8 +32,10 @@ Foreign pottery:
 - [ ] The owner's own offline launch (no network, nobody refused here) opens the album as usual
 
 Owed wipe:
-- [ ] Force-quit mid-wipe → the lock reads "Backup paused" and explains the previous account's data has still to be erased
+- [ ] Force-quit mid-wipe → the lock reads "This device still has to be erased" and says the pottery the user asked to have deleted is still here — never that it belongs to another account, because it is their own
+- [ ] Opening the lock retries the wipe on its own; a failure that was transient clears without the user tapping anything
 - [ ] Its primary action is "Erase This Device" — it never offers "Sign In As Another Account", which would keep the data the user asked to destroy
+- [ ] A "Delete Account & Data" whose local wipe failed lands here, and its message names erasing this device first — the one step reachable from the lock — before signing in again to retry the account
 
 Both:
 - [ ] "Erase This Device" confirms first — "Cancel" is the default action and tapping outside the dialog does not erase
@@ -245,7 +247,7 @@ Both:
 - [ ] "Sign Out" → confirmation says every piece, photo and material on this device is deleted; "Cancel" is the default action and tapping outside the dialog does not sign out
 - [ ] Confirming "Sign Out & Erase" clears auth, deletes the local library and photo files, and redirects to sign-in
 - [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
-- [ ] Force-quit mid-wipe → the next sign-in finishes the wipe before uploading anything; while it is still owed the device is locked read-only, so recovery is on the lock screen and Settings is not reachable at all
+- [ ] Force-quit mid-wipe → the device comes back locked read-only, the lock screen finishes the wipe on its own without being asked, and nothing is uploaded before it does; Settings is not reachable at all while it is owed
 - [ ] The only connected sign-in provider cannot be disconnected — its row is disabled and explains why
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
 - [ ] "Cloud Backup" section shows the current sync status and a "Sync Now" action

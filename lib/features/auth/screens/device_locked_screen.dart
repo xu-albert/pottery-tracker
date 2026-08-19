@@ -33,6 +33,32 @@ class DeviceLockedScreen extends ConsumerStatefulWidget {
 class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resumeOwedWipe());
+  }
+
+  /// Finishes an owed wipe without asking, because the user already said yes.
+  ///
+  /// This screen is the only place the retry can still happen: the owed-wipe
+  /// flag locks the router on the first frame, so the shell never mounts and
+  /// the auth transition that used to carry it never runs. A wipe that failed
+  /// on something transient therefore still heals itself, and the erase below
+  /// is what is left when it does not.
+  Future<void> _resumeOwedWipe() async {
+    if (!mounted || _busy) return;
+    if (ref.read(deviceLockReasonProvider) != DeviceLockReason.pendingWipe) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await ref.read(syncStateProvider.notifier).retryOwedWipe();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   /// Leaves without destroying anything: none of the pottery here belongs to
   /// the account being signed out, so there is nothing of theirs to delete.
   Future<void> _switchAccount() async {
@@ -111,7 +137,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
                 const SizedBox(height: AppSizes.lg),
                 Text(
                   owedWipe
-                      ? l10n.syncBlockedWipePending
+                      ? l10n.deviceLockedWipeTitle
                       : l10n.deviceLockedTitle,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
@@ -121,7 +147,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
                 // user gets, so it wraps in full however long it runs.
                 Text(
                   owedWipe
-                      ? l10n.syncBlockedWipePendingDetail
+                      ? l10n.deviceLockedWipeMessage
                       : l10n.deviceLockedMessage,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,

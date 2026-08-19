@@ -886,17 +886,17 @@ abstract class AppLocalizations {
   /// **'Sign in to enable cloud backup'**
   String get syncDisabled;
 
-  /// Sync status while a pending local data wipe blocks uploading
+  /// Title of the lock screen when a wipe the user confirmed did not finish
   ///
   /// In en, this message translates to:
-  /// **'Backup paused'**
-  String get syncBlockedWipePending;
+  /// **'This device still has to be erased'**
+  String get deviceLockedWipeTitle;
 
-  /// Explains why backup is paused after an unfinished sign-out wipe
+  /// Explains the lock screen's owed-wipe reason, which is the user's own unfinished erase rather than another account's pottery
   ///
   /// In en, this message translates to:
-  /// **'The previous account\'s data still has to be erased from this device before anything is uploaded.'**
-  String get syncBlockedWipePendingDetail;
+  /// **'You asked for the pottery stored here to be deleted and it could not be. Nothing is uploaded and nothing can be changed until the erase finishes.'**
+  String get deviceLockedWipeMessage;
 
   /// Title of the read-only lock screen
   ///
@@ -955,7 +955,7 @@ abstract class AppLocalizations {
   /// Shown when the cloud tree was deleted but both the auth account and the local wipe survived
   ///
   /// In en, this message translates to:
-  /// **'Your cloud data was deleted, but your account and the copy on this device were not. Sign in again and retry to remove the account, then erase this device.'**
+  /// **'Your cloud data was deleted. Your account and the copy on this device were not — erase this device to finish, then sign in again and retry to remove the account.'**
   String get deleteAccountAndLocalSurvived;
 
   /// Shown when an account deletion failed

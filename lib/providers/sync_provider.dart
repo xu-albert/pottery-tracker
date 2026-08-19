@@ -13,26 +13,14 @@ import 'auth_provider.dart';
 import 'database_provider.dart';
 
 /// [SyncStatus.blocked] is a refusal, not a failure: this device is not
-/// allowed to push yet. [SyncBlockedReason] says which of the two reasons
-/// applies, because the way out differs.
+/// allowed to push yet. Which refusal it is, and what the user does about it,
+/// is [DeviceLockReason]'s job — a device refusing to push is always a locked
+/// device, and the lock outlives any one sync attempt.
 enum SyncStatus { idle, syncing, error, blocked, disabled }
 
-/// Why a device is refusing to push.
-enum SyncBlockedReason {
-  /// A wipe owed by an explicit sign-out has not finished. The way out is to
-  /// let it finish — the user can force it from the sync tile.
-  pendingWipe,
-
-  /// The local data belongs to a different account, because a session was
-  /// lost involuntarily rather than signed out of. Nothing is deleted for
-  /// this, and nothing may be written either: the device is read-only until
-  /// the owner signs back in or the user erases it deliberately.
-  foreignLocalData,
-}
-
-/// Why the router is holding this device read-only. Mirrors
-/// [SyncBlockedReason], but the lock outlives any one sync attempt, so it is
-/// read from persisted state rather than from [SyncState].
+/// Why the router is holding this device read-only, and so also why a push
+/// would be refused. Read from persisted state rather than from [SyncState],
+/// which is transient.
 enum DeviceLockReason {
   /// A wipe the user confirmed has not finished. The way out is to finish it.
   pendingWipe,
@@ -48,44 +36,28 @@ class SyncState {
   final DateTime? lastSyncedAt;
   final String? errorMessage;
 
-  /// Set only when [status] is [SyncStatus.blocked].
-  final SyncBlockedReason? blockedReason;
-
   const SyncState({
     this.status = SyncStatus.disabled,
     this.pendingCount = 0,
     this.lastSyncedAt,
     this.errorMessage,
-    this.blockedReason,
   });
 
-  /// Two fields deliberately do not survive a `copyWith` that omits them.
-  ///
-  /// [errorMessage] is cleared, because it describes the transition that put
-  /// the state into [SyncStatus.error] and carrying it into the next one
-  /// would caption a healthy state with a stale failure — several callers
-  /// rely on that.
-  ///
-  /// [blockedReason] is kept, but only while the resulting status is still
-  /// [SyncStatus.blocked], which is the only status it means anything under.
-  /// Dropping it unconditionally left `blocked` states describing no reason
-  /// at all, so the tile drew the wrong recovery for the wrong block.
+  /// [errorMessage] deliberately does not survive a `copyWith` that omits it:
+  /// it describes the transition that put the state into [SyncStatus.error],
+  /// and carrying it into the next one would caption a healthy state with a
+  /// stale failure. Several callers rely on that.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
     DateTime? lastSyncedAt,
     String? errorMessage,
-    SyncBlockedReason? blockedReason,
   }) {
-    final nextStatus = status ?? this.status;
     return SyncState(
-      status: nextStatus,
+      status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       errorMessage: errorMessage,
-      blockedReason: nextStatus == SyncStatus.blocked
-          ? (blockedReason ?? this.blockedReason)
-          : null,
     );
   }
 }
@@ -570,10 +542,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _publishLocalDataOwner(owner);
     if (owner == null || owner == uid) return false;
     debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
-    state = state.copyWith(
-      status: SyncStatus.blocked,
-      blockedReason: SyncBlockedReason.foreignLocalData,
-    );
+    state = state.copyWith(status: SyncStatus.blocked);
     return true;
   }
 
@@ -585,18 +554,27 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// the signed-out account's, and pushing them would put them in the current
   /// account's cloud tree. The owed wipe is deliberately *not* retried here:
   /// a delete on the push path would fire on the debounce after any edit and
-  /// destroy the current account's work. It is retried at an auth transition
-  /// and from the confirmed [eraseLocalDataNow], nowhere else.
+  /// destroy the current account's work. It is retried at an auth transition,
+  /// from [retryOwedWipe] when the lock screen opens on it, and from the
+  /// confirmed [eraseLocalDataNow] — nowhere else.
   Future<bool> _blockedByPendingWipe() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(pendingWipeKey) != true) return false;
     debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');
-    state = state.copyWith(
-      status: SyncStatus.blocked,
-      blockedReason: SyncBlockedReason.pendingWipe,
-    );
+    state = state.copyWith(status: SyncStatus.blocked);
     return true;
   }
+
+  /// Retries a wipe the user confirmed and did not get, without asking again.
+  ///
+  /// `DeviceLockedScreen` calls this when it opens for
+  /// [DeviceLockReason.pendingWipe], which is the only place the owed wipe can
+  /// still be reached: the flag locks the router on the first frame, so the
+  /// shell never mounts and the auth transition that used to carry the retry
+  /// never runs. A transient failure — a photo file briefly locked — therefore
+  /// heals on its own again, and the erase is still there when it does not.
+  /// This is a mount, not the push path: no delete ever fires behind an edit.
+  Future<void> retryOwedWipe() => _finishInterruptedWipe();
 
   /// Re-runs a wipe that was started but never confirmed complete.
   ///

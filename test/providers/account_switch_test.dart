@@ -316,10 +316,6 @@ void main() {
         SyncStatus.blocked,
         reason: 'B is refused, not silently failing',
       );
-      expect(
-        container.read(syncStateProvider).blockedReason,
-        SyncBlockedReason.foreignLocalData,
-      );
       expect((await db.select(db.pieces).get()).map((p) => p.id), ['piece-a']);
       expect(await cloudPieceIds(uidA), ['piece-a']);
     },
@@ -527,10 +523,6 @@ void main() {
         reason: "C must not upload B's bowl",
       );
       expect(container.read(syncStateProvider).status, SyncStatus.blocked);
-      expect(
-        container.read(syncStateProvider).blockedReason,
-        SyncBlockedReason.foreignLocalData,
-      );
       expect((await db.select(db.pieces).get()).map((p) => p.id), ['piece-b']);
     },
   );
@@ -919,10 +911,6 @@ void main() {
               'letting it write and trying to track what it touched',
         );
         expect(container.read(syncStateProvider).status, SyncStatus.blocked);
-        expect(
-          container.read(syncStateProvider).blockedReason,
-          SyncBlockedReason.foreignLocalData,
-        );
       },
     );
 

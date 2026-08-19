@@ -103,29 +103,26 @@ _setup({AuthState auth = _signedOut}) {
 
 void main() {
   group('SyncState.copyWith', () {
-    const blocked = SyncState(
-      status: SyncStatus.blocked,
-      blockedReason: SyncBlockedReason.pendingWipe,
+    const failed = SyncState(
+      status: SyncStatus.error,
       errorMessage: 'stale failure',
     );
 
-    test('keeps the blocked reason it was not asked to change', () {
+    test('clears the error message, which describes one transition', () {
       expect(
-        blocked.copyWith(pendingCount: 3).blockedReason,
-        SyncBlockedReason.pendingWipe,
+        failed.copyWith(pendingCount: 3).errorMessage,
+        isNull,
         reason:
-            'a state that says it is blocked but cannot say why draws the '
-            'wrong recovery for the wrong block',
+            'carrying it forward would caption a healthy state with a failure '
+            'that is already over',
       );
+      expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
     });
 
-    test('drops the blocked reason when the status stops being blocked', () {
-      expect(blocked.copyWith(status: SyncStatus.idle).blockedReason, isNull);
-    });
-
-    test('still clears the error message, which describes one transition', () {
-      expect(blocked.copyWith(pendingCount: 3).errorMessage, isNull);
-      expect(blocked.copyWith(errorMessage: 'boom').errorMessage, 'boom');
+    test('carries the fields it was not asked to change', () {
+      final next = failed.copyWith(status: SyncStatus.idle);
+      expect(next.status, SyncStatus.idle);
+      expect(next.pendingCount, failed.pendingCount);
     });
   });
 

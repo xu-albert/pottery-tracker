@@ -438,11 +438,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncDisabled => 'Sign in to enable cloud backup';
 
   @override
-  String get syncBlockedWipePending => 'Backup paused';
+  String get deviceLockedWipeTitle => 'This device still has to be erased';
 
   @override
-  String get syncBlockedWipePendingDetail =>
-      'The previous account\'s data still has to be erased from this device before anything is uploaded.';
+  String get deviceLockedWipeMessage =>
+      'You asked for the pottery stored here to be deleted and it could not be. Nothing is uploaded and nothing can be changed until the erase finishes.';
 
   @override
   String get deviceLockedTitle => 'This device belongs to another account';
@@ -477,7 +477,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteAccountAndLocalSurvived =>
-      'Your cloud data was deleted, but your account and the copy on this device were not. Sign in again and retry to remove the account, then erase this device.';
+      'Your cloud data was deleted. Your account and the copy on this device were not — erase this device to finish, then sign in again and retry to remove the account.';
 
   @override
   String get deleteAccountFailed =>

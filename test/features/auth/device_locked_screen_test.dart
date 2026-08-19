@@ -67,8 +67,15 @@ void main() {
 
   /// [owedWipe] picks which of the two locks the screen is standing in for.
   /// Both are seeded through the persisted state the lock is really derived
-  /// from, so the screen's own branch is what decides what is drawn.
+  /// from, so the screen's own branch is what decides what is drawn — and the
+  /// owed wipe is seeded on disk too, because opening the screen retries it
+  /// and re-reads the flag from there.
   Future<void> pumpLocked(WidgetTester tester, {bool owedWipe = false}) async {
+    if (owedWipe) {
+      SharedPreferences.setMockInitialValues({
+        SyncNotifier.pendingWipeKey: true,
+      });
+    }
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -172,17 +179,26 @@ void main() {
     // destruction, and the owed wipe is retried at the owner's next auth
     // transition), and asserted so a change to that precedence is visible.
     await tester.pump();
-    expect(find.text('Backup paused'), findsOneWidget);
+    expect(find.text('This device still has to be erased'), findsOneWidget);
     expect(find.text('Sign In As Another Account'), findsNothing);
   });
 
   group('an owed wipe', () {
+    // A device sitting on this lock is one whose wipe keeps failing — a wipe
+    // that succeeds clears the flag and the lock with it — so that is the
+    // state these run in, except where a test says otherwise.
+    setUp(() {
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+    });
+
     testWidgets('is described as the unfinished erase it is', (tester) async {
       await pumpLocked(tester, owedWipe: true);
 
-      expect(find.text('Backup paused'), findsOneWidget);
+      expect(find.text('This device still has to be erased'), findsOneWidget);
       expect(
-        find.textContaining("The previous account's data still has to be"),
+        find.textContaining('You asked for the pottery stored here'),
         findsOneWidget,
       );
       expect(
@@ -207,6 +223,84 @@ void main() {
             'that action deliberately keeps the local data, which is the '
             'opposite of what this user already confirmed they wanted',
       );
+    });
+
+    testWidgets('retries the wipe on its own when the screen opens', (
+      tester,
+    ) async {
+      // The flag locks the router on the first frame, so the shell never
+      // mounts and the auth transition that used to carry the retry never
+      // runs. Opening the lock is the only trigger left.
+      await pumpLocked(tester, owedWipe: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      verify(() => syncService.deleteLocalData()).called(1);
+      expect(
+        find.byType(CupertinoAlertDialog),
+        findsNothing,
+        reason: 'the user already confirmed this erase; it does not re-ask',
+      );
+    });
+
+    testWidgets('a transient failure heals without the user tapping', (
+      tester,
+    ) async {
+      // The retry succeeds this time — the photo file that was locked is not
+      // any more — so the lock lets go on its own.
+      when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
+
+      await pumpLocked(tester, owedWipe: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.text('This device still has to be erased'),
+        findsNothing,
+        reason:
+            'the wipe is no longer owed, so the reason that raised this lock '
+            'is gone and the router has nothing left to hold',
+      );
+    });
+
+    testWidgets('a wipe that is not owed is not retried behind the user', (
+      tester,
+    ) async {
+      // The foreign-pottery lock is somebody else's library. Nothing may be
+      // deleted there without the confirmation the erase button asks for.
+      await pumpLocked(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      verifyNever(() => syncService.deleteLocalData());
+    });
+
+    testWidgets('offers the step the delete-account message names first', (
+      tester,
+    ) async {
+      // A "Delete Account & Data" whose local wipe failed lands here with a
+      // message telling the user what to do. The first thing it names has to
+      // be something this screen actually offers — every other route
+      // redirects straight back to it.
+      await pumpLocked(tester, owedWipe: true);
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final message = l10n.deleteAccountAndLocalSurvived;
+      final erase = message.indexOf('erase this device');
+      final signIn = message.indexOf('sign in again');
+
+      expect(erase, isNonNegative);
+      expect(
+        erase < signIn,
+        isTrue,
+        reason:
+            'the lock offers the erase and nothing else, so naming the '
+            'account retry first sends the user at a step they cannot take',
+      );
+      expect(find.text('Erase This Device'), findsOneWidget);
     });
 
     testWidgets('the erase is the primary action', (tester) async {
