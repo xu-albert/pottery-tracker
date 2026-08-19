@@ -290,8 +290,10 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      final tag = await ref.read(materialsDaoProvider).findOrCreateTag(name);
-      await ref.read(syncTriggerProvider).afterTagWrite(tag.id);
+      final (tag, isNew) = await ref
+          .read(materialsDaoProvider)
+          .findOrCreateTag(name);
+      if (isNew) await ref.read(syncTriggerProvider).afterTagWrite(tag.id);
     }
   }
 

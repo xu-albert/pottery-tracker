@@ -246,8 +246,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted || result == null) return;
     if (result.isNotEmpty) {
-      final clay = await widget.materialsDao.findOrCreateClay(result);
-      await widget.syncTrigger.afterClayWrite(clay.id);
+      final (clay, isNew) = await widget.materialsDao.findOrCreateClay(result);
+      if (isNew) await widget.syncTrigger.afterClayWrite(clay.id);
     }
     widget.onUpdateField(clayType: result);
   }
@@ -287,8 +287,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      final clay = await widget.materialsDao.findOrCreateClay(name);
-      await widget.syncTrigger.afterClayWrite(clay.id);
+      final (clay, isNew) = await widget.materialsDao.findOrCreateClay(name);
+      if (isNew) await widget.syncTrigger.afterClayWrite(clay.id);
       return name.trim();
     }
     return null;
@@ -485,8 +485,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      final glaze = await widget.materialsDao.findOrCreateGlaze(name);
-      await widget.syncTrigger.afterGlazeWrite(glaze.id);
+      final (glaze, isNew) = await widget.materialsDao.findOrCreateGlaze(name);
+      if (isNew) await widget.syncTrigger.afterGlazeWrite(glaze.id);
       return glaze;
     }
     return null;
@@ -694,8 +694,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      final tag = await widget.materialsDao.findOrCreateTag(name);
-      await widget.syncTrigger.afterTagWrite(tag.id);
+      final (tag, isNew) = await widget.materialsDao.findOrCreateTag(name);
+      if (isNew) await widget.syncTrigger.afterTagWrite(tag.id);
       return tag;
     }
     return null;
@@ -783,10 +783,11 @@ class MetadataFormState extends State<MetadataForm> {
                   return ActionChip(
                     label: Text(name),
                     onPressed: () async {
-                      final clay = await widget.materialsDao.findOrCreateClay(
-                        name,
-                      );
-                      await widget.syncTrigger.afterClayWrite(clay.id);
+                      final (clay, isNew) = await widget.materialsDao
+                          .findOrCreateClay(name);
+                      if (isNew) {
+                        await widget.syncTrigger.afterClayWrite(clay.id);
+                      }
                       widget.onUpdateField(clayType: name);
                     },
                   );

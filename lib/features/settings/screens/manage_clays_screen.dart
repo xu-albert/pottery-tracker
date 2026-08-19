@@ -203,8 +203,10 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      final clay = await ref.read(materialsDaoProvider).findOrCreateClay(name);
-      await ref.read(syncTriggerProvider).afterClayWrite(clay.id);
+      final (clay, isNew) = await ref
+          .read(materialsDaoProvider)
+          .findOrCreateClay(name);
+      if (isNew) await ref.read(syncTriggerProvider).afterClayWrite(clay.id);
     }
   }
 

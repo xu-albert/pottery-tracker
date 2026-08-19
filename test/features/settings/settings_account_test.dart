@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -66,6 +68,9 @@ void main() {
       () => syncService.rememberForeignRowIds(any()),
     ).thenAnswer((_) async => <String>{});
     when(() => syncService.releaseForeignRowId(any())).thenAnswer((_) async {});
+    when(
+      () => syncService.reconcileForeignRowIds(),
+    ).thenAnswer((_) async => <String>{});
     when(() => syncService.getContestedBy()).thenAnswer((_) async => null);
     when(() => syncService.setContestedBy(any())).thenAnswer((_) async {});
     when(() => syncService.clearContestedBy()).thenAnswer((_) async {});
@@ -273,6 +278,9 @@ void main() {
       when(
         () => syncService.getForeignRowIds(),
       ).thenAnswer((_) async => {'piece-1', 'photo-1'});
+      when(
+        () => syncService.reconcileForeignRowIds(),
+      ).thenAnswer((_) async => {'piece-1', 'photo-1'});
 
       await pumpSettings(tester);
       for (var i = 0; i < 10; i++) {
@@ -289,6 +297,53 @@ void main() {
         find.textContaining('another account was signed in'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('delete account tile', () {
+    testWidgets('excludes itself and Sign Out while a delete is in flight', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // Hold the delete open the way a real one is held open — cloud deletion
+      // and the account delete are seconds of network.
+      final inFlight = Completer<void>();
+      when(
+        () => syncService.deleteCloudData(any()),
+      ).thenAnswer((_) => inFlight.future);
+      when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Delete Account & Data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete Everything'));
+      // Not pumpAndSettle: the sync tile spins for the length of the delete,
+      // so the tree never goes quiet. Pump past the dialog's dismissal instead.
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      expect(find.text('Delete Everything'), findsNothing);
+
+      // A second tap must not reach a second confirmation. That call would
+      // return early on the in-flight delete, but its `finally` clears the
+      // in-flight flag and re-enables Sign Out.
+      await tester.tap(find.text('Delete Account & Data'), warnIfMissed: false);
+      await tester.pump();
+      expect(find.text('Delete Everything'), findsNothing);
+
+      // Sign Out has to stay inert: it ends the Firebase session, and a
+      // session ended before the in-flight delete reaches the account
+      // deletion leaves the cloud data gone and the account itself alive.
+      await tester.tap(find.text('Sign Out'), warnIfMissed: false);
+      await tester.pump();
+      expect(find.text('Sign Out & Erase'), findsNothing);
     });
   });
 

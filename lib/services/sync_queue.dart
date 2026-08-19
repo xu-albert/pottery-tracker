@@ -15,6 +15,29 @@ enum SyncOperation {
   deleteMaterial,
 }
 
+extension SyncOperationKind on SyncOperation {
+  /// Whether this operation removes the row rather than rewriting it.
+  ///
+  /// A deleted row leaves nothing of its writer's contents on the device, so
+  /// there is nothing for a later account to withhold from its own backup —
+  /// and nothing anybody could ever rewrite to release it again. Exhaustive on
+  /// purpose: a new operation has to be classified here rather than silently
+  /// defaulting.
+  bool get isDeletion => switch (this) {
+    SyncOperation.deletePiece ||
+    SyncOperation.deletePhoto ||
+    SyncOperation.deleteMaterial => true,
+    SyncOperation.pushPiece ||
+    SyncOperation.pushPhoto ||
+    SyncOperation.pushPhotoFile ||
+    SyncOperation.pushClay ||
+    SyncOperation.pushGlaze ||
+    SyncOperation.pushTag ||
+    SyncOperation.pushPieceGlazes ||
+    SyncOperation.pushPieceTags => false,
+  };
+}
+
 class SyncQueueEntry {
   final SyncOperation operation;
   final String entityId;

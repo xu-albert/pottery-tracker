@@ -516,7 +516,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
           _SectionHeader(title: 'Account'),
           ListTile(
-            enabled: !_isSigningOut,
+            // Self-exclusion is not cosmetic: a second tap lands in
+            // deleteAllData's early return, but its `finally` clears
+            // _isDeletingAccount and re-enables Sign Out mid-delete. That path
+            // ends the Firebase session before the in-flight delete reaches
+            // the account deletion, so the cloud data goes and the account
+            // itself silently survives.
+            enabled: !_isSigningOut && !_isDeletingAccount,
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text(
               'Delete Account & Data',

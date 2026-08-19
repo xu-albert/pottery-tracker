@@ -156,7 +156,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   Future<void> _refreshCounts() async {
     final count = await _queue.pendingCount;
-    final withheld = await _syncService.getForeignRowIds();
+    final withheld = await _syncService.reconcileForeignRowIds();
     state = state.copyWith(pendingCount: count, withheldCount: withheld.length);
   }
 
@@ -247,7 +247,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = SyncState(
         status: SyncStatus.idle,
         pendingCount: 0,
-        withheldCount: (await _syncService.getForeignRowIds()).length,
+        withheldCount: (await _syncService.reconcileForeignRowIds()).length,
         lastSyncedAt: DateTime.now(),
       );
     } catch (e) {
@@ -503,11 +503,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// database rather than the queue and needs the same list.
   Future<void> _recordForeignRows(String uid) async {
     final foreign = (await _queue.getAll())
-        .where((e) => e.uid != null && e.uid != uid)
+        .where((e) => e.uid != null && e.uid != uid && !e.operation.isDeletion)
         .map((e) => e.entityId)
         .toSet();
-    if (foreign.isEmpty) return;
-    await _syncService.rememberForeignRowIds(foreign);
+    if (foreign.isNotEmpty) {
+      await _syncService.rememberForeignRowIds(foreign);
+    }
+    // Rows recorded on an earlier pass may be gone by now — deleted by their
+    // writer, or by the owner since. Nothing that no longer exists is being
+    // withheld from anyone, and leaving it recorded would keep this device
+    // reporting an incomplete backup that can never be completed.
+    await _syncService.reconcileForeignRowIds();
   }
 
   /// Whether this device's data belongs to an account other than [uid].

@@ -832,6 +832,122 @@ void main() {
     },
   );
 
+  test('a withheld row that no longer exists stops being withheld', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    await insertPieceWithPhoto('piece-b', "B's bowl");
+    await container.read(syncTriggerProvider).afterPieceWrite('piece-b');
+
+    auth.set(signedInAs(uidA));
+    await settle();
+    expect(container.read(syncStateProvider).withheldCount, 1);
+
+    // B comes back, is refused again, and throws its own piece away. The row
+    // is gone and nothing the owner ever writes touches that id, so only
+    // reconciling the record against the database can retire it.
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    await db.piecesDao.deletePiece('piece-b');
+    await container.read(syncTriggerProvider).afterPieceDeletion('piece-b', []);
+
+    auth.set(signedInAs(uidA));
+    await settle();
+
+    expect(
+      container.read(syncStateProvider).withheldCount,
+      0,
+      reason: 'a device with nothing left to withhold reports a clean backup',
+    );
+    expect(container.read(syncStateProvider).status, SyncStatus.idle);
+  });
+
+  test("a refused account's deletion withholds nothing", () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+    expect(await cloudPieceIds(uidA), ['piece-a']);
+
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+    // B deletes A's piece off the device. The row leaves no contents behind,
+    // so recording it would withhold a row that cannot exist.
+    await db.piecesDao.deletePiece('piece-a');
+    await container.read(syncTriggerProvider).afterPieceDeletion('piece-a', [
+      'photo-piece-a',
+    ]);
+
+    auth.set(signedInAs(uidA));
+    await settle();
+
+    expect(
+      container.read(syncStateProvider).withheldCount,
+      0,
+      reason: 'nothing is being withheld, so nothing should be reported',
+    );
+    expect(
+      await cloudPieceIds(uidA),
+      ['piece-a'],
+      reason: "B's deletion must not reach A's cloud tree either",
+    );
+  });
+
+  test(
+    'a material the refused account only picked is never withheld',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+      final aClay = (await db.materialsDao.getAllClays()).single;
+
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+      // B picks A's existing clay from the dropdown, exactly as the metadata
+      // form does: the row comes back untouched, so no write is enqueued.
+      final (picked, isNew) = await db.materialsDao.findOrCreateClay(
+        aClay.name,
+      );
+      expect(isNew, isFalse);
+      expect(picked.id, aClay.id);
+      if (isNew) {
+        await container.read(syncTriggerProvider).afterClayWrite(picked.id);
+      }
+
+      auth.set(signedInAs(uidA));
+      await settle();
+
+      expect(
+        container.read(syncStateProvider).withheldCount,
+        0,
+        reason: "A's own clay was referenced, not rewritten",
+      );
+
+      syncService.pushLog.clear();
+      await notifier.syncNow(forceFullSync: true);
+      await settle();
+      final clays = await firestore.collection('users/$uidA/clays').get();
+      expect(
+        clays.docs.map((d) => d.id),
+        contains(aClay.id),
+        reason: "A's own material is still backed up",
+      );
+    },
+  );
+
   test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {

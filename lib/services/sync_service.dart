@@ -235,6 +235,39 @@ class SyncService {
     return merged;
   }
 
+  /// Drops recorded ids whose row is no longer on the device, and returns
+  /// what is left.
+  ///
+  /// An id with no row is withholding nothing: there are no foreign contents
+  /// left to keep out of the backup, and nothing anybody could rewrite to
+  /// release it. Leaving it recorded would pin the withheld count above zero
+  /// for good, which is the same untrue status the count exists to prevent.
+  ///
+  /// Costs nothing on the overwhelming majority of devices, where the set is
+  /// empty and this returns before touching the database.
+  Future<Set<String>> reconcileForeignRowIds() async {
+    final known = await getForeignRowIds();
+    if (known.isEmpty) return known;
+
+    final present = <String>{
+      ...(await _db.select(_db.pieces).get()).map((r) => r.id),
+      ...(await _db.select(_db.photos).get()).map((r) => r.id),
+      ...(await _db.materialsDao.getAllClays()).map((r) => r.id),
+      ...(await _db.materialsDao.getAllGlazes()).map((r) => r.id),
+      ...(await _db.materialsDao.getAllTags()).map((r) => r.id),
+    };
+    final kept = known.where(present.contains).toSet();
+    if (kept.length == known.length) return known;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (kept.isEmpty) {
+      await prefs.remove(_foreignRowIdsKey);
+    } else {
+      await prefs.setStringList(_foreignRowIdsKey, kept.toList());
+    }
+    return kept;
+  }
+
   /// Stops withholding [id], because the account that owns this device has
   /// written that row itself since reclaiming it.
   ///

@@ -65,6 +65,9 @@ _setup({AuthState auth = _signedOut}) {
     () => syncService.rememberForeignRowIds(any()),
   ).thenAnswer((_) async => <String>{});
   when(() => syncService.releaseForeignRowId(any())).thenAnswer((_) async {});
+  when(
+    () => syncService.reconcileForeignRowIds(),
+  ).thenAnswer((_) async => <String>{});
   when(() => syncService.getContestedBy()).thenAnswer((_) async => null);
   when(() => syncService.setContestedBy(any())).thenAnswer((_) async {});
   when(() => syncService.clearContestedBy()).thenAnswer((_) async {});
