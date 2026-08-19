@@ -6,6 +6,7 @@ import '../../../models/piece_stage.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../services/material_writer.dart';
 import '../../../services/sync_trigger.dart';
 
 class MetadataForm extends StatefulWidget {
@@ -46,6 +47,9 @@ class MetadataFormState extends State<MetadataForm> {
   List<String> _recentClayNames = [];
   List<GlazeOption> _recentGlazes = [];
   List<TagOption> _recentTags = [];
+
+  MaterialWriter get _materials =>
+      MaterialWriter(widget.materialsDao, widget.syncTrigger);
 
   @override
   void initState() {
@@ -246,8 +250,7 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted || result == null) return;
     if (result.isNotEmpty) {
-      final (clay, isNew) = await widget.materialsDao.findOrCreateClay(result);
-      if (isNew) await widget.syncTrigger.afterClayWrite(clay.id);
+      await _materials.clay(result);
     }
     widget.onUpdateField(clayType: result);
   }
@@ -287,8 +290,7 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      final (clay, isNew) = await widget.materialsDao.findOrCreateClay(name);
-      if (isNew) await widget.syncTrigger.afterClayWrite(clay.id);
+      await _materials.clay(name);
       return name.trim();
     }
     return null;
@@ -485,9 +487,7 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      final (glaze, isNew) = await widget.materialsDao.findOrCreateGlaze(name);
-      if (isNew) await widget.syncTrigger.afterGlazeWrite(glaze.id);
-      return glaze;
+      return _materials.glaze(name);
     }
     return null;
   }
@@ -694,9 +694,7 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return null;
     if (name != null && name.trim().isNotEmpty) {
-      final (tag, isNew) = await widget.materialsDao.findOrCreateTag(name);
-      if (isNew) await widget.syncTrigger.afterTagWrite(tag.id);
-      return tag;
+      return _materials.tag(name);
     }
     return null;
   }
@@ -783,11 +781,7 @@ class MetadataFormState extends State<MetadataForm> {
                   return ActionChip(
                     label: Text(name),
                     onPressed: () async {
-                      final (clay, isNew) = await widget.materialsDao
-                          .findOrCreateClay(name);
-                      if (isNew) {
-                        await widget.syncTrigger.afterClayWrite(clay.id);
-                      }
+                      await _materials.clay(name);
                       widget.onUpdateField(clayType: name);
                     },
                   );

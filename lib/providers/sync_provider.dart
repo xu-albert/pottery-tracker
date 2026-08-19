@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/material_writer.dart';
 import '../services/sync_queue.dart';
 import '../services/sync_service.dart';
 import '../services/sync_trigger.dart';
@@ -658,6 +659,15 @@ final syncTriggerProvider = Provider<SyncTrigger>((ref) {
         ref.read(syncStateProvider.notifier).noteLocalWrite(entry),
     onEnqueue: () =>
         ref.read(syncStateProvider.notifier).scheduleProcessQueue(),
+  );
+});
+
+/// The one place a material is created and queued for backup. See
+/// [MaterialWriter] for why the two steps cannot be separated.
+final materialWriterProvider = Provider<MaterialWriter>((ref) {
+  return MaterialWriter(
+    ref.watch(databaseProvider).materialsDao,
+    ref.watch(syncTriggerProvider),
   );
 });
 

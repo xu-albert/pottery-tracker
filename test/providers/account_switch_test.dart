@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
+import 'package:pottery_tracker/services/material_writer.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -916,16 +917,13 @@ void main() {
       await settle();
       expect(container.read(syncStateProvider).status, SyncStatus.blocked);
 
-      // B picks A's existing clay from the dropdown, exactly as the metadata
-      // form does: the row comes back untouched, so no write is enqueued.
-      final (picked, isNew) = await db.materialsDao.findOrCreateClay(
-        aClay.name,
-      );
-      expect(isNew, isFalse);
+      // B picks A's existing clay from the dropdown through the same writer
+      // every screen uses. The row comes back untouched, so nothing is queued.
+      final picked = await MaterialWriter(
+        db.materialsDao,
+        container.read(syncTriggerProvider),
+      ).clay(aClay.name);
       expect(picked.id, aClay.id);
-      if (isNew) {
-        await container.read(syncTriggerProvider).afterClayWrite(picked.id);
-      }
 
       auth.set(signedInAs(uidA));
       await settle();
