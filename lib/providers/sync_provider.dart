@@ -98,6 +98,10 @@ enum DeleteAllDataResult {
   accountAndLocalDataSurvived,
 }
 
+Future<void> _deleteFirebaseAccount() async {
+  await FirebaseAuth.instance.currentUser?.delete();
+}
+
 class SyncNotifier extends StateNotifier<SyncState> {
   /// Set for the duration of a local wipe so an interrupted one (crash, kill,
   /// failed delete) can be finished before anything is ever pushed again.
@@ -134,8 +138,22 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Timer? _processTimer;
   Future<void>? _wipeInFlight;
 
-  SyncNotifier(this._ref, this._queue, this._syncService)
-    : super(const SyncState()) {
+  /// Deletes the Firebase account itself.
+  ///
+  /// The one dependency of this class that was not injected, which left the
+  /// branch where the deletion *succeeds* unreachable from any test: building
+  /// `FirebaseAuth.instance` needs auth platform channels the test harness
+  /// does not provide, so every test saw the requires-recent-login side only.
+  /// Production always passes nothing and gets Firebase.
+  final Future<void> Function() _deleteAuthAccount;
+
+  SyncNotifier(
+    this._ref,
+    this._queue,
+    this._syncService, {
+    Future<void> Function()? deleteAuthAccount,
+  }) : _deleteAuthAccount = deleteAuthAccount ?? _deleteFirebaseAccount,
+       super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.isSignedIn && prev?.uid != next.uid) {
         _onAuthChanged(next.uid!);
@@ -532,17 +550,32 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _ref.read(pendingLocalWipeProvider.notifier).state = pending;
   }
 
-  /// Records which account the user asked to have deleted is still there, or
-  /// clears the record once it is gone.
-  Future<void> _setAccountDeletionOwed(String? uid) async {
+  /// Records that [uid]'s account survived the deletion [uid] confirmed.
+  ///
+  /// The slot holds one uid. Claiming it for the account in front of the user
+  /// can displace another account's outstanding deletion, which is the honest
+  /// limit of a single record — but only the account being displaced could
+  /// have put it there, and it is the one now asking.
+  Future<void> _recordAccountDeletionOwed(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    if (uid != null) {
-      await prefs.setString(SyncService.accountDeletionOwedKey, uid);
-    } else {
-      await prefs.remove(SyncService.accountDeletionOwedKey);
-    }
+    await prefs.setString(SyncService.accountDeletionOwedKey, uid);
     if (!mounted) return;
     _ref.read(accountDeletionOwedProvider.notifier).state = uid;
+  }
+
+  /// Releases the record, and only when it is [uid]'s own.
+  ///
+  /// There is deliberately no way to ask for the record to be cleared without
+  /// saying whose it is. A deletion that finally goes through settles the
+  /// account it deleted and nothing else: another account's outstanding
+  /// deletion is not this one's to forget, and forgetting it would leave the
+  /// account standing with nothing anywhere recording that it is.
+  Future<void> _clearAccountDeletionOwedFor(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(SyncService.accountDeletionOwedKey) != uid) return;
+    await prefs.remove(SyncService.accountDeletionOwedKey);
+    if (!mounted) return;
+    _ref.read(accountDeletionOwedProvider.notifier).state = null;
   }
 
   /// Whether this device's data belongs to an account other than [uid].
@@ -647,7 +680,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // be swallowed: telling someone their account is deleted when it still
         // exists is the one thing this report exists to prevent.
         try {
-          await FirebaseAuth.instance.currentUser?.delete();
+          await _deleteAuthAccount();
         } catch (e) {
           debugPrint('SyncNotifier: Firebase account deletion failed: $e');
           accountSurvived = true;
@@ -655,8 +688,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // Persisted before anything else can redirect the user away from the
         // message about to be shown. A confirmed deletion that half-failed is
         // not reported once and forgotten — and a deletion that finally went
-        // through is what clears it.
-        await _setAccountDeletionOwed(accountSurvived ? auth.uid : null);
+        // through is what settles it, for the account it deleted.
+        if (accountSurvived) {
+          await _recordAccountDeletionOwed(auth.uid!);
+        } else {
+          await _clearAccountDeletionOwedFor(auth.uid!);
+        }
       }
 
       // Always delete local data. Past this point the cloud side is already
