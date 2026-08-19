@@ -543,6 +543,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       context,
                       message: l10n.deleteAccountFailed,
                     );
+                  // Partial outcomes get their own words: "nothing was
+                  // deleted" would be a lie once the cloud tree is gone.
+                  case DeleteAllDataResult.accountSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountSurvived,
+                    );
+                  case DeleteAllDataResult.localDataSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountLocalSurvived,
+                    );
                 }
               } finally {
                 if (mounted) setState(() => _isDeletingAccount = false);

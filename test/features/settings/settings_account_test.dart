@@ -62,6 +62,9 @@ void main() {
     when(() => syncService.pullAll(any())).thenAnswer((_) async {});
     when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
+    // Unowned by default: Settings is only reachable on a device this account
+    // owns, since a contested one is locked read-only at the router.
+    when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   });
 
   Future<void> pumpSettings(

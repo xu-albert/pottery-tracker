@@ -68,8 +68,7 @@ void main() {
 
       // Picking a material that already exists writes nothing, so a caller
       // that enqueued a sync here would be reporting a write that never
-      // happened — and on a contested device that records the owner's own
-      // material as somebody else's.
+      // happened, and queueing a no-op push.
       expect(isNew, isFalse);
       expect(second.id, first.id);
       expect(second.name, first.name);

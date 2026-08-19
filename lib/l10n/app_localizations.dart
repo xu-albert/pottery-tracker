@@ -940,6 +940,18 @@ abstract class AppLocalizations {
   /// **'Busy right now — try again in a moment.'**
   String get deleteAccountBusy;
 
+  /// Shown when cloud data was deleted but the auth account still exists
+  ///
+  /// In en, this message translates to:
+  /// **'Your data was deleted, but your account could not be. Sign in again and retry to remove it.'**
+  String get deleteAccountSurvived;
+
+  /// Shown when the cloud side was deleted but the local wipe failed
+  ///
+  /// In en, this message translates to:
+  /// **'Your cloud data and account were deleted, but the copy on this device could not be. Erase this device to finish.'**
+  String get deleteAccountLocalSurvived;
+
   /// Shown when an account deletion failed
   ///
   /// In en, this message translates to:

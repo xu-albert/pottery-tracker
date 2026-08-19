@@ -35,7 +35,9 @@ class SyncService {
   /// stamp is the only thing left that knows whose pieces these are, and
   /// `SyncNotifier` refuses to push for anyone else until the owner signs
   /// back in.
-  static const _localDataOwnerKey = 'localDataOwnerUid';
+  /// Public so startup can seed the read-only lock from it before `runApp`
+  /// without restating the literal.
+  static const localDataOwnerKey = 'localDataOwnerUid';
 
   // ════════════════════════════════════════════
   // Delete all data
@@ -128,7 +130,7 @@ class SyncService {
     // The data is gone, so nobody owns this device any more: the next account
     // to sign in starts from a clean slate rather than inheriting the claim.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_localDataOwnerKey);
+    await prefs.remove(localDataOwnerKey);
   }
 
   Future<void> _deleteLocalPhotoFiles() async {
@@ -167,7 +169,7 @@ class SyncService {
   /// or a device that has just been wiped.
   Future<String?> getLocalDataOwner() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_localDataOwnerKey);
+    return prefs.getString(localDataOwnerKey);
   }
 
   /// Claims this device's local data for [uid]. Only ever called for an
@@ -175,7 +177,7 @@ class SyncService {
   /// account's claim.
   Future<void> setLocalDataOwner(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_localDataOwnerKey, uid);
+    await prefs.setString(localDataOwnerKey, uid);
   }
 
   /// Clears every per-uid pull watermark.

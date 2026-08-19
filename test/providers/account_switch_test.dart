@@ -612,6 +612,144 @@ void main() {
     },
   );
 
+  group('the lock cannot be escaped', () {
+    // Four ways the lock silently released when it was derived from the live
+    // sync status instead of the persisted owner stamp. Each one put a refused
+    // account on the owner's writable album.
+    Future<void> refuseB() async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(deviceLockedProvider), isTrue);
+    }
+
+    test('a failed erase does not release it', () async {
+      await refuseB();
+
+      syncService.wipeFails = true;
+      expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.failed);
+      await settle();
+
+      expect(
+        container.read(syncStateProvider).status,
+        SyncStatus.error,
+        reason: 'the erase really did fail',
+      );
+      expect(
+        container.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            "an error transition must not hand the refused account the "
+            "owner's album, writable, with the owner's rows still on it",
+      );
+    });
+
+    test(
+      'ending the session does not release it while the data stays',
+      () async {
+        await refuseB();
+
+        // endForeignSession sets the sync state to disabled; the lock must not
+        // follow it down while B is still, for a frame, the signed-in account.
+        await notifier.endForeignSession(() async {});
+        expect(
+          container.read(deviceLockedProvider),
+          isTrue,
+          reason: 'the stamp still names A and B is still the session',
+        );
+      },
+    );
+
+    test('a local-only session cannot walk in past it', () async {
+      await refuseB();
+
+      // "Skip for now" makes a session-less state. It must not be a door into
+      // the owner's pottery — the control itself is hidden on a stamped
+      // device, and the stamp is what proves it is stamped.
+      expect(
+        container.read(skipSignInAllowedProvider),
+        isFalse,
+        reason: 'skipping sign-in is closed once the device has an owner',
+      );
+    });
+
+    test('it holds on the first frame, before any sync has run', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // A fresh container, as at launch: nothing has synced yet, so a lock
+      // derived from sync status would still read unlocked here.
+      final fresh = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith((_) => _TestAuthNotifier(signedInAs(uidB))),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+          syncServiceProvider.overrideWithValue(syncService),
+        ],
+      );
+      // Seed the stamp exactly as `main` does before runApp — from
+      // preferences, synchronously, with no sync having run.
+      fresh.read(localDataOwnerProvider.notifier).state = await syncService
+          .getLocalDataOwner();
+
+      expect(
+        fresh.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            'the album must never render for a refused account, not even for '
+            'the frame before the first async claim resolves',
+      );
+
+      // Let the container's own sync finish before tearing it down, so no
+      // in-flight work outlives it.
+      await settle();
+      fresh.dispose();
+    });
+
+    test('the owner is never locked out by an offline launch', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // Ruling 2's ordinary offline launch: session-less, on a stamped device.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+
+      expect(
+        container.read(deviceLockedProvider),
+        isFalse,
+        reason:
+            'a session-less launch is the owner opening the app offline, and '
+            'locking them out of their own pottery is what ruling 2 forbids',
+      );
+    });
+
+    test('an owed wipe locks the device too', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      syncService.wipeFails = true;
+      await expectLater(
+        notifier.signOutAndWipeLocalData(() async {}),
+        throwsException,
+      );
+      auth.set(const AuthState(status: AuthStatus.unauthenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+
+      expect(
+        container.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            'A signed out asking for this data to be destroyed; until the '
+            'wipe succeeds it must not be browsable and editable by whoever '
+            'picks the phone up next',
+      );
+    });
+  });
+
   group('read-only lock', () {
     test(
       'a refused device is locked, not merely blocked from pushing',

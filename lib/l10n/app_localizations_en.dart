@@ -468,6 +468,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deleteAccountBusy => 'Busy right now — try again in a moment.';
 
   @override
+  String get deleteAccountSurvived =>
+      'Your data was deleted, but your account could not be. Sign in again and retry to remove it.';
+
+  @override
+  String get deleteAccountLocalSurvived =>
+      'Your cloud data and account were deleted, but the copy on this device could not be. Erase this device to finish.';
+
+  @override
   String get deleteAccountFailed =>
       'Could not delete your account. Nothing was deleted.';
 

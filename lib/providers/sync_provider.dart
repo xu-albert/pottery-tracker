@@ -70,7 +70,29 @@ enum EraseLocalDataResult { erased, busy, failed }
 /// What a confirmed account deletion actually did. Mirrors
 /// [EraseLocalDataResult]: both are destructive actions the user has already
 /// confirmed, so both report rather than returning silently.
-enum DeleteAllDataResult { deleted, busy, failed }
+///
+/// The partial outcomes are named separately because "it failed" and "your
+/// cloud data is gone but your account is not" are different things to be
+/// told, and only one of them is recoverable by trying again.
+enum DeleteAllDataResult {
+  /// Cloud data, auth account and local data are all gone.
+  deleted,
+
+  /// Nothing was attempted: a sync or wipe held the device.
+  busy,
+
+  /// Nothing was deleted.
+  failed,
+
+  /// The cloud data was deleted but the auth account survived — almost always
+  /// because Firebase wants a recent sign-in before it will delete an account.
+  /// Signing in again and retrying is what clears it.
+  accountSurvived,
+
+  /// The cloud side is gone and the local copy is not. The app is no longer
+  /// signed in to anything meaningful, so the local rows are all that is left.
+  localDataSurvived,
+}
 
 class SyncNotifier extends StateNotifier<SyncState> {
   /// Set for the duration of a local wipe so an interrupted one (crash, kill,
@@ -117,6 +139,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         unawaited(_finishInterruptedWipe());
       }
     }, fireImmediately: true);
+    unawaited(_refreshLocalDataOwner());
+  }
+
+  Future<void> _refreshLocalDataOwner() async {
+    _publishLocalDataOwner(await _syncService.getLocalDataOwner());
   }
 
   Future<void> _onAuthChanged(String uid) async {
@@ -420,6 +447,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
     await prefs.setBool(pendingWipeKey, true);
     await _queue.clear();
     await _syncService.deleteLocalData();
+    // deleteLocalData clears the stamp, so nobody owns this device now.
+    _publishLocalDataOwner(null);
     if (!staleSync) await prefs.remove(pendingWipeKey);
   }
 
@@ -439,7 +468,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // on. Claiming it before the push matters: if the process dies mid-sync,
     // the stamp is already correct.
     await _syncService.setLocalDataOwner(uid);
+    _publishLocalDataOwner(uid);
     return false;
+  }
+
+  /// Mirrors the persisted stamp into [localDataOwnerProvider], which the lock
+  /// reads synchronously.
+  void _publishLocalDataOwner(String? uid) {
+    _ref.read(localDataOwnerProvider.notifier).state = uid;
   }
 
   /// Whether this device's data belongs to an account other than [uid].
@@ -453,6 +489,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// sign back in as the owner, or to erase the device on purpose.
   Future<bool> _blockedByForeignLocalData(String uid) async {
     final owner = await _syncService.getLocalDataOwner();
+    _publishLocalDataOwner(owner);
     if (owner == null || owner == uid) return false;
     debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
     state = state.copyWith(
@@ -524,24 +561,43 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final auth = _ref.read(authProvider);
 
       // Delete cloud data and account only if signed in
+      var cloudDeleted = false;
+      var accountSurvived = false;
       if (auth.isSignedIn && auth.uid != null) {
         await _syncService.deleteCloudData(auth.uid!);
+        cloudDeleted = true;
 
-        // Delete the Firebase Auth account
+        // A failure here is almost always 'requires-recent-login'. It must not
+        // be swallowed: telling someone their account is deleted when it still
+        // exists is the one thing this report exists to prevent.
         try {
           await FirebaseAuth.instance.currentUser?.delete();
         } catch (e) {
           debugPrint('SyncNotifier: Firebase account deletion failed: $e');
+          accountSurvived = true;
         }
       }
 
-      // Always delete local data
-      await _wipeLocalData();
+      // Always delete local data. Past this point the cloud side is already
+      // gone, so a failure here is partial, not "nothing was deleted".
+      try {
+        await _wipeLocalData();
+      } catch (e) {
+        debugPrint('SyncNotifier: deleteAllData local wipe failed: $e');
+        state = state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: e.toString(),
+        );
+        if (cloudDeleted) return DeleteAllDataResult.localDataSurvived;
+        rethrow;
+      }
 
       // Sign out locally
       await _ref.read(authProvider.notifier).signOut();
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
-      return DeleteAllDataResult.deleted;
+      return accountSurvived
+          ? DeleteAllDataResult.accountSurvived
+          : DeleteAllDataResult.deleted;
     } catch (e) {
       debugPrint('SyncNotifier: deleteAllData failed: $e');
       state = state.copyWith(
@@ -591,10 +647,59 @@ final syncTriggerProvider = Provider<SyncTrigger>((ref) {
 /// material screens, so there is no write surface left to guard one at a time.
 /// That is the whole point of the read-only ruling — the earlier design let a
 /// refused account write and then tried to keep track of what it had touched.
+/// The uid this device's local data belongs to, or null when it belongs to
+/// nobody yet.
+///
+/// Synchronous on purpose. It is seeded from preferences before `runApp` and
+/// kept current by [SyncNotifier], so it gives the same answer on the very
+/// first frame as it does once syncing has run — which is what lets the lock
+/// below be trusted at the moment the router needs it, rather than a beat
+/// later. An async read here would leave the lock open during resolution, and
+/// "open for a moment" is the whole failure mode this exists to prevent.
+final localDataOwnerProvider = StateProvider<String?>((ref) => null);
+
+/// Whether this device is locked read-only because its data is not the
+/// signed-in account's to touch.
+///
+/// Derived from the *persisted* owner stamp against the current session, never
+/// from [SyncStatus]. Status is transient, and an earlier version of this
+/// provider read it directly: a failed erase flipped the status to `error`,
+/// the lock silently dropped, and the router put a refused account on the
+/// owner's album — writable — where a delete would later be pushed under the
+/// owner's name. The stamp cannot be cleared by a status transition, by
+/// leaving the session, or by a frame rendering before the first async claim.
+///
+/// A session-less (local-only) launch never locks: on a stamped device that is
+/// the owner opening the app offline, which ruling 2 requires to keep working.
+/// The other way to reach a session-less state — "Skip for now" — is closed on
+/// a stamped device instead, so a refused account cannot use it as a way in.
 final deviceLockedProvider = Provider<bool>((ref) {
+  // A wipe the user asked for and did not get leaves the signed-out account's
+  // whole library on the device. They asked for it destroyed, so it must not
+  // be browsable and editable by the next person holding the phone while the
+  // wipe stays owed — the lock screen offers the erase that resolves it.
   final sync = ref.watch(syncStateProvider);
-  return sync.status == SyncStatus.blocked &&
-      sync.blockedReason == SyncBlockedReason.foreignLocalData;
+  if (sync.status == SyncStatus.blocked &&
+      sync.blockedReason == SyncBlockedReason.pendingWipe) {
+    return true;
+  }
+
+  final owner = ref.watch(localDataOwnerProvider);
+  if (owner == null) return false;
+
+  final auth = ref.watch(authProvider);
+  // Session-less: the owner opening the app offline, not a refused account.
+  if (auth.uid == null) return false;
+  return auth.uid != owner;
+});
+
+/// Whether continuing without an account would land on a device that already
+/// belongs to someone else. "Skip for now" is hidden then: it is the one door
+/// into a writable session that the owner stamp cannot see, and leaving it
+/// open would give a refused account unrestricted access to the owner's
+/// pottery without erasing and without the owner ever signing back in.
+final skipSignInAllowedProvider = Provider<bool>((ref) {
+  return ref.watch(localDataOwnerProvider) == null;
 });
 
 /// The one place a material is created and queued for backup. See
