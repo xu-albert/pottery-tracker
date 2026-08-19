@@ -54,12 +54,21 @@ class SyncState {
   /// Set only when [status] is [SyncStatus.blocked].
   final SyncBlockedReason? blockedReason;
 
+  /// How many rows are being withheld from the backup because a session this
+  /// device refused wrote them.
+  ///
+  /// Deliberately not folded into [pendingCount]: those rows are on their way
+  /// up, these are refused, and a device with withheld rows is never fully
+  /// backed up no matter how empty the queue is.
+  final int withheldCount;
+
   const SyncState({
     this.status = SyncStatus.disabled,
     this.pendingCount = 0,
     this.lastSyncedAt,
     this.errorMessage,
     this.blockedReason,
+    this.withheldCount = 0,
   });
 
   SyncState copyWith({
@@ -68,6 +77,7 @@ class SyncState {
     DateTime? lastSyncedAt,
     String? errorMessage,
     SyncBlockedReason? blockedReason,
+    int? withheldCount,
   }) {
     return SyncState(
       status: status ?? this.status,
@@ -75,6 +85,7 @@ class SyncState {
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       errorMessage: errorMessage,
       blockedReason: blockedReason,
+      withheldCount: withheldCount ?? this.withheldCount,
     );
   }
 }
@@ -131,13 +142,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // is still lying around from a wipe that was cut short.
     await _finishInterruptedWipe();
     state = state.copyWith(status: SyncStatus.idle);
-    await _refreshPendingCount();
+    await _refreshCounts();
     await syncNow();
   }
 
-  Future<void> _refreshPendingCount() async {
+  Future<void> _refreshCounts() async {
     final count = await _queue.pendingCount;
-    state = state.copyWith(pendingCount: count);
+    final withheld = await _syncService.getForeignRowIds();
+    state = state.copyWith(pendingCount: count, withheldCount: withheld.length);
   }
 
   void scheduleProcessQueue() {
@@ -157,7 +169,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       if (await _claimOrBlock(auth.uid!)) return;
       await _processQueueInternal(auth.uid!);
-      await _refreshPendingCount();
+      await _refreshCounts();
       // Only the queue has been drained here. While a full sync is still owed
       // nothing has been pulled, so reporting "backed up" would name a backup
       // that has not happened — leave the final word to the owed sync below.
@@ -169,7 +181,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
     } catch (e) {
       debugPrint('SyncNotifier: push failed: $e');
-      await _refreshPendingCount();
+      await _refreshCounts();
       state = state.copyWith(
         status: SyncStatus.error,
         errorMessage: e.toString(),
@@ -223,11 +235,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = SyncState(
         status: SyncStatus.idle,
         pendingCount: 0,
+        withheldCount: (await _syncService.getForeignRowIds()).length,
         lastSyncedAt: DateTime.now(),
       );
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
-      await _refreshPendingCount();
+      await _refreshCounts();
       state = state.copyWith(
         status: SyncStatus.error,
         errorMessage: e.toString(),
@@ -431,10 +444,41 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// back with the stamp already correct.
   Future<bool> _claimOrBlock(String uid) async {
     if (await _blockedByPendingWipe()) return true;
-    if (await _blockedByForeignLocalData(uid)) return true;
+    if (await _blockedByForeignLocalData(uid)) {
+      // Refused, but still the account at the keyboard. From here a write made
+      // with no session is this account's rather than the owner's, and it
+      // stays that way across relaunches — which is exactly when the session
+      // goes away. Only the foreign-owner refusal contests the device: an owed
+      // wipe refuses the owner too, and everything is about to be deleted.
+      await _syncService.setContestedBy(uid);
+      return true;
+    }
     await _syncService.setLocalDataOwner(uid);
     await _recordForeignRows(uid);
+    // The owner has the device back. Writes made from now on are theirs again;
+    // entries already stamped keep the attribution they were given.
+    await _syncService.clearContestedBy();
     return false;
+  }
+
+  /// Notes a write that has just been queued, so the record of which rows are
+  /// not the owner's stays true as the owner keeps working.
+  ///
+  /// A row is withheld because its contents were written by an account this
+  /// device refused. Once the owner writes that row itself the justification
+  /// is gone, so the row is released — here, at the moment of the write, which
+  /// is the only point that can tell an owner's write *after* reclaiming the
+  /// device from one made before losing it. Queue order cannot: an entry keeps
+  /// its first position when a later write merges into it.
+  ///
+  /// Nobody but the owner can release a row: a refused account's writes are
+  /// stamped with its own uid, and on a contested device so are its
+  /// session-less ones.
+  Future<void> noteLocalWrite(SyncQueueEntry entry) async {
+    final writer = entry.uid;
+    if (writer == null) return;
+    if (await _syncService.getLocalDataOwner() != writer) return;
+    await _syncService.releaseForeignRowId(entry.entityId);
   }
 
   /// Records every row this device holds that a session other than [uid]
@@ -585,7 +629,15 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 final syncTriggerProvider = Provider<SyncTrigger>((ref) {
   return SyncTrigger(
     ref.watch(syncQueueProvider),
-    currentUid: () => ref.read(authProvider).uid,
+    currentUid: () async {
+      final uid = ref.read(authProvider).uid;
+      if (uid != null) return uid;
+      // No session. Session-less writes belong to whoever owns the device,
+      // unless somebody has been refused here — then they are that account's.
+      return ref.read(syncServiceProvider).getContestedBy();
+    },
+    onRowWritten: (entry) =>
+        ref.read(syncStateProvider.notifier).noteLocalWrite(entry),
     onEnqueue: () =>
         ref.read(syncStateProvider.notifier).scheduleProcessQueue(),
   );

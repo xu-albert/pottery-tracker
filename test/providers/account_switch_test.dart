@@ -641,6 +641,162 @@ void main() {
   });
 
   test(
+    "a refused account's work stays its own after its session goes too",
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // A's session is lost involuntarily; B signs in and is refused.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+      final trigger = container.read(syncTriggerProvider);
+      await insertPieceWithPhoto('piece-b1', "B's bowl");
+      await trigger.afterPieceWrite('piece-b1');
+
+      // The app is relaunched offline, which is the same involuntary path: B
+      // now has no session at all, and keeps working.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      await insertPieceWithPhoto('piece-b2', "B's vase");
+      await trigger.afterPieceWrite('piece-b2');
+
+      // A signs back in — the documented way out of the blocked state.
+      auth.set(signedInAs(uidA));
+      await settle();
+
+      expect(
+        await cloudPieceIds(uidA),
+        ['piece-a'],
+        reason: "B's pottery is B's, session or no session",
+      );
+
+      await notifier.syncNow(forceFullSync: true);
+      await settle();
+      expect(
+        await cloudPieceIds(uidA),
+        ['piece-a'],
+        reason: 'the full-push branch withholds them too',
+      );
+      expect(
+        (await db.select(db.pieces).get()).map((p) => p.id),
+        containsAll(['piece-a', 'piece-b1', 'piece-b2']),
+        reason: 'refusing to upload is not deleting',
+      );
+    },
+  );
+
+  test(
+    "reclaiming the device makes session-less writes the owner's again",
+    () async {
+      await notifier.syncNow(forceFullSync: true);
+
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+      // The owner comes back, so the contest is over.
+      auth.set(signedInAs(uidA));
+      await settle();
+      expect(await syncService.getContestedBy(), isNull);
+
+      // A's own session then lapses and A carries on working offline.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      await insertPieceWithPhoto('piece-local', 'Made offline');
+      await container.read(syncTriggerProvider).afterPieceWrite('piece-local');
+
+      auth.set(signedInAs(uidA));
+      await settle();
+
+      expect(
+        await cloudPieceIds(uidA),
+        contains('piece-local'),
+        reason: "an uncontested device's session-less work is the owner's",
+      );
+    },
+  );
+
+  test('an erase ends the contest as well as the data', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    expect(await syncService.getContestedBy(), uidB);
+
+    await notifier.eraseLocalDataNow();
+    await settle();
+    expect(await syncService.getContestedBy(), isNull);
+
+    // B owns a clean device now, so its offline work is its own to upload.
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    await insertPieceWithPhoto('piece-b', "B's bowl");
+    await container.read(syncTriggerProvider).afterPieceWrite('piece-b');
+    auth.set(signedInAs(uidB));
+    await settle();
+
+    expect(await cloudPieceIds(uidB), ['piece-b']);
+  });
+
+  test('a withheld row is released once the owner writes it again', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    auth.set(const AuthState(status: AuthStatus.authenticated));
+    await settle();
+    auth.set(signedInAs(uidB));
+    await settle();
+    // B edits A's piece: the row is A's, but its contents are B's now.
+    await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
+
+    auth.set(signedInAs(uidA));
+    await settle();
+    expect(await syncService.getForeignRowIds(), contains('piece-a'));
+    expect(
+      container.read(syncStateProvider).status,
+      SyncStatus.idle,
+      reason: 'the owner is not blocked',
+    );
+    expect(
+      container.read(syncStateProvider).withheldCount,
+      1,
+      reason: 'an empty queue is not a complete backup while a row is held',
+    );
+
+    // The refused account cannot release it — only the owner's write counts.
+    auth.set(signedInAs(uidB));
+    await settle();
+    await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
+    expect(await syncService.getForeignRowIds(), contains('piece-a'));
+
+    // The owner writes the row itself, which settles whose version is on disk.
+    auth.set(signedInAs(uidA));
+    await settle();
+    await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
+    expect(await syncService.getForeignRowIds(), isEmpty);
+
+    syncService.pushLog.clear();
+    await notifier.syncNow();
+    await settle();
+
+    expect(
+      syncService.pushLog,
+      contains('pushPiece:piece-a'),
+      reason: 'the row is backed up again rather than withheld forever',
+    );
+    expect(container.read(syncStateProvider).withheldCount, 0);
+  });
+
+  test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {
       await insertPieceWithPhoto('piece-a', "A's mug");

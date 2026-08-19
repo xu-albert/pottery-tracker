@@ -309,17 +309,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: CircularProgressIndicator(strokeWidth: 2),
         );
       case SyncStatus.idle:
-        if (syncState.pendingCount > 0) {
-          icon = Icons.cloud_upload;
-          title = l10n.syncPending(syncState.pendingCount);
+        if (syncState.withheldCount > 0) {
+          // An empty queue does not mean a complete backup here: these rows
+          // are refused, not pending, so saying "backed up" would be the same
+          // lie the blocked states exist to avoid.
+          icon = Icons.cloud_off;
+          title = l10n.syncWithheld(syncState.withheldCount);
+          subtitle = l10n.syncWithheldDetail;
+          subtitleMaxLines = null;
         } else {
-          icon = Icons.cloud_done;
-          title = l10n.syncBackedUp;
-        }
-        if (syncState.lastSyncedAt != null) {
-          subtitle = l10n.syncLastSynced(
-            DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!),
-          );
+          if (syncState.pendingCount > 0) {
+            icon = Icons.cloud_upload;
+            title = l10n.syncPending(syncState.pendingCount);
+          } else {
+            icon = Icons.cloud_done;
+            title = l10n.syncBackedUp;
+          }
+          if (syncState.lastSyncedAt != null) {
+            subtitle = l10n.syncLastSynced(
+              DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!),
+            );
+          }
         }
         trailing = GestureDetector(
           onLongPress: () =>

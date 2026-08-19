@@ -53,6 +53,22 @@ class SyncService {
   /// holds nobody's rows.
   static const _foreignRowIdsKey = 'foreignLocalRowIds';
 
+  /// The uid of an account this device has refused, while one stands refused.
+  ///
+  /// Being refused does not make the app read-only, and an ordinary offline
+  /// launch drops that account to a session-less local-only state
+  /// (`AuthNotifier._init`). A write made with no session normally belongs to
+  /// whoever owns the device — that reading is what keeps the local-only
+  /// upgrade path working — but on a device somebody has been refused on it
+  /// would hand the refused account's later pottery to the owner. While this
+  /// is set, `SyncTrigger` attributes session-less writes to the refused
+  /// account instead, at enqueue time, so an entry keeps that attribution even
+  /// after the contest ends.
+  ///
+  /// Cleared when the owner claims the device again and by [deleteLocalData].
+  /// Clearing only changes how *later* writes are stamped.
+  static const _contestedByKey = 'localDataContestedBy';
+
   // ════════════════════════════════════════════
   // Delete all data
   // ════════════════════════════════════════════
@@ -148,6 +164,7 @@ class SyncService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_localDataOwnerKey);
     await prefs.remove(_foreignRowIdsKey);
+    await prefs.remove(_contestedByKey);
   }
 
   Future<void> _deleteLocalPhotoFiles() async {
@@ -206,9 +223,9 @@ class SyncService {
 
   /// Adds [ids] to the foreign set and returns everything in it afterwards.
   ///
-  /// Ids are only ever added. A row a second account touched stays untouchable
-  /// until the device is erased, because nothing short of that can tell whose
-  /// version of the row is now on disk.
+  /// A row stays withheld for as long as its contents are the refused
+  /// account's — which is until the owner writes that row itself, the one
+  /// event that settles whose version is on disk. See [releaseForeignRowId].
   Future<Set<String>> rememberForeignRowIds(Set<String> ids) async {
     final known = await getForeignRowIds();
     if (ids.every(known.contains)) return known;
@@ -216,6 +233,43 @@ class SyncService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_foreignRowIdsKey, merged.toList());
     return merged;
+  }
+
+  /// Stops withholding [id], because the account that owns this device has
+  /// written that row itself since reclaiming it.
+  ///
+  /// Only the owner's own write releases a row: withholding exists because the
+  /// row held somebody else's edit, and an owner's write is what replaces it.
+  /// `SyncNotifier.noteLocalWrite` is the only caller, and it checks the
+  /// writer against the owner stamp first.
+  Future<void> releaseForeignRowId(String id) async {
+    final known = await getForeignRowIds();
+    if (!known.remove(id)) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (known.isEmpty) {
+      await prefs.remove(_foreignRowIdsKey);
+    } else {
+      await prefs.setStringList(_foreignRowIdsKey, known.toList());
+    }
+  }
+
+  /// The account this device stands refused for, or null when nobody has been
+  /// refused since the owner last claimed it. See [_contestedByKey].
+  Future<String?> getContestedBy() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_contestedByKey);
+  }
+
+  Future<void> setContestedBy(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_contestedByKey) == uid) return;
+    await prefs.setString(_contestedByKey, uid);
+  }
+
+  Future<void> clearContestedBy() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_contestedByKey) == null) return;
+    await prefs.remove(_contestedByKey);
   }
 
   /// Clears every per-uid pull watermark.

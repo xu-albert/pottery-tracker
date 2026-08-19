@@ -59,6 +59,17 @@ void main() {
     when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});
     when(() => syncService.pullAll(any())).thenAnswer((_) async {});
     when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
+    when(
+      () => syncService.getForeignRowIds(),
+    ).thenAnswer((_) async => <String>{});
+    when(
+      () => syncService.rememberForeignRowIds(any()),
+    ).thenAnswer((_) async => <String>{});
+    when(() => syncService.releaseForeignRowId(any())).thenAnswer((_) async {});
+    when(() => syncService.getContestedBy()).thenAnswer((_) async => null);
+    when(() => syncService.setContestedBy(any())).thenAnswer((_) async {});
+    when(() => syncService.clearContestedBy()).thenAnswer((_) async {});
+    when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
   });
 
   Future<void> pumpSettings(
@@ -251,6 +262,33 @@ void main() {
 
       // The dialog closing with nothing said would read as a successful erase.
       expect(find.textContaining('could not be erased'), findsOneWidget);
+    });
+  });
+
+  group('withheld rows', () {
+    testWidgets('the tile never claims a clean backup while rows are held', (
+      tester,
+    ) async {
+      when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
+      when(
+        () => syncService.getForeignRowIds(),
+      ).thenAnswer((_) async => {'piece-1', 'photo-1'});
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.text('All data backed up'),
+        findsNothing,
+        reason: 'two rows are excluded from the backup',
+      );
+      expect(find.text('2 changes not backed up'), findsOneWidget);
+      expect(
+        find.textContaining('another account was signed in'),
+        findsOneWidget,
+      );
     });
   });
 

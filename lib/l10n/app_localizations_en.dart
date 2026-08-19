@@ -427,6 +427,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncSyncing => 'Syncing...';
 
   @override
+  String syncWithheld(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes not backed up',
+      one: '1 change not backed up',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get syncWithheldDetail =>
+      'These were made while another account was signed in on this device, so they are not uploaded. Edit a piece to back it up again, or erase this device.';
+
+  @override
   String syncPending(int count) {
     return '$count changes pending';
   }

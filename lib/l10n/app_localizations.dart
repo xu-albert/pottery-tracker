@@ -868,6 +868,18 @@ abstract class AppLocalizations {
   /// **'Syncing...'**
   String get syncSyncing;
 
+  /// Sync status when rows are being withheld because another account wrote them
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 change not backed up} other{{count} changes not backed up}}'**
+  String syncWithheld(int count);
+
+  /// Explains why some rows are excluded from the backup and how to resolve it
+  ///
+  /// In en, this message translates to:
+  /// **'These were made while another account was signed in on this device, so they are not uploaded. Edit a piece to back it up again, or erase this device.'**
+  String get syncWithheldDetail;
+
   /// Sync status with pending changes
   ///
   /// In en, this message translates to:

@@ -89,13 +89,24 @@ decisions (2026-08-18) settle how that is prevented, and they differ by how the 
   the push path fires 500ms after any edit and would destroy the *current* account's work.
 - **A refused account can still write, so the drain refuses its work.** Being blocked does not make
   the app read-only. `SyncTrigger` therefore stamps every queue entry with the uid that made the
-  write (null = local-only, which belongs to whoever owns the device), and `_claimOrBlock` records
-  those ids through `SyncService.rememberForeignRowIds`. Both push paths withhold them: the drain
-  in `_processQueueInternal`, and `pushAllLocal`, which reads the database rather than the queue and
-  so needs the record of its own. Do not drop the stamp to simplify the entry — without it the
-  owner uploads the intervening account's pottery.
+  write, and `_claimOrBlock` records those ids through `SyncService.rememberForeignRowIds`. Both
+  push paths withhold them: the drain in `_processQueueInternal`, and `pushAllLocal`, which reads
+  the database rather than the queue and so needs the record of its own. Do not drop the stamp to
+  simplify the entry — without it the owner uploads the intervening account's pottery.
+- **A session-less write is only the owner's on an uncontested device.** Null uid normally means
+  local-only and belongs to whoever owns the device, which is what keeps the local-only upgrade
+  path working. But a refused account keeps using the device and an offline launch takes its
+  session away, so `_claimOrBlock` records the refusal in `localDataContestedBy` and `SyncTrigger`
+  attributes session-less writes to *that* account until the owner claims the device again or it is
+  erased. Resolve this at enqueue time, never at drain time: reclaiming must not retroactively
+  release what the refused account wrote.
+- **Withholding a row ends when the owner rewrites it, and is never silent.** `noteLocalWrite`
+  releases a row once the account named by the owner stamp writes it itself — the only event that
+  settles whose version is on disk, and unavailable from queue order because a later write merges
+  into an entry's first position. Until then `SyncState.withheldCount` carries the count and the
+  sync tile refuses to say "All data backed up", the same lie the blocked states exist to avoid.
 
-`test/providers/account_switch_test.dart` is the end-to-end guard for all four, against a real
+`test/providers/account_switch_test.dart` is the end-to-end guard for all of these, against a real
 Drift database.
 
 ## Design Constraints

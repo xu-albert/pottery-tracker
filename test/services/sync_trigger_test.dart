@@ -17,7 +17,7 @@ void main() {
 
   SyncTrigger makeTrigger() => SyncTrigger(
     queue,
-    currentUid: () => signedInUid,
+    currentUid: () async => signedInUid,
     onEnqueue: () => callbackCount++,
   );
 

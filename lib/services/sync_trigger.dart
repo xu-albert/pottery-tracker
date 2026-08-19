@@ -4,18 +4,27 @@ class SyncTrigger {
   final SyncQueue _queue;
   final void Function()? _onEnqueue;
 
-  /// Reads the uid of the session making the write, as the write happens.
+  /// Resolves who this write belongs to, as the write happens.
   ///
   /// Attribution cannot be recovered at drain time — by then the session that
-  /// wrote the row may be long gone — so every enqueue is stamped here, at
-  /// the one place all of them pass through.
-  final String? Function() _currentUid;
+  /// wrote the row may be long gone — so every enqueue is stamped here, at the
+  /// one place all of them pass through. It is asynchronous because the answer
+  /// is not always the signed-in uid: on a device that stands refused for
+  /// another account, a session-less write belongs to that account rather than
+  /// to the owner (`SyncService.getContestedBy`).
+  final Future<String?> Function() _currentUid;
+
+  /// Called with each entry once it is queued, so bookkeeping that depends on
+  /// who wrote what happens against the same attribution the entry carries.
+  final Future<void> Function(SyncQueueEntry entry)? _onRowWritten;
 
   SyncTrigger(
     this._queue, {
-    required String? Function() currentUid,
+    required Future<String?> Function() currentUid,
+    Future<void> Function(SyncQueueEntry entry)? onRowWritten,
     void Function()? onEnqueue,
   }) : _currentUid = currentUid,
+       _onRowWritten = onRowWritten,
        _onEnqueue = onEnqueue;
 
   Future<void> _enqueue(
@@ -23,16 +32,16 @@ class SyncTrigger {
     String entityId, {
     String? extraData,
     List<String>? changedFields,
-  }) {
-    return _queue.enqueue(
-      SyncQueueEntry(
-        operation: operation,
-        entityId: entityId,
-        extraData: extraData,
-        changedFields: changedFields,
-        uid: _currentUid(),
-      ),
+  }) async {
+    final entry = SyncQueueEntry(
+      operation: operation,
+      entityId: entityId,
+      extraData: extraData,
+      changedFields: changedFields,
+      uid: await _currentUid(),
     );
+    await _queue.enqueue(entry);
+    await _onRowWritten?.call(entry);
   }
 
   Future<void> afterPieceWrite(

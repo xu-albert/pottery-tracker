@@ -64,6 +64,10 @@ _setup({AuthState auth = _signedOut}) {
   when(
     () => syncService.rememberForeignRowIds(any()),
   ).thenAnswer((_) async => <String>{});
+  when(() => syncService.releaseForeignRowId(any())).thenAnswer((_) async {});
+  when(() => syncService.getContestedBy()).thenAnswer((_) async => null);
+  when(() => syncService.setContestedBy(any())).thenAnswer((_) async {});
+  when(() => syncService.clearContestedBy()).thenAnswer((_) async {});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
