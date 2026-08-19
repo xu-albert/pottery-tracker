@@ -58,6 +58,11 @@ _setup({AuthState auth = _signedOut}) {
   // Unowned by default: the device belongs to whoever signs in first.
   when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
+  // The refusal marker is device-ownership state like the stamp above: the
+  // notifier reads it on every claim, so a mock has to answer for it.
+  when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
+  when(() => syncService.setDeviceContested()).thenAnswer((_) async {});
+  when(() => syncService.clearDeviceContested()).thenAnswer((_) async {});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
@@ -99,6 +104,33 @@ _setup({AuthState auth = _signedOut}) {
 }
 
 void main() {
+  group('SyncState.copyWith', () {
+    const blocked = SyncState(
+      status: SyncStatus.blocked,
+      blockedReason: SyncBlockedReason.pendingWipe,
+      errorMessage: 'stale failure',
+    );
+
+    test('keeps the blocked reason it was not asked to change', () {
+      expect(
+        blocked.copyWith(pendingCount: 3).blockedReason,
+        SyncBlockedReason.pendingWipe,
+        reason:
+            'a state that says it is blocked but cannot say why draws the '
+            'wrong recovery for the wrong block',
+      );
+    });
+
+    test('drops the blocked reason when the status stops being blocked', () {
+      expect(blocked.copyWith(status: SyncStatus.idle).blockedReason, isNull);
+    });
+
+    test('still clears the error message, which describes one transition', () {
+      expect(blocked.copyWith(pendingCount: 3).errorMessage, isNull);
+      expect(blocked.copyWith(errorMessage: 'boom').errorMessage, 'boom');
+    });
+  });
+
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
     registerFallbackValue(

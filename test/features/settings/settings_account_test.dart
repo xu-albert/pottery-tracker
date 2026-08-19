@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +61,11 @@ void main() {
     when(() => syncService.pullAll(any())).thenAnswer((_) async {});
     when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
+    // The refusal marker is device-ownership state like the stamp above: the
+    // notifier reads it on every claim, so a mock has to answer for it.
+    when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
+    when(() => syncService.setDeviceContested()).thenAnswer((_) async {});
+    when(() => syncService.clearDeviceContested()).thenAnswer((_) async {});
     // Unowned by default: Settings is only reachable on a device this account
     // owns, since a contested one is locked read-only at the router.
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
@@ -193,75 +197,6 @@ void main() {
       // The session still ends; the user is told the device is not clean yet.
       expect(authService.signOutCalls, 1);
       expect(find.textContaining('could not be deleted'), findsOneWidget);
-    });
-  });
-
-  group('blocked sync tile', () {
-    // Verbatim `syncBlockedWipePendingDetail`. A device holding *another
-    // account's* pottery never reaches Settings at all — it is locked
-    // read-only at the router — so the owed-wipe case is the only blocked
-    // state this tile can show.
-    const wipeDetail =
-        "The previous account's data still has to be erased from this device "
-        'before anything is uploaded.';
-
-    testWidgets('shows the whole explanation on a narrow phone', (
-      tester,
-    ) async {
-      // 390pt is an iPhone 14/15's width — the narrowest the tile has to fit.
-      tester.view.physicalSize = const Size(390, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
-      // The wipe has to stay owed for the tile to show the blocked state: a
-      // resumed wipe that succeeds simply clears it.
-      when(
-        () => syncService.deleteLocalData(),
-      ).thenThrow(Exception('disk full'));
-
-      await pumpSettings(tester);
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-      }
-
-      expect(find.text(wipeDetail), findsOneWidget);
-      final paragraph = tester.renderObject<RenderParagraph>(
-        find.text(wipeDetail),
-      );
-      expect(
-        paragraph.didExceedMaxLines,
-        isFalse,
-        reason:
-            'an ellipsis here cuts the recovery instruction off mid-sentence, '
-            'leaving the user no stated way out of the blocked state',
-      );
-    });
-
-    testWidgets('a confirmed erase that fails tells the user so', (
-      tester,
-    ) async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
-      when(
-        () => syncService.deleteLocalData(),
-      ).thenThrow(Exception('disk full'));
-
-      await pumpSettings(tester);
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-      }
-
-      await tester.tap(find.text('Erase & Retry'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Erase'));
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-      }
-
-      // The dialog closing with nothing said would read as a successful erase.
-      expect(find.textContaining('Could not erase'), findsOneWidget);
     });
   });
 

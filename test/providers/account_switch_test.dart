@@ -725,6 +725,149 @@ void main() {
       );
     });
 
+    /// A relaunch: a brand new container seeded from preferences exactly the
+    /// way `main` seeds it before `runApp`, with nothing carried over in
+    /// memory. [session] is what `AuthNotifier._init` would have settled on.
+    Future<ProviderContainer> relaunch(AuthState session) async {
+      final prefs = await SharedPreferences.getInstance();
+      return ProviderContainer(
+        overrides: [
+          authProvider.overrideWith((_) => _TestAuthNotifier(session)),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+          syncServiceProvider.overrideWithValue(syncService),
+          localDataOwnerProvider.overrideWith(
+            (_) => prefs.getString(SyncService.localDataOwnerKey),
+          ),
+          deviceContestedProvider.overrideWith(
+            (_) => prefs.getBool(SyncService.deviceContestedKey) ?? false,
+          ),
+          pendingLocalWipeProvider.overrideWith(
+            (_) => prefs.getBool(SyncNotifier.pendingWipeKey) ?? false,
+          ),
+        ],
+      );
+    }
+
+    test(
+      'force-quitting the lock and relaunching offline does not open it',
+      () async {
+        await refuseB();
+
+        // The likeliest response to a screen whose only buttons leave or erase:
+        // kill the app. Relaunching with no network makes `reload()` fail, so
+        // `AuthNotifier._init` signs out of Firebase and — onboarding is long
+        // since done — comes back session-less. No uid to compare the stamp
+        // against, and no race: this is simply what the next launch looks like.
+        final relaunched = await relaunch(
+          const AuthState(status: AuthStatus.authenticated),
+        );
+        addTearDown(relaunched.dispose);
+
+        expect(
+          relaunched.read(deviceLockedProvider),
+          isTrue,
+          reason:
+              'the refusal is remembered, so killing the app is not a way back '
+              "onto the owner's album with a delete that later pushes under "
+              "the owner's own name",
+        );
+      },
+    );
+
+    test(
+      'the owner relaunching offline is not locked out of their own',
+      () async {
+        await insertPieceWithPhoto('piece-a', "A's mug");
+        await notifier.syncNow(forceFullSync: true);
+
+        // The same session-less relaunch, on a device nobody has been refused
+        // on. Ruling 2 requires this to keep working: an ordinary offline launch
+        // must not lock the owner out of their own pottery.
+        final relaunched = await relaunch(
+          const AuthState(status: AuthStatus.authenticated),
+        );
+        addTearDown(relaunched.dispose);
+
+        expect(
+          relaunched.read(deviceLockedProvider),
+          isFalse,
+          reason:
+              'a session-less launch on an uncontested device is the owner '
+              'offline, and locking them out is what ruling 2 forbids',
+        );
+      },
+    );
+
+    test('the owner reclaiming the device lifts the refusal', () async {
+      await refuseB();
+
+      auth.set(signedInAs(uidA));
+      await settle();
+      expect(container.read(deviceLockedProvider), isFalse);
+
+      // And it stays lifted across a relaunch: reclaiming is one of only two
+      // things that clears the refusal, so the next offline launch is an
+      // ordinary one again.
+      final relaunched = await relaunch(
+        const AuthState(status: AuthStatus.authenticated),
+      );
+      addTearDown(relaunched.dispose);
+      expect(relaunched.read(deviceLockedProvider), isFalse);
+    });
+
+    test('erasing the device lifts the refusal', () async {
+      await refuseB();
+
+      expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.erased);
+      await settle();
+
+      final relaunched = await relaunch(
+        const AuthState(status: AuthStatus.authenticated),
+      );
+      addTearDown(relaunched.dispose);
+      expect(
+        relaunched.read(deviceLockedProvider),
+        isFalse,
+        reason: 'there is nothing left here for anyone to be refused over',
+      );
+    });
+
+    test('a failed erase does not release an owed wipe', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // A asks for the data to be destroyed and the wipe fails, so A — the
+      // owner — signs back in owing one. The stamp cannot lock this: A is both
+      // the owner and the session, so only the owed wipe holds the device.
+      syncService.wipeFails = true;
+      await expectLater(
+        notifier.signOutAndWipeLocalData(() async {}),
+        throwsException,
+      );
+      auth.set(const AuthState(status: AuthStatus.unauthenticated));
+      await settle();
+      auth.set(signedInAs(uidA));
+      await settle();
+      expect(container.read(deviceLockedProvider), isTrue);
+
+      expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.failed);
+      await settle();
+
+      expect(
+        container.read(syncStateProvider).status,
+        SyncStatus.error,
+        reason: 'the erase really did fail',
+      );
+      expect(
+        container.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            'A asked for this library to be destroyed; an error transition '
+            'must not hand it back browsable and editable while the wipe is '
+            'still owed',
+      );
+    });
+
     test('an owed wipe locks the device too', () async {
       await insertPieceWithPhoto('piece-a', "A's mug");
       await notifier.syncNow(forceFullSync: true);
@@ -892,6 +1035,34 @@ void main() {
       expect(await cloudPieceIds(uidA), ['piece-a']);
     });
   });
+
+  test(
+    'a delete that loses both halves never reports the account as gone',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // The double failure. The cloud tree goes; the account does not, because
+      // Firebase refuses (here by not existing at all, in production almost
+      // always 'requires-recent-login'); and then the local wipe fails too.
+      syncService.wipeFails = true;
+      final result = await notifier.deleteAllData();
+
+      expect(
+        result,
+        DeleteAllDataResult.accountAndLocalDataSurvived,
+        reason:
+            'a live account described as deleted is the one outcome the user '
+            'will not act on, because they have been told there is nothing '
+            'left to do',
+      );
+      expect(
+        await db.select(db.pieces).get(),
+        isNotEmpty,
+        reason: 'and the local copy really is still here to be erased',
+      );
+    },
+  );
 
   test(
     'a wipe interrupted before it finished is completed on next sign-in',

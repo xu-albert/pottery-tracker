@@ -39,6 +39,22 @@ class SyncService {
   /// without restating the literal.
   static const localDataOwnerKey = 'localDataOwnerUid';
 
+  /// Set once this device has refused an account, and cleared only when the
+  /// owner named by [localDataOwnerKey] claims it back or the device is
+  /// erased.
+  ///
+  /// It exists because a session-less launch is ambiguous on its own: the
+  /// owner opening the app offline and a refused account relaunching after
+  /// force-quitting the lock screen both arrive with no uid at all, and
+  /// ruling 2 requires the first to keep working. The stamp cannot tell them
+  /// apart; this can.
+  ///
+  /// One flag about the *device*, deliberately not per-row attribution: it
+  /// records that somebody was refused here, never which rows anybody touched.
+  /// Public for the same reason as [localDataOwnerKey] — startup seeds the
+  /// lock from it before `runApp`.
+  static const deviceContestedKey = 'localDataContested';
+
   // ════════════════════════════════════════════
   // Delete all data
   // ════════════════════════════════════════════
@@ -128,9 +144,11 @@ class SyncService {
     await _clearSyncWatermarks();
 
     // The data is gone, so nobody owns this device any more: the next account
-    // to sign in starts from a clean slate rather than inheriting the claim.
+    // to sign in starts from a clean slate rather than inheriting the claim,
+    // and there is nothing left here for anyone to be refused over.
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(localDataOwnerKey);
+    await prefs.remove(deviceContestedKey);
   }
 
   Future<void> _deleteLocalPhotoFiles() async {
@@ -178,6 +196,24 @@ class SyncService {
   Future<void> setLocalDataOwner(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(localDataOwnerKey, uid);
+  }
+
+  /// Whether this device has been refused for an account and not reclaimed.
+  Future<bool> getDeviceContested() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(deviceContestedKey) ?? false;
+  }
+
+  /// Records that an account was refused this device.
+  Future<void> setDeviceContested() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(deviceContestedKey, true);
+  }
+
+  /// Drops the refusal, which only the owner reclaiming the device may do.
+  Future<void> clearDeviceContested() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(deviceContestedKey);
   }
 
   /// Clears every per-uid pull watermark.

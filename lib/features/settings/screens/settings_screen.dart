@@ -173,46 +173,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  /// Erasing is destructive and the user did not ask for the situation that
-  /// led here, so it is never a bare tap: the dialog says exactly what goes,
-  /// Cancel is the default action, and the barrier is inert.
-  Future<void> _confirmEraseLocalData() async {
-    final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => CupertinoAlertDialog(
-        title: Text(l10n.eraseLocalDataConfirmTitle),
-        content: Text(l10n.eraseLocalDataConfirmMessage),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.cancel),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(l10n.eraseLocalDataConfirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final result = await ref
-        .read(syncStateProvider.notifier)
-        .eraseLocalDataNow();
-    if (!mounted) return;
-    switch (result) {
-      case EraseLocalDataResult.erased:
-        break;
-      case EraseLocalDataResult.busy:
-        AppSnackbar.show(context, message: l10n.eraseLocalDataBusy);
-      case EraseLocalDataResult.failed:
-        AppSnackbar.show(context, message: l10n.eraseLocalDataFailed);
-    }
-  }
-
   Widget _providerTile({
     required IconData icon,
     required String name,
@@ -337,22 +297,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Text(l10n.syncNow),
           ),
         );
+      // Both blocked reasons lock the device read-only at the router, so
+      // Settings is unmounted in exactly the states this would draw and the
+      // recovery lives on the lock screen instead. It is folded in with
+      // "backup off" rather than given words of its own, because words here
+      // could only ever be wrong.
       case SyncStatus.blocked:
-        // Not an error the user caused: this device is holding data it is not
-        // allowed to upload. The two reasons need different ways out.
-        icon = Icons.cloud_off;
-        // Only the owed-wipe case can be seen from here: a device holding
-        // another account's pottery is locked read-only at the router, so
-        // Settings is not reachable on it at all.
-        // "Sync Now" no longer carries the retry — a delete on the push path
-        // could land mid-session — so the retry is this button, and it
-        // confirms first.
-        title = l10n.syncBlockedWipePending;
-        subtitle = l10n.syncBlockedWipePendingDetail;
-        trailing = TextButton(
-          onPressed: _confirmEraseLocalData,
-          child: Text(l10n.syncBlockedRetry),
-        );
       case SyncStatus.disabled:
         icon = Icons.cloud_off;
         title = l10n.syncDisabled;
@@ -362,16 +312,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       leading: Icon(icon),
       title: Text(title),
       subtitle: subtitle != null
-          // The blocked explanation carries the only recovery instruction the
-          // user gets, so it wraps in full rather than being ellipsized; the
-          // taller tile in that rare state is deliberate.
-          ? Text(
-              subtitle,
-              maxLines: syncState.status == SyncStatus.blocked ? null : 3,
-              overflow: syncState.status == SyncStatus.blocked
-                  ? TextOverflow.clip
-                  : TextOverflow.ellipsis,
-            )
+          ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
           : null,
       trailing: trailing,
     );
@@ -554,6 +495,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     AppSnackbar.show(
                       context,
                       message: l10n.deleteAccountLocalSurvived,
+                    );
+                  case DeleteAllDataResult.accountAndLocalDataSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountAndLocalSurvived,
                     );
                 }
               } finally {

@@ -62,8 +62,12 @@ void main() async {
 
   // Read before runApp so the read-only lock is correct on the first frame:
   // a device belonging to another account must never render the album, not
-  // even for the frame before an async read resolves.
+  // even for the frame before an async read resolves. All three are persisted
+  // for exactly that reason — see `deviceLockReasonProvider`.
   final localDataOwner = prefs.getString(SyncService.localDataOwnerKey);
+  final deviceContested =
+      prefs.getBool(SyncService.deviceContestedKey) ?? false;
+  final pendingLocalWipe = prefs.getBool(SyncNotifier.pendingWipeKey) ?? false;
 
   final savedMode = prefs.getString('view_mode');
   final initialViewMode = savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
@@ -73,6 +77,8 @@ void main() async {
       overrides: [
         databaseProvider.overrideWithValue(db),
         localDataOwnerProvider.overrideWith((ref) => localDataOwner),
+        deviceContestedProvider.overrideWith((ref) => deviceContested),
+        pendingLocalWipeProvider.overrideWith((ref) => pendingLocalWipe),
         viewModeProvider.overrideWith((ref) => initialViewMode),
       ],
       child: const PotteryTrackerApp(),

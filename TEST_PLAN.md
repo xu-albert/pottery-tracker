@@ -18,16 +18,28 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Sign out from Settings → local data erased, redirected back to sign-in screen
 
 ### Device Locked (`/device-locked`)
-Reached when a session ends involuntarily (offline launch, revoked token) and a *different* account
-signs in afterwards: the device still holds the previous account's pottery, so it is read-only.
+Reached for two different reasons, which the screen tells apart. **Foreign pottery**: a session ended
+involuntarily (offline launch, revoked token) and a *different* account signed in afterwards, so the
+device still holds the previous account's pottery. **Owed wipe**: an explicit "Sign Out & Erase" set
+the wipe going and it never finished, so the signed-out account's whole library is still here.
 
+Foreign pottery:
 - [ ] Signing in as a different account after an involuntary sign-out lands on the lock screen, not the album
 - [ ] Nothing that can write is reachable while locked — album, create flow, piece editor, Settings and the Manage Clays/Glazes/Tags screens all come straight back to the lock
 - [ ] "Sign In As Another Account" ends the session and returns to sign-in **without** deleting anything
 - [ ] The owner signing back in releases the lock and hands the app back on its own
+- [ ] Force-quitting the lock screen and relaunching with no network lands back on the lock, not on the owner's album
+- [ ] The owner's own offline launch (no network, nobody refused here) opens the album as usual
+
+Owed wipe:
+- [ ] Force-quit mid-wipe → the lock reads "Backup paused" and explains the previous account's data has still to be erased
+- [ ] Its primary action is "Erase This Device" — it never offers "Sign In As Another Account", which would keep the data the user asked to destroy
+
+Both:
 - [ ] "Erase This Device" confirms first — "Cancel" is the default action and tapping outside the dialog does not erase
 - [ ] Confirming the erase deletes everything on the device, releases the lock, and lets the signed-in account start fresh
 - [ ] An erase that could not run (a sync or wipe in flight) says so rather than failing silently
+- [ ] An erase that failed says so rather than closing the dialog on silence
 
 ---
 
@@ -233,7 +245,7 @@ signs in afterwards: the device still holds the previous account's pottery, so i
 - [ ] "Sign Out" → confirmation says every piece, photo and material on this device is deleted; "Cancel" is the default action and tapping outside the dialog does not sign out
 - [ ] Confirming "Sign Out & Erase" clears auth, deletes the local library and photo files, and redirects to sign-in
 - [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
-- [ ] Force-quit mid-wipe → the next sign-in finishes the wipe before uploading anything; while it is still owed, sync shows "Backup paused" with an "Erase & Retry" action
+- [ ] Force-quit mid-wipe → the next sign-in finishes the wipe before uploading anything; while it is still owed the device is locked read-only, so recovery is on the lock screen and Settings is not reachable at all
 - [ ] The only connected sign-in provider cannot be disconnected — its row is disabled and explains why
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
 - [ ] "Cloud Backup" section shows the current sync status and a "Sync Now" action

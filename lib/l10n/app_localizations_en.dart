@@ -476,6 +476,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your cloud data and account were deleted, but the copy on this device could not be. Erase this device to finish.';
 
   @override
+  String get deleteAccountAndLocalSurvived =>
+      'Your cloud data was deleted, but your account and the copy on this device were not. Sign in again and retry to remove the account, then erase this device.';
+
+  @override
   String get deleteAccountFailed =>
       'Could not delete your account. Nothing was deleted.';
 
@@ -488,9 +492,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get eraseLocalDataConfirm => 'Erase';
-
-  @override
-  String get syncBlockedRetry => 'Erase & Retry';
 
   @override
   String get syncNow => 'Sync Now';

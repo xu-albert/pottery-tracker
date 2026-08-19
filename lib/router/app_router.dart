@@ -7,6 +7,7 @@ import '../providers/sync_provider.dart';
 import '../features/auth/screens/device_locked_screen.dart';
 import '../features/auth/screens/sign_in_screen.dart';
 import '../features/shell/screens/shell_screen.dart';
+import '../features/shell/screens/starting_screen.dart';
 import '../features/album/screens/album_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/manage_clays_screen.dart';
@@ -72,6 +73,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   // enforced here rather than screen by screen: no route that can write is
   // reachable while it holds.
   final deviceLocked = ref.watch(deviceLockedProvider);
+  // Whether anyone already has a stake in what is on this device, which is
+  // what decides whether the redirect may pass through while auth resolves.
+  final deviceStamped = ref.watch(deviceStampedProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -82,10 +86,20 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final loc = state.matchedLocation;
 
-      // While auth is resolving the app simply stays where it is. The splash
-      // overlay covers it, so there is nothing to hide behind a holding route —
-      // and the album underneath gets a head start on its query.
-      if (authStatus == AuthStatus.unknown) return null;
+      // While auth is resolving on a device nobody has claimed, the app simply
+      // stays where it is: the splash overlay covers it and the album
+      // underneath gets a head start on its query.
+      //
+      // On a claimed device it holds instead. The lock cannot answer yet — a
+      // session-less state is both the owner offline and a refused account
+      // relaunching — and passing through would mount the owner's album, and
+      // leave it hit-testable under the overlay, on a device that may be
+      // refused. The splash covers the holding route just the same.
+      if (authStatus == AuthStatus.unknown) {
+        if (!deviceStamped) return null;
+        return loc == '/starting' ? null : '/starting';
+      }
+      if (loc == '/starting') return '/';
 
       final isSignedIn = authStatus == AuthStatus.authenticated;
 
@@ -98,6 +112,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/starting',
+        pageBuilder: (context, state) =>
+            _appEntry(state, const StartingScreen()),
+      ),
       GoRoute(
         path: '/device-locked',
         pageBuilder: (context, state) =>

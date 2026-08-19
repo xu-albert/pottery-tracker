@@ -30,6 +30,18 @@ enum SyncBlockedReason {
   foreignLocalData,
 }
 
+/// Why the router is holding this device read-only. Mirrors
+/// [SyncBlockedReason], but the lock outlives any one sync attempt, so it is
+/// read from persisted state rather than from [SyncState].
+enum DeviceLockReason {
+  /// A wipe the user confirmed has not finished. The way out is to finish it.
+  pendingWipe,
+
+  /// The pottery here belongs to a different account. The way out is for that
+  /// account to sign back in, or for the user to erase the device.
+  foreignLocalData,
+}
+
 class SyncState {
   final SyncStatus status;
   final int pendingCount;
@@ -47,6 +59,17 @@ class SyncState {
     this.blockedReason,
   });
 
+  /// Two fields deliberately do not survive a `copyWith` that omits them.
+  ///
+  /// [errorMessage] is cleared, because it describes the transition that put
+  /// the state into [SyncStatus.error] and carrying it into the next one
+  /// would caption a healthy state with a stale failure — several callers
+  /// rely on that.
+  ///
+  /// [blockedReason] is kept, but only while the resulting status is still
+  /// [SyncStatus.blocked], which is the only status it means anything under.
+  /// Dropping it unconditionally left `blocked` states describing no reason
+  /// at all, so the tile drew the wrong recovery for the wrong block.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
@@ -54,12 +77,15 @@ class SyncState {
     String? errorMessage,
     SyncBlockedReason? blockedReason,
   }) {
+    final nextStatus = status ?? this.status;
     return SyncState(
-      status: status ?? this.status,
+      status: nextStatus,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       errorMessage: errorMessage,
-      blockedReason: blockedReason,
+      blockedReason: nextStatus == SyncStatus.blocked
+          ? (blockedReason ?? this.blockedReason)
+          : null,
     );
   }
 }
@@ -92,12 +118,21 @@ enum DeleteAllDataResult {
   /// The cloud side is gone and the local copy is not. The app is no longer
   /// signed in to anything meaningful, so the local rows are all that is left.
   localDataSurvived,
+
+  /// Both halves survived: the cloud tree is gone, but the auth account and
+  /// the copy on this device are both still there. It has its own outcome
+  /// rather than collapsing into either one, because each of the two needs a
+  /// different action from the user and neither may be left unsaid.
+  accountAndLocalDataSurvived,
 }
 
 class SyncNotifier extends StateNotifier<SyncState> {
   /// Set for the duration of a local wipe so an interrupted one (crash, kill,
   /// failed delete) can be finished before anything is ever pushed again.
-  @visibleForTesting
+  ///
+  /// Public for the same reason as [SyncService.localDataOwnerKey]: startup
+  /// seeds the read-only lock from it before `runApp`, so the device an owed
+  /// wipe holds is locked on the very first frame rather than a beat later.
   static const pendingWipeKey = 'pendingLocalDataWipe';
 
   final Ref _ref;
@@ -139,11 +174,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
         unawaited(_finishInterruptedWipe());
       }
     }, fireImmediately: true);
-    unawaited(_refreshLocalDataOwner());
+    unawaited(_refreshPersistedDeviceState());
   }
 
-  Future<void> _refreshLocalDataOwner() async {
+  /// Re-reads everything the read-only lock is derived from, so the providers
+  /// the router watches agree with what is actually on disk.
+  Future<void> _refreshPersistedDeviceState() async {
     _publishLocalDataOwner(await _syncService.getLocalDataOwner());
+    _publishDeviceContested(await _syncService.getDeviceContested());
+    final prefs = await SharedPreferences.getInstance();
+    _publishPendingWipe(prefs.getBool(pendingWipeKey) == true);
   }
 
   Future<void> _onAuthChanged(String uid) async {
@@ -354,6 +394,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // wipe still owed, and nothing may push until it is done.
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(pendingWipeKey, true);
+      _publishPendingWipe(true);
 
       try {
         await endSession();
@@ -400,13 +441,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   /// Erases what this device still holds, at the user's explicit request.
   ///
-  /// This is the deliberate way out of both blocked states, and it destroys
+  /// This is the deliberate way out of both locked states, and it destroys
   /// data, so it must only ever be reached from a confirmation the user
-  /// answered. There is one per state: an owed wipe is erased from the sync
-  /// tile (`SettingsScreen._confirmEraseLocalData`), and a device holding
-  /// another account's pottery from the lock screen
-  /// (`DeviceLockedScreen._eraseDevice`) — Settings is not reachable at all
-  /// while that lock holds.
+  /// answered — `DeviceLockedScreen._eraseDevice`, the single surface that
+  /// owns it. Both states lock the router, so Settings is not reachable on a
+  /// device in either one.
   /// A destructive action the user has already confirmed never ends in
   /// silence, so this reports what happened rather than returning void.
   Future<EraseLocalDataResult> eraseLocalDataNow() async {
@@ -445,11 +484,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final staleSync = _staleSyncInFlight;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(pendingWipeKey, true);
+    _publishPendingWipe(true);
     await _queue.clear();
     await _syncService.deleteLocalData();
-    // deleteLocalData clears the stamp, so nobody owns this device now.
+    // deleteLocalData clears the stamp and the refusal, so nobody owns this
+    // device now and there is nothing left here to be refused over.
     _publishLocalDataOwner(null);
-    if (!staleSync) await prefs.remove(pendingWipeKey);
+    _publishDeviceContested(false);
+    if (!staleSync) {
+      await prefs.remove(pendingWipeKey);
+      _publishPendingWipe(false);
+    }
   }
 
   /// Claims this device for [uid], or refuses it — the one boundary every
@@ -462,20 +507,51 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// invariant is that a device which has pushed for an account is stamped
   /// with it, whichever path did the pushing.
   Future<bool> _claimOrBlock(String uid) async {
-    if (await _blockedByPendingWipe()) return true;
-    if (await _blockedByForeignLocalData(uid)) return true;
+    if (await _blockedByPendingWipe() ||
+        await _blockedByForeignLocalData(uid)) {
+      // Remember the refusal itself, not just who owns the device. A refused
+      // account that force-quits and relaunches offline comes back with no
+      // uid at all, which is indistinguishable from the owner opening the app
+      // offline — so the stamp alone would hand the album straight back.
+      await _syncService.setDeviceContested();
+      _publishDeviceContested(true);
+      return true;
+    }
     // Allowed to sync, so this account owns what is on the device from here
     // on. Claiming it before the push matters: if the process dies mid-sync,
     // the stamp is already correct.
     await _syncService.setLocalDataOwner(uid);
     _publishLocalDataOwner(uid);
+    // A claim that succeeded is the owner back on their own device, which is
+    // the only thing short of an erase that lifts a refusal.
+    await _syncService.clearDeviceContested();
+    _publishDeviceContested(false);
     return false;
   }
 
   /// Mirrors the persisted stamp into [localDataOwnerProvider], which the lock
   /// reads synchronously.
+  ///
+  /// All three publishers are reached from work that is deliberately not
+  /// awaited — the constructor's refresh, a resumed wipe, a debounced push —
+  /// so any of them can land after the container holding these providers has
+  /// gone. Writing to a disposed container throws, which would surface as the
+  /// sync failing rather than as what it is: nobody left to tell.
   void _publishLocalDataOwner(String? uid) {
+    if (!mounted) return;
     _ref.read(localDataOwnerProvider.notifier).state = uid;
+  }
+
+  /// Mirrors the persisted refusal into [deviceContestedProvider].
+  void _publishDeviceContested(bool contested) {
+    if (!mounted) return;
+    _ref.read(deviceContestedProvider.notifier).state = contested;
+  }
+
+  /// Mirrors the persisted pending-wipe flag into [pendingLocalWipeProvider].
+  void _publishPendingWipe(bool pending) {
+    if (!mounted) return;
+    _ref.read(pendingLocalWipeProvider.notifier).state = pending;
   }
 
   /// Whether this device's data belongs to an account other than [uid].
@@ -590,7 +666,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
           status: SyncStatus.error,
           errorMessage: e.toString(),
         );
-        if (cloudDeleted) return DeleteAllDataResult.localDataSurvived;
+        if (cloudDeleted) {
+          // Never report the account gone when it is not: a live account
+          // described as deleted is the one thing the caller can act on and
+          // will not, because it has been told there is nothing left to do.
+          return accountSurvived
+              ? DeleteAllDataResult.accountAndLocalDataSurvived
+              : DeleteAllDataResult.localDataSurvived;
+        }
         rethrow;
       }
 
@@ -652,39 +735,72 @@ final syncTriggerProvider = Provider<SyncTrigger>((ref) {
 /// "open for a moment" is the whole failure mode this exists to prevent.
 final localDataOwnerProvider = StateProvider<String?>((ref) => null);
 
-/// Whether this device is locked read-only because its data is not the
-/// signed-in account's to touch.
+/// Whether this device has been refused for an account and not reclaimed
+/// since. Backed by [SyncService.deviceContestedKey].
 ///
-/// Derived from the *persisted* owner stamp against the current session, never
-/// from [SyncStatus]. Status is transient, and an earlier version of this
-/// provider read it directly: a failed erase flipped the status to `error`,
-/// the lock silently dropped, and the router put a refused account on the
-/// owner's album — writable — where a delete would later be pushed under the
-/// owner's name. The stamp cannot be cleared by a status transition, by
-/// leaving the session, or by a frame rendering before the first async claim.
+/// Synchronous for the same reason as [localDataOwnerProvider]: it is seeded
+/// from preferences before `runApp` and kept current by [SyncNotifier].
+final deviceContestedProvider = StateProvider<bool>((ref) => false);
+
+/// Whether a local wipe the user asked for is still owed. Backed by
+/// [SyncNotifier.pendingWipeKey], and synchronous for the same reason.
+final pendingLocalWipeProvider = StateProvider<bool>((ref) => false);
+
+/// Whether some account already has a stake in what is on this device.
 ///
-/// A session-less (local-only) launch never locks: on a stamped device that is
-/// the owner opening the app offline, which ruling 2 requires to keep working.
-/// The other way to reach a session-less state — "Skip for now" — is closed on
-/// a stamped device instead, so a refused account cannot use it as a way in.
-final deviceLockedProvider = Provider<bool>((ref) {
+/// The router holds on this while auth is still resolving, rather than letting
+/// the album mount and run the owner's query on a device that may turn out to
+/// be refused. On a device nobody has claimed there is nothing to be wrong
+/// about, so it passes straight through and the album keeps its head start.
+final deviceStampedProvider = Provider<bool>((ref) {
+  return ref.watch(localDataOwnerProvider) != null ||
+      ref.watch(deviceContestedProvider) ||
+      ref.watch(pendingLocalWipeProvider);
+});
+
+/// Why this device is locked read-only, or null when it is not.
+///
+/// Derived entirely from *persisted* state — the owner stamp, the refusal
+/// marker and the pending-wipe flag — never from [SyncStatus]. Status is
+/// transient, and an earlier version of this read it directly: a failed erase
+/// flipped the status to `error`, the lock silently dropped, and the router
+/// put a refused account on the owner's album — writable — where a delete
+/// would later be pushed under the owner's name. None of the three can be
+/// cleared by a status transition, by leaving the session, or by a frame
+/// rendering before the first async claim.
+///
+/// A session-less (local-only) launch locks only on a device that has already
+/// refused somebody. Both the owner opening the app offline and a refused
+/// account relaunching after force-quitting the lock screen arrive with no
+/// uid, so nothing derivable from the session tells them apart — and ruling 2
+/// requires the first to keep working. The refusal marker is what separates
+/// them.
+final deviceLockReasonProvider = Provider<DeviceLockReason?>((ref) {
   // A wipe the user asked for and did not get leaves the signed-out account's
   // whole library on the device. They asked for it destroyed, so it must not
   // be browsable and editable by the next person holding the phone while the
   // wipe stays owed — the lock screen offers the erase that resolves it.
-  final sync = ref.watch(syncStateProvider);
-  if (sync.status == SyncStatus.blocked &&
-      sync.blockedReason == SyncBlockedReason.pendingWipe) {
-    return true;
+  if (ref.watch(pendingLocalWipeProvider)) return DeviceLockReason.pendingWipe;
+
+  final auth = ref.watch(authProvider);
+  if (auth.uid == null) {
+    return ref.watch(deviceContestedProvider)
+        ? DeviceLockReason.foreignLocalData
+        : null;
   }
 
   final owner = ref.watch(localDataOwnerProvider);
-  if (owner == null) return false;
+  if (owner != null && owner != auth.uid) {
+    return DeviceLockReason.foreignLocalData;
+  }
+  return null;
+});
 
-  final auth = ref.watch(authProvider);
-  // Session-less: the owner opening the app offline, not a refused account.
-  if (auth.uid == null) return false;
-  return auth.uid != owner;
+/// Whether this device is locked read-only. See [deviceLockReasonProvider],
+/// which also says which of the two situations the user is in — they need
+/// different words and a different way out.
+final deviceLockedProvider = Provider<bool>((ref) {
+  return ref.watch(deviceLockReasonProvider) != null;
 });
 
 /// Whether continuing without an account would land on a device that already

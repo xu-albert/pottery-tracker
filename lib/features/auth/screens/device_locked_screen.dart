@@ -7,7 +7,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../widgets/app_snackbar.dart';
 
-/// Shown instead of the app when this device holds another account's pottery.
+/// Shown instead of the app whenever the device is locked read-only.
 ///
 /// The device is read-only in the strongest sense available: the refused
 /// account never reaches a screen that can write. That is deliberate. The
@@ -16,8 +16,13 @@ import '../../../widgets/app_snackbar.dart';
 /// deletion could destroy the owner's piece permanently while the app still
 /// reported a clean backup.
 ///
-/// Exactly two ways out, matching the ruling: the owner signs in, or the user
-/// erases the device on purpose.
+/// [DeviceLockReason] decides what this says and what it offers, because the
+/// two locks are opposite situations. Foreign pottery is somebody else's and
+/// must not be destroyed on their behalf, so the way out is the owner signing
+/// back in and the erase is the last resort. An owed wipe is the signed-in
+/// user's *own* unfinished erase, so finishing it is the way out — offering
+/// to leave the session instead would tell them their own pottery belongs to
+/// a stranger and hand them a button that deliberately keeps it.
 class DeviceLockedScreen extends ConsumerStatefulWidget {
   const DeviceLockedScreen({super.key});
 
@@ -90,6 +95,8 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final reason = ref.watch(deviceLockReasonProvider);
+    final owedWipe = reason == DeviceLockReason.pendingWipe;
 
     return Scaffold(
       body: SafeArea(
@@ -103,29 +110,42 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
                 const Icon(Icons.lock_outline, size: 56),
                 const SizedBox(height: AppSizes.lg),
                 Text(
-                  l10n.deviceLockedTitle,
+                  owedWipe
+                      ? l10n.syncBlockedWipePending
+                      : l10n.deviceLockedTitle,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: AppSizes.md),
+                // The explanation carries the only recovery instruction the
+                // user gets, so it wraps in full however long it runs.
                 Text(
-                  l10n.deviceLockedMessage,
+                  owedWipe
+                      ? l10n.syncBlockedWipePendingDetail
+                      : l10n.deviceLockedMessage,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: AppSizes.xl),
-                FilledButton(
-                  onPressed: _busy ? null : _switchAccount,
-                  child: Text(l10n.deviceLockedSwitchAccount),
-                ),
-                const SizedBox(height: AppSizes.sm),
-                TextButton(
-                  onPressed: _busy ? null : _eraseDevice,
-                  child: Text(
-                    l10n.deviceLockedErase,
-                    style: const TextStyle(color: Colors.red),
+                if (owedWipe)
+                  FilledButton(
+                    onPressed: _busy ? null : _eraseDevice,
+                    child: Text(l10n.deviceLockedErase),
+                  )
+                else ...[
+                  FilledButton(
+                    onPressed: _busy ? null : _switchAccount,
+                    child: Text(l10n.deviceLockedSwitchAccount),
                   ),
-                ),
+                  const SizedBox(height: AppSizes.sm),
+                  TextButton(
+                    onPressed: _busy ? null : _eraseDevice,
+                    child: Text(
+                      l10n.deviceLockedErase,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

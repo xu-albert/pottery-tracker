@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pottery_tracker/features/auth/screens/device_locked_screen.dart';
 import 'package:pottery_tracker/features/auth/screens/sign_in_screen.dart';
+import 'package:pottery_tracker/features/shell/screens/starting_screen.dart';
 import 'package:pottery_tracker/l10n/app_localizations.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
@@ -13,19 +14,30 @@ import 'package:pottery_tracker/router/app_router.dart';
 
 import '../helpers/firebase_mocks.dart';
 
+/// An [AuthNotifier] whose state the test drives, standing in for the moment
+/// `_init` finishes resolving.
+class _TestAuthNotifier extends AuthNotifier {
+  _TestAuthNotifier(super.initial) : super.withState();
+
+  void set(AuthState next) => state = next;
+}
+
 ProviderContainer _container({
   required AuthStatus status,
   bool deviceLocked = false,
+  bool deviceStamped = false,
 }) {
   return ProviderContainer(
     overrides: [
       authProvider.overrideWith(
         (ref) => AuthNotifier.withState(AuthState(status: status)),
       ),
-      // The router consults the read-only lock, which is derived from sync
-      // state and would otherwise pull in the database. Routing is what these
-      // tests are about, so the lock is supplied directly.
+      // The router consults the read-only lock and whether the device is
+      // claimed at all; both are derived from persisted state and would
+      // otherwise pull in the database. Routing is what these tests are
+      // about, so they are supplied directly.
       deviceLockedProvider.overrideWithValue(deviceLocked),
+      deviceStampedProvider.overrideWithValue(deviceStamped),
     ],
   );
 }
@@ -126,10 +138,100 @@ void main() {
     }
 
     testWidgets('stays put while auth is still resolving', (tester) async {
-      // The splash overlay covers the app during this window, so the router has
-      // no holding route to sit on — and the album underneath gets a head start
-      // on its query instead of being built later.
+      // On a device nobody has claimed there is nothing the album could be
+      // wrong about, so it gets a head start on its query under the splash
+      // instead of being built later.
       expect(await pathFor(tester, AuthStatus.unknown), '/');
+    });
+
+    testWidgets('holds instead, on a device an account already claims', (
+      tester,
+    ) async {
+      final container = _container(
+        status: AuthStatus.unknown,
+        deviceStamped: true,
+      );
+      addTearDown(container.dispose);
+      final router = await _pumpRouter(tester, container);
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/starting',
+        reason:
+            'a session-less state is both the owner offline and a refused '
+            'account relaunching, so until auth answers the album must not '
+            'mount and run the owner\'s query on a device that may be refused',
+      );
+      expect(find.byType(StartingScreen), findsOneWidget);
+      expect(
+        find.byType(DeviceLockedScreen),
+        findsNothing,
+        reason:
+            'and the owner opening the app offline must not be told their own '
+            'pottery belongs to somebody else while the answer is still '
+            'unknown',
+      );
+    });
+
+    testWidgets('the hold lets go as soon as auth resolves', (tester) async {
+      final auth = _TestAuthNotifier(
+        const AuthState(status: AuthStatus.unknown),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith((ref) => auth),
+          deviceLockedProvider.overrideWithValue(false),
+          deviceStampedProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // `routerProvider` mints a fresh `GoRouter` when auth changes, so this
+      // watches it the way `PotteryTrackerApp` does.
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: Consumer(
+            builder: (context, ref, _) => MaterialApp.router(
+              routerConfig: ref.watch(routerProvider),
+              localizationsDelegates: const [
+                AppLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [Locale('en')],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        container
+            .read(routerProvider)
+            .routerDelegate
+            .currentConfiguration
+            .uri
+            .path,
+        '/starting',
+      );
+
+      auth.set(const AuthState(status: AuthStatus.authenticated, uid: 'a'));
+      await tester.pump();
+      // The album subtree reaches for the database and the sync stack, which a
+      // test does not provide; its build failure is beside the point here.
+      tester.takeException();
+
+      expect(
+        container
+            .read(routerProvider)
+            .routerDelegate
+            .currentConfiguration
+            .uri
+            .path,
+        '/',
+        reason: 'the hold is for the unknown window only, not a second lock',
+      );
     });
 
     testWidgets('sends a signed-out user to sign-in once auth resolves', (

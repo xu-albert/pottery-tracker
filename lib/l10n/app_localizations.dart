@@ -952,6 +952,12 @@ abstract class AppLocalizations {
   /// **'Your cloud data and account were deleted, but the copy on this device could not be. Erase this device to finish.'**
   String get deleteAccountLocalSurvived;
 
+  /// Shown when the cloud tree was deleted but both the auth account and the local wipe survived
+  ///
+  /// In en, this message translates to:
+  /// **'Your cloud data was deleted, but your account and the copy on this device were not. Sign in again and retry to remove the account, then erase this device.'**
+  String get deleteAccountAndLocalSurvived;
+
   /// Shown when an account deletion failed
   ///
   /// In en, this message translates to:
@@ -975,12 +981,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Erase'**
   String get eraseLocalDataConfirm;
-
-  /// Button that retries the pending local data wipe and resumes backup
-  ///
-  /// In en, this message translates to:
-  /// **'Erase & Retry'**
-  String get syncBlockedRetry;
 
   /// Manual sync button
   ///

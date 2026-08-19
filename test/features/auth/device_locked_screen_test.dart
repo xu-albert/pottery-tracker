@@ -60,9 +60,17 @@ void main() {
       () => syncService.getLocalDataOwner(),
     ).thenAnswer((_) async => 'the-owner');
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
+    // The refusal marker is device-ownership state like the stamp above: the
+    // notifier reads it on every claim, so a mock has to answer for it.
+    when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
+    when(() => syncService.setDeviceContested()).thenAnswer((_) async {});
+    when(() => syncService.clearDeviceContested()).thenAnswer((_) async {});
   });
 
-  Future<void> pumpLocked(WidgetTester tester) async {
+  /// [owedWipe] picks which of the two locks the screen is standing in for.
+  /// Both are seeded through the persisted state the lock is really derived
+  /// from, so the screen's own branch is what decides what is drawn.
+  Future<void> pumpLocked(WidgetTester tester, {bool owedWipe = false}) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -74,6 +82,8 @@ void main() {
           authServiceProvider.overrideWithValue(authService),
           syncServiceProvider.overrideWithValue(syncService),
           syncQueueProvider.overrideWithValue(queue),
+          localDataOwnerProvider.overrideWith((ref) => 'the-owner'),
+          pendingLocalWipeProvider.overrideWith((ref) => owedWipe),
         ],
         child: const MaterialApp(
           localizationsDelegates: [
@@ -140,5 +150,69 @@ void main() {
     }
 
     verify(() => syncService.deleteLocalData()).called(1);
+  });
+
+  testWidgets('an erase that fails says so rather than closing on silence', (
+    tester,
+  ) async {
+    when(() => syncService.deleteLocalData()).thenThrow(Exception('disk full'));
+    await pumpLocked(tester);
+
+    await tester.tap(find.text('Erase This Device'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Erase'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    // The dialog closing with nothing said would read as a successful erase.
+    expect(find.textContaining('Could not erase'), findsOneWidget);
+  });
+
+  group('an owed wipe', () {
+    testWidgets('is described as the unfinished erase it is', (tester) async {
+      await pumpLocked(tester, owedWipe: true);
+
+      expect(find.text('Backup paused'), findsOneWidget);
+      expect(
+        find.textContaining("The previous account's data still has to be"),
+        findsOneWidget,
+      );
+      expect(
+        find.text('This device belongs to another account'),
+        findsNothing,
+        reason:
+            "the pottery here is the signed-in user's own, and telling them "
+            'it belongs to a stranger is simply false',
+      );
+    });
+
+    testWidgets('offers the erase that finishes it, and nothing else', (
+      tester,
+    ) async {
+      await pumpLocked(tester, owedWipe: true);
+
+      expect(find.text('Erase This Device'), findsOneWidget);
+      expect(
+        find.text('Sign In As Another Account'),
+        findsNothing,
+        reason:
+            'that action deliberately keeps the local data, which is the '
+            'opposite of what this user already confirmed they wanted',
+      );
+    });
+
+    testWidgets('the erase is the primary action', (tester) async {
+      await pumpLocked(tester, owedWipe: true);
+
+      expect(
+        find.ancestor(
+          of: find.text('Erase This Device'),
+          matching: find.byType(FilledButton),
+        ),
+        findsOneWidget,
+        reason: 'the only way out must not be the one that reads as optional',
+      );
+    });
   });
 }
