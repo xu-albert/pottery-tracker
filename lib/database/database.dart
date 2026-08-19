@@ -5,10 +5,12 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqlcipher_flutter_libs/sqlcipher_flutter_libs.dart';
 import 'package:sqlite3/open.dart' as sqlite_open;
 import 'package:uuid/uuid.dart';
 
 import '../services/encryption_key_service.dart';
+import 'sqlcipher_guard.dart';
 import 'tables/pieces_table.dart';
 import 'tables/photos_table.dart';
 import 'tables/clay_options_table.dart';
@@ -46,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
     if (Platform.isAndroid) {
       sqlite_open.open.overrideFor(
         sqlite_open.OperatingSystem.android,
-        () => DynamicLibrary.open('libsqlcipher.so'),
+        openCipherOnAndroid,
       );
     } else if (Platform.isIOS) {
       sqlite_open.open.overrideFor(
@@ -61,9 +63,7 @@ class AppDatabase extends _$AppDatabase {
 
     final executor = NativeDatabase(
       file,
-      setup: (rawDb) {
-        rawDb.execute("PRAGMA key = '$key'");
-      },
+      setup: (rawDb) => configureSqlCipher(rawDb, key),
     );
 
     return AppDatabase(executor);

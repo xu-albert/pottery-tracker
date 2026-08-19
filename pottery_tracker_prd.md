@@ -169,7 +169,7 @@ Photo
 
 | Requirement | Specification |
 |-------------|---------------|
-| Platforms | iOS 12+, Android 6.0+ (API 23+) |
+| Platforms | iOS 15+, Android 7.0+ (API 24+) |
 | Framework | Flutter (latest stable) |
 | Language | Dart |
 | Local Storage | Drift (SQLite) or sqflite |
@@ -312,7 +312,7 @@ For a hobby app with modest usage, the free tier should be sufficient for hundre
 | Item | Cost | Notes |
 |------|------|-------|
 | Apple Developer Account | $99/year | Required to publish on App Store |
-| Google Play Developer | $25 one-time | Required to publish on Play Store |
+| Google Play Developer | $25 one-time | Required to publish on Play Store; see `docs/android-release.md` |
 | Firebase (Spark plan) | $0 | Free tier sufficient for small user base |
 | Firebase (if exceeds free tier) | ~$1-10/month | Pay-as-you-go, unlikely for small app |
 | **Year 1 Total** | **~$125** | |
@@ -338,7 +338,8 @@ For a hobby app with modest usage, the free tier should be sufficient for hundre
 - Sign-in optional (can use anonymous auth for sync, or local-only mode)
 - Photos stored on device and user's Firebase storage
 - No analytics that identify individual users (or use privacy-respecting analytics like Firebase with minimal data)
-- Privacy policy required for both app stores
+- Privacy policy required for both app stores — still outstanding; see
+  `docs/android-release.md` for the full Play submission checklist
 
 ### 6.2 Accessibility
 
