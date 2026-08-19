@@ -37,6 +37,22 @@ class SyncService {
   /// back in.
   static const _localDataOwnerKey = 'localDataOwnerUid';
 
+  /// Entity ids on this device that a session other than the owner wrote.
+  ///
+  /// A device the owner stamp refuses is still writable, so an account that
+  /// was blocked from syncing can leave rows behind in the shared local
+  /// database. Those rows are not the owner's to upload, and the database has
+  /// no per-row attribution to tell them apart, so the ids are recorded here
+  /// instead — by `SyncNotifier`, from the sync-queue entries that stamp every
+  /// local write. Both push paths read them back: the queue drain in
+  /// `SyncNotifier`, and [pushAllLocal] here.
+  ///
+  /// Persisted rather than derived on demand because a successful sync clears
+  /// the queue, which would otherwise erase the only record that these rows
+  /// belong to somebody else. [deleteLocalData] clears it: an erased device
+  /// holds nobody's rows.
+  static const _foreignRowIdsKey = 'foreignLocalRowIds';
+
   // ════════════════════════════════════════════
   // Delete all data
   // ════════════════════════════════════════════
@@ -127,8 +143,11 @@ class SyncService {
 
     // The data is gone, so nobody owns this device any more: the next account
     // to sign in starts from a clean slate rather than inheriting the claim.
+    // The foreign-row record goes with it — the rows it named are deleted, and
+    // keeping their ids would refuse to upload whatever later reuses them.
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_localDataOwnerKey);
+    await prefs.remove(_foreignRowIdsKey);
   }
 
   Future<void> _deleteLocalPhotoFiles() async {
@@ -176,6 +195,27 @@ class SyncService {
   Future<void> setLocalDataOwner(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_localDataOwnerKey, uid);
+  }
+
+  /// Every row on this device known to belong to somebody other than its
+  /// owner. See [_foreignRowIdsKey].
+  Future<Set<String>> getForeignRowIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_foreignRowIdsKey)?.toSet() ?? <String>{};
+  }
+
+  /// Adds [ids] to the foreign set and returns everything in it afterwards.
+  ///
+  /// Ids are only ever added. A row a second account touched stays untouchable
+  /// until the device is erased, because nothing short of that can tell whose
+  /// version of the row is now on disk.
+  Future<Set<String>> rememberForeignRowIds(Set<String> ids) async {
+    final known = await getForeignRowIds();
+    if (ids.every(known.contains)) return known;
+    final merged = {...known, ...ids};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_foreignRowIdsKey, merged.toList());
+    return merged;
   }
 
   /// Clears every per-uid pull watermark.
@@ -373,17 +413,34 @@ class SyncService {
   // Push all local data (first sync)
   // ════════════════════════════════════════════
 
+  /// Uploads this device's whole local database into [uid]'s cloud tree.
+  ///
+  /// Rows belonging to another account are left out. This branch is the one
+  /// that made the original cross-account leak possible, and stamping the sync
+  /// queue does not reach it: it reads the database directly, so it has to
+  /// consult the foreign-row record itself. See [_foreignRowIdsKey].
   Future<void> pushAllLocal(String uid) async {
     debugPrint('SyncService: pushing all local data');
+    final foreign = await getForeignRowIds();
+    if (foreign.isNotEmpty) {
+      debugPrint(
+        'SyncService: withholding ${foreign.length} rows written by another '
+        'account',
+      );
+    }
 
     // Push all pieces
-    final allPieces = await _db.select(_db.pieces).get();
+    final allPieces = (await _db.select(_db.pieces).get())
+        .where((p) => !foreign.contains(p.id))
+        .toList();
     for (final piece in allPieces) {
       await pushPiece(uid, piece.id);
     }
 
     // Push all photos (metadata first, then attempt file uploads)
-    final allPhotos = await _db.select(_db.photos).get();
+    final allPhotos = (await _db.select(_db.photos).get())
+        .where((p) => !foreign.contains(p.id) && !foreign.contains(p.pieceId))
+        .toList();
     for (final photo in allPhotos) {
       await pushPhoto(uid, photo.id);
     }
@@ -401,14 +458,17 @@ class SyncService {
     // Push all materials
     final clays = await _db.materialsDao.getAllClays();
     for (final clay in clays) {
+      if (foreign.contains(clay.id)) continue;
       await pushClay(uid, clay.id);
     }
     final glazes = await _db.materialsDao.getAllGlazes();
     for (final glaze in glazes) {
+      if (foreign.contains(glaze.id)) continue;
       await pushGlaze(uid, glaze.id);
     }
     final tags = await _db.materialsDao.getAllTags();
     for (final tag in tags) {
+      if (foreign.contains(tag.id)) continue;
       await pushTag(uid, tag.id);
     }
 
@@ -833,8 +893,17 @@ class SyncService {
 
   Future<void> retryMissingUploads(String uid) async {
     final allPhotos = await _db.select(_db.photos).get();
+    // Another account's photo file must not be uploaded here either — this is
+    // a push path like any other. See [_foreignRowIdsKey].
+    final foreign = await getForeignRowIds();
     final needUpload = allPhotos
-        .where((p) => p.cloudUrl == null && File(p.localPath).existsSync())
+        .where(
+          (p) =>
+              p.cloudUrl == null &&
+              !foreign.contains(p.id) &&
+              !foreign.contains(p.pieceId) &&
+              File(p.localPath).existsSync(),
+        )
         .toList();
 
     if (needUpload.isEmpty) {

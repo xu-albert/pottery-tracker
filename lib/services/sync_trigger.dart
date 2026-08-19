@@ -4,19 +4,45 @@ class SyncTrigger {
   final SyncQueue _queue;
   final void Function()? _onEnqueue;
 
-  SyncTrigger(this._queue, {void Function()? onEnqueue})
-    : _onEnqueue = onEnqueue;
+  /// Reads the uid of the session making the write, as the write happens.
+  ///
+  /// Attribution cannot be recovered at drain time — by then the session that
+  /// wrote the row may be long gone — so every enqueue is stamped here, at
+  /// the one place all of them pass through.
+  final String? Function() _currentUid;
+
+  SyncTrigger(
+    this._queue, {
+    required String? Function() currentUid,
+    void Function()? onEnqueue,
+  }) : _currentUid = currentUid,
+       _onEnqueue = onEnqueue;
+
+  Future<void> _enqueue(
+    SyncOperation operation,
+    String entityId, {
+    String? extraData,
+    List<String>? changedFields,
+  }) {
+    return _queue.enqueue(
+      SyncQueueEntry(
+        operation: operation,
+        entityId: entityId,
+        extraData: extraData,
+        changedFields: changedFields,
+        uid: _currentUid(),
+      ),
+    );
+  }
 
   Future<void> afterPieceWrite(
     String pieceId, {
     List<String>? changedFields,
   }) async {
-    await _queue.enqueue(
-      SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: pieceId,
-        changedFields: changedFields,
-      ),
+    await _enqueue(
+      SyncOperation.pushPiece,
+      pieceId,
+      changedFields: changedFields,
     );
     _onEnqueue?.call();
   }
@@ -25,74 +51,48 @@ class SyncTrigger {
     String photoId, {
     bool includeFile = false,
   }) async {
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: photoId),
-    );
+    await _enqueue(SyncOperation.pushPhoto, photoId);
     if (includeFile) {
-      await _queue.enqueue(
-        SyncQueueEntry(
-          operation: SyncOperation.pushPhotoFile,
-          entityId: photoId,
-        ),
-      );
+      await _enqueue(SyncOperation.pushPhotoFile, photoId);
     }
     _onEnqueue?.call();
   }
 
   Future<void> afterClayWrite(String clayId) async {
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushClay, entityId: clayId),
-    );
+    await _enqueue(SyncOperation.pushClay, clayId);
     _onEnqueue?.call();
   }
 
   Future<void> afterGlazeWrite(String glazeId) async {
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: glazeId),
-    );
+    await _enqueue(SyncOperation.pushGlaze, glazeId);
     _onEnqueue?.call();
   }
 
   Future<void> afterTagWrite(String tagId) async {
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushTag, entityId: tagId),
-    );
+    await _enqueue(SyncOperation.pushTag, tagId);
     _onEnqueue?.call();
   }
 
   Future<void> afterPieceGlazesWrite(String pieceId) async {
-    await _queue.enqueue(
-      SyncQueueEntry(
-        operation: SyncOperation.pushPieceGlazes,
-        entityId: pieceId,
-      ),
-    );
+    await _enqueue(SyncOperation.pushPieceGlazes, pieceId);
     _onEnqueue?.call();
   }
 
   Future<void> afterPieceTagsWrite(String pieceId) async {
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushPieceTags, entityId: pieceId),
-    );
+    await _enqueue(SyncOperation.pushPieceTags, pieceId);
     _onEnqueue?.call();
   }
 
   Future<void> afterPieceDeletion(String pieceId, List<String> photoIds) async {
     for (final photoId in photoIds) {
-      await _queue.enqueue(
-        SyncQueueEntry(operation: SyncOperation.deletePhoto, entityId: photoId),
-      );
+      await _enqueue(SyncOperation.deletePhoto, photoId);
     }
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.deletePiece, entityId: pieceId),
-    );
+    await _enqueue(SyncOperation.deletePiece, pieceId);
     _onEnqueue?.call();
   }
 
   Future<void> afterPhotoDeletion(String photoId) async {
-    await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.deletePhoto, entityId: photoId),
-    );
+    await _enqueue(SyncOperation.deletePhoto, photoId);
     _onEnqueue?.call();
   }
 
@@ -100,12 +100,10 @@ class SyncTrigger {
     String collection,
     String materialId,
   ) async {
-    await _queue.enqueue(
-      SyncQueueEntry(
-        operation: SyncOperation.deleteMaterial,
-        entityId: materialId,
-        extraData: collection,
-      ),
+    await _enqueue(
+      SyncOperation.deleteMaterial,
+      materialId,
+      extraData: collection,
     );
     _onEnqueue?.call();
   }

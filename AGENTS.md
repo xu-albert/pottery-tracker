@@ -87,8 +87,15 @@ decisions (2026-08-18) settle how that is prevented, and they differ by how the 
 - **An owed wipe is only ever retried where the user expects it** — at an auth transition, or from
   the confirmed `eraseLocalDataNow`. Never from `syncNow` or the debounced `_pushQueue`: a delete on
   the push path fires 500ms after any edit and would destroy the *current* account's work.
+- **A refused account can still write, so the drain refuses its work.** Being blocked does not make
+  the app read-only. `SyncTrigger` therefore stamps every queue entry with the uid that made the
+  write (null = local-only, which belongs to whoever owns the device), and `_claimOrBlock` records
+  those ids through `SyncService.rememberForeignRowIds`. Both push paths withhold them: the drain
+  in `_processQueueInternal`, and `pushAllLocal`, which reads the database rather than the queue and
+  so needs the record of its own. Do not drop the stamp to simplify the entry — without it the
+  owner uploads the intervening account's pottery.
 
-`test/providers/account_switch_test.dart` is the end-to-end guard for all three, against a real
+`test/providers/account_switch_test.dart` is the end-to-end guard for all four, against a real
 Drift database.
 
 ## Design Constraints

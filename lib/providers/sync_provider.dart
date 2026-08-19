@@ -29,6 +29,22 @@ enum SyncBlockedReason {
   foreignLocalData,
 }
 
+/// What an explicit, user-confirmed erase actually did.
+///
+/// The user has already answered a destructive confirmation by the time this
+/// is produced, so every outcome has to be reportable — silently doing nothing
+/// leaves them believing the device was erased when it was not.
+enum EraseLocalDataResult {
+  /// The device was erased.
+  erased,
+
+  /// Nothing was erased: a sync or another wipe held the device.
+  busy,
+
+  /// The erase ran and failed. `SyncState.errorMessage` says why.
+  failed,
+}
+
 class SyncState {
   final SyncStatus status;
   final int pendingCount;
@@ -81,6 +97,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// Every site that clears the flag has to honour this, not just the wipe
   /// that noticed it.
   bool _staleSyncInFlight = false;
+
+  /// True only while [_pushQueue] holds [_syncing].
+  ///
+  /// A drain is not a substitute for a full sync — it pushes queued rows and
+  /// never pulls — so a [syncNow] that stands down for one has to be
+  /// remembered rather than dropped.
+  bool _drainingQueue = false;
+
+  /// Set when a [syncNow] bowed out because a drain held the device. The drain
+  /// runs it on its way out, so a sign-in's pull is never lost to the 500ms
+  /// debounce happening to fire first.
+  bool _fullSyncOwed = false;
   Timer? _processTimer;
   Future<void>? _wipeInFlight;
 
@@ -125,11 +153,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (!auth.isSignedIn || auth.uid == null) return;
 
     _syncing = true;
+    _drainingQueue = true;
     try {
       if (await _claimOrBlock(auth.uid!)) return;
       await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
-      if (state.status != SyncStatus.error) {
+      // Only the queue has been drained here. While a full sync is still owed
+      // nothing has been pulled, so reporting "backed up" would name a backup
+      // that has not happened — leave the final word to the owed sync below.
+      if (state.status != SyncStatus.error && !_fullSyncOwed) {
         state = state.copyWith(
           status: SyncStatus.idle,
           lastSyncedAt: DateTime.now(),
@@ -144,7 +176,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       );
     } finally {
       _staleSyncInFlight = false;
+      _drainingQueue = false;
       _syncing = false;
+      if (_fullSyncOwed) await syncNow();
     }
   }
 
@@ -154,8 +188,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = const SyncState(status: SyncStatus.disabled);
       return;
     }
-    if (_syncing || _wiping) return;
+    if (_syncing || _wiping) {
+      if (_drainingQueue) _fullSyncOwed = true;
+      return;
+    }
     _syncing = true;
+    // Committed to running now, so whatever was owed is about to be paid.
+    _fullSyncOwed = false;
 
     final uid = auth.uid!;
     state = state.copyWith(status: SyncStatus.syncing);
@@ -201,7 +240,25 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   Future<void> _processQueueInternal(String uid) async {
     final entries = await _queue.getAll();
+    final foreignRows = await _syncService.getForeignRowIds();
     for (final entry in entries) {
+      // Work from a session this device refused, or work on a row such a
+      // session has touched. Neither may reach [uid]'s cloud tree: the first
+      // is plainly not theirs, and the second is a row whose current contents
+      // were written by somebody else. Dropping the entry — the row itself
+      // stays on the device — is what stops it being resurrected into a later
+      // drain, and [SyncService.rememberForeignRowIds] has already recorded
+      // the ids so the full-push branch withholds them too.
+      if ((entry.uid != null && entry.uid != uid) ||
+          foreignRows.contains(entry.entityId)) {
+        debugPrint(
+          'SyncNotifier: withholding ${entry.operation} for ${entry.entityId} '
+          '— written by ${entry.uid ?? 'another account'}',
+        );
+        await _queue.remove(entry);
+        continue;
+      }
+
       // Photo file uploads are best-effort: try once, always remove.
       // retryMissingUploads() catches any failures on the next full sync.
       if (entry.operation == SyncOperation.pushPhotoFile) {
@@ -317,8 +374,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// This is the deliberate way out of both blocked states, and it destroys
   /// data, so it must only ever be reached from a confirmation the user
   /// answered — see `SettingsScreen._confirmEraseLocalData`.
-  Future<void> eraseLocalDataNow() async {
-    if (_syncing || _wiping) return;
+  Future<EraseLocalDataResult> eraseLocalDataNow() async {
+    if (_syncing || _wiping) {
+      debugPrint('SyncNotifier: explicit erase refused, the device is busy');
+      return EraseLocalDataResult.busy;
+    }
     _processTimer?.cancel();
     _wiping = true;
     try {
@@ -330,13 +390,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
         status: SyncStatus.error,
         errorMessage: e.toString(),
       );
-      return;
+      return EraseLocalDataResult.failed;
     } finally {
       _wiping = false;
     }
     // The device is clean and unclaimed now, so the signed-in account can take
     // it over and back up normally.
     await syncNow();
+    return EraseLocalDataResult.erased;
   }
 
   /// Deletes every local store, flagged so an interruption is recoverable.
@@ -372,7 +433,25 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (await _blockedByPendingWipe()) return true;
     if (await _blockedByForeignLocalData(uid)) return true;
     await _syncService.setLocalDataOwner(uid);
+    await _recordForeignRows(uid);
     return false;
+  }
+
+  /// Records every row this device holds that a session other than [uid]
+  /// wrote, before either push path gets to run.
+  ///
+  /// The sync queue is the record of every local write — no DAO write reaches
+  /// the device without one — so its entries are what makes a mixed device
+  /// knowable at all. They are persisted through [SyncService] because a
+  /// successful sync clears the queue, and because `pushAllLocal` reads the
+  /// database rather than the queue and needs the same list.
+  Future<void> _recordForeignRows(String uid) async {
+    final foreign = (await _queue.getAll())
+        .where((e) => e.uid != null && e.uid != uid)
+        .map((e) => e.entityId)
+        .toSet();
+    if (foreign.isEmpty) return;
+    await _syncService.rememberForeignRowIds(foreign);
   }
 
   /// Whether this device's data belongs to an account other than [uid].
@@ -506,6 +585,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 final syncTriggerProvider = Provider<SyncTrigger>((ref) {
   return SyncTrigger(
     ref.watch(syncQueueProvider),
+    currentUid: () => ref.read(authProvider).uid,
     onEnqueue: () =>
         ref.read(syncStateProvider.notifier).scheduleProcessQueue(),
   );

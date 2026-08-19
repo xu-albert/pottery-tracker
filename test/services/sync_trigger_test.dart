@@ -6,15 +6,20 @@ import 'package:pottery_tracker/services/sync_trigger.dart';
 void main() {
   late SyncQueue queue;
   late int callbackCount;
+  late String? signedInUid;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     queue = SyncQueue();
     callbackCount = 0;
+    signedInUid = null;
   });
 
-  SyncTrigger makeTrigger() =>
-      SyncTrigger(queue, onEnqueue: () => callbackCount++);
+  SyncTrigger makeTrigger() => SyncTrigger(
+    queue,
+    currentUid: () => signedInUid,
+    onEnqueue: () => callbackCount++,
+  );
 
   group('SyncTrigger afterPieceWrite', () {
     test('enqueues pushPiece with changedFields', () async {
@@ -177,6 +182,50 @@ void main() {
         expect(all.first.entityId, 'clay-1');
         expect(all.first.extraData, 'clays');
         expect(callbackCount, 1);
+      },
+    );
+  });
+
+  group('SyncTrigger session stamping', () {
+    test('stamps every entry with the uid signed in at write time', () async {
+      final trigger = makeTrigger();
+      signedInUid = 'user-a';
+      await trigger.afterPieceWrite('p1');
+      await trigger.afterPhotoWrite('photo-1', includeFile: true);
+      await trigger.afterClayWrite('clay-1');
+      await trigger.afterGlazeWrite('glaze-1');
+      await trigger.afterTagWrite('tag-1');
+      await trigger.afterPieceGlazesWrite('p1');
+      await trigger.afterPieceTagsWrite('p1');
+      await trigger.afterPieceDeletion('p2', ['photo-2']);
+      await trigger.afterPhotoDeletion('photo-3');
+      await trigger.afterMaterialDeletion('clays', 'clay-2');
+
+      final all = await queue.getAll();
+      expect(all, isNotEmpty);
+      expect(all.every((e) => e.uid == 'user-a'), isTrue);
+    });
+
+    test('leaves a local-only write unattributed', () async {
+      final trigger = makeTrigger();
+      await trigger.afterPieceWrite('p1');
+
+      final all = await queue.getAll();
+      expect(all.single.uid, isNull);
+    });
+
+    test(
+      'a second session does not merge into the first account\'s entry',
+      () async {
+        final trigger = makeTrigger();
+        signedInUid = 'user-a';
+        await trigger.afterPieceWrite('p1', changedFields: ['title']);
+        signedInUid = 'user-b';
+        await trigger.afterPieceWrite('p1', changedFields: ['notes']);
+
+        final all = await queue.getAll();
+        expect(all, hasLength(2));
+        expect(all.map((e) => e.uid), containsAll(['user-a', 'user-b']));
       },
     );
   });

@@ -928,6 +928,18 @@ abstract class AppLocalizations {
   /// **'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.'**
   String get eraseLocalDataConfirmMessage;
 
+  /// Shown when a confirmed erase could not run because a sync or wipe was in flight
+  ///
+  /// In en, this message translates to:
+  /// **'Backup is busy right now — nothing was erased. Try again in a moment.'**
+  String get eraseLocalDataBusy;
+
+  /// Shown when a confirmed erase was attempted and failed
+  ///
+  /// In en, this message translates to:
+  /// **'This device could not be erased. Nothing is uploaded until it is.'**
+  String get eraseLocalDataFailed;
+
   /// Destructive confirm button for erasing local data
   ///
   /// In en, this message translates to:

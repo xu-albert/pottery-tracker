@@ -58,6 +58,12 @@ _setup({AuthState auth = _signedOut}) {
   // Unowned by default: the device belongs to whoever signs in first.
   when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
+  when(
+    () => syncService.getForeignRowIds(),
+  ).thenAnswer((_) async => <String>{});
+  when(
+    () => syncService.rememberForeignRowIds(any()),
+  ).thenAnswer((_) async => <String>{});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
@@ -502,6 +508,9 @@ void main() {
         final s = _setup(auth: _signedIn);
         addTearDown(s.container.dispose);
         async.elapse(Duration.zero); // let _onAuthChanged settle
+        // The sign-in sync reads the queue itself now, so only what happens
+        // from here is the debounce under test.
+        clearInteractions(s.queue);
 
         s.notifier.scheduleProcessQueue();
         s.notifier.scheduleProcessQueue();

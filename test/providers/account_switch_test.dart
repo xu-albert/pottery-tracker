@@ -469,22 +469,39 @@ void main() {
       // through in production; holding it open just makes the order certain.
       queue.pendingCountDelay = const Duration(milliseconds: 1000);
       syncService.pushAllLocalCalls.clear();
+      syncService.pushLog.clear();
       auth.set(signedInAs(uidB));
       await Future<void>.delayed(const Duration(milliseconds: 2200));
       queue.pendingCountDelay = Duration.zero;
       await settle();
 
       expect(
-        syncService.pushAllLocalCalls,
-        isEmpty,
-        reason:
-            'the sign-in sync has to lose this race, or the test is no longer '
-            'exercising the debounced push the stamp fix is about',
-      );
-      expect(
         await cloudPieceIds(uidB),
         ['piece-b'],
         reason: 'the debounced push, not the sign-in sync, did the upload',
+      );
+      expect(syncService.pushLog, contains('pushPiece:piece-b'));
+      expect(
+        syncService.pushLog,
+        contains('pushAllLocal:$uidB'),
+        reason:
+            'the sign-in sync stood down for the drain, so it has to have been '
+            'run afterwards rather than dropped',
+      );
+      expect(
+        syncService.pushLog.indexOf('pushPiece:piece-b'),
+        lessThan(syncService.pushLog.indexOf('pushAllLocal:$uidB')),
+        reason:
+            'the drain has to have lost nothing by winning: it uploaded first '
+            'and the owed full sync followed, or this test is no longer '
+            'exercising the race the stamp fix is about',
+      );
+      expect(
+        await syncService.getLastPulledAt(uidB),
+        isNotNull,
+        reason:
+            "the owed sync's pull actually ran — a drain never pulls, so a "
+            'dropped sign-in sync would leave no watermark',
       );
       expect(
         await syncService.getLocalDataOwner(),
@@ -513,6 +530,115 @@ void main() {
       expect((await db.select(db.pieces).get()).map((p) => p.id), ['piece-b']);
     },
   );
+
+  test(
+    "work made by a refused account is never pushed by the device's owner",
+    () async {
+      // A owns the device — its first sync in setUp claimed it.
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+      expect(await cloudPieceIds(uidA), ['piece-a']);
+
+      // A's session is lost involuntarily. Nothing is deleted, so the stamp is
+      // all that remembers whose pottery this is.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+
+      // B signs in on the same device and is refused.
+      auth.set(signedInAs(uidB));
+      await settle();
+      expect(container.read(syncStateProvider).status, SyncStatus.blocked);
+
+      // Being refused does not make the app read-only, so B makes pottery.
+      await insertPieceWithPhoto('piece-b', "B's bowl");
+      final trigger = container.read(syncTriggerProvider);
+      await trigger.afterPieceWrite('piece-b');
+      await trigger.afterPhotoWrite('photo-piece-b');
+
+      // B's session goes the same way, and the owner comes back.
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      auth.set(signedInAs(uidA));
+      await settle();
+
+      expect(
+        container.read(syncStateProvider).status,
+        SyncStatus.idle,
+        reason: 'the owner is not blocked on its own device',
+      );
+      expect(await cloudPieceIds(uidA), [
+        'piece-a',
+      ], reason: "the drain must refuse B's queued work");
+
+      // The full-push branch reads the database rather than the queue, so
+      // stamping the queue alone does not reach it.
+      await notifier.syncNow(forceFullSync: true);
+      await settle();
+      expect(
+        await cloudPieceIds(uidA),
+        ['piece-a'],
+        reason: "pushAllLocal has to withhold B's rows too",
+      );
+      final aPhotos = await firestore.collection('users/$uidA/photos').get();
+      expect(
+        aPhotos.docs.map((d) => d.id),
+        ['photo-piece-a'],
+        reason: "B's photo is B's, whichever piece it hangs off",
+      );
+      expect(await cloudPieceIds(uidB), isEmpty);
+
+      // Refusing to upload is not deleting: B's bowl is still on the device.
+      expect(
+        (await db.select(db.pieces).get()).map((p) => p.id),
+        containsAll(['piece-a', 'piece-b']),
+      );
+    },
+  );
+
+  test('a confirmed erase reports back when the device is busy', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+
+    syncService.pushAllLocalDelay = const Duration(milliseconds: 600);
+    final inFlight = notifier.syncNow(forceFullSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+
+    expect(
+      await notifier.eraseLocalDataNow(),
+      EraseLocalDataResult.busy,
+      reason: 'the user already answered a destructive confirmation',
+    );
+    expect(
+      await db.select(db.pieces).get(),
+      isNotEmpty,
+      reason: 'a refused erase must not half-delete anything',
+    );
+
+    syncService.pushAllLocalDelay = Duration.zero;
+    await inFlight;
+    await settle();
+
+    // Backed up by the sync above, so A's mug comes straight back down after
+    // the erase. This one never reached the cloud, so its absence is what
+    // shows the erase ran this time.
+    await insertPieceWithPhoto('piece-unsynced', 'Never backed up');
+
+    expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.erased);
+    await settle();
+    expect(
+      (await db.select(db.pieces).get()).map((p) => p.id),
+      isNot(contains('piece-unsynced')),
+    );
+  });
+
+  test('a confirmed erase that fails is reported, not swallowed', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    syncService.wipeFails = true;
+    expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.failed);
+    expect(container.read(syncStateProvider).status, SyncStatus.error);
+    expect(await db.select(db.pieces).get(), isNotEmpty);
+  });
 
   test(
     'a wipe interrupted before it finished is completed on next sign-in',
@@ -553,6 +679,13 @@ class _FlakyWipeSyncService extends SyncService {
   /// upload — both leave the same rows in the cloud.
   final List<String> pushAllLocalCalls = [];
 
+  /// Uploads in the order they happened, so a test can assert which push path
+  /// got there first rather than only that both eventually ran.
+  final List<String> pushLog = [];
+
+  /// Holds `pushAllLocal` open, standing in for a slow first sync.
+  Duration pushAllLocalDelay = Duration.zero;
+
   @override
   Future<void> deleteLocalData() async {
     if (wipeFails) throw Exception('simulated local wipe failure');
@@ -560,9 +693,19 @@ class _FlakyWipeSyncService extends SyncService {
   }
 
   @override
-  Future<void> pushAllLocal(String uid) {
+  Future<void> pushAllLocal(String uid) async {
     pushAllLocalCalls.add(uid);
+    pushLog.add('pushAllLocal:$uid');
+    if (pushAllLocalDelay > Duration.zero) {
+      await Future<void>.delayed(pushAllLocalDelay);
+    }
     return super.pushAllLocal(uid);
+  }
+
+  @override
+  Future<void> pushPiece(String uid, String pieceId) {
+    pushLog.add('pushPiece:$pieceId');
+    return super.pushPiece(uid, pieceId);
   }
 }
 

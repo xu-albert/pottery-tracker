@@ -226,6 +226,32 @@ void main() {
             'leaving the user no stated way out of the blocked state',
       );
     });
+
+    testWidgets('a confirmed erase that fails tells the user so', (
+      tester,
+    ) async {
+      when(
+        () => syncService.getLocalDataOwner(),
+      ).thenAnswer((_) async => 'user-b');
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Erase Device'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      // The dialog closing with nothing said would read as a successful erase.
+      expect(find.textContaining('could not be erased'), findsOneWidget);
+    });
   });
 
   group('provider tiles', () {

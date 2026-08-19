@@ -462,6 +462,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.';
 
   @override
+  String get eraseLocalDataBusy =>
+      'Backup is busy right now — nothing was erased. Try again in a moment.';
+
+  @override
+  String get eraseLocalDataFailed =>
+      'This device could not be erased. Nothing is uploaded until it is.';
+
+  @override
   String get eraseLocalDataConfirm => 'Erase';
 
   @override

@@ -199,7 +199,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await ref.read(syncStateProvider.notifier).eraseLocalDataNow();
+
+    final result = await ref
+        .read(syncStateProvider.notifier)
+        .eraseLocalDataNow();
+    if (!mounted) return;
+    // A destructive action the user has already confirmed never ends in
+    // silence: either the device is erased, or they are told why it was not.
+    switch (result) {
+      case EraseLocalDataResult.erased:
+        break;
+      case EraseLocalDataResult.busy:
+        AppSnackbar.show(context, message: l10n.eraseLocalDataBusy);
+      case EraseLocalDataResult.failed:
+        AppSnackbar.show(context, message: l10n.eraseLocalDataFailed);
+    }
   }
 
   Widget _providerTile({
