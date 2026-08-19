@@ -797,6 +797,42 @@ void main() {
   });
 
   test(
+    'a forced full sync that loses the race is replayed as forced',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      // A has synced once already, so anything short of a forced sync takes the
+      // incremental branch and never reaches pushAllLocal.
+      expect(await syncService.getLastPulledAt(uidA), isNotNull);
+
+      await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
+      queue.pendingCountDelay = const Duration(milliseconds: 1200);
+
+      // Let the debounced drain start and stall, then reach for the sync tile's
+      // long press while it still holds the device.
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      syncService.pushAllLocalCalls.clear();
+      await notifier.syncNow(forceFullSync: true);
+      expect(
+        syncService.pushAllLocalCalls,
+        isEmpty,
+        reason: 'the drain held the device, so this request stood down',
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      queue.pendingCountDelay = Duration.zero;
+      await settle();
+
+      expect(
+        syncService.pushAllLocalCalls,
+        contains(uidA),
+        reason:
+            'the owed sync is replayed as the forced full sync that was asked '
+            'for, not downgraded to the incremental branch',
+      );
+    },
+  );
+
+  test(
     'a wipe interrupted before it finished is completed on next sign-in',
     () async {
       await insertPieceWithPhoto('piece-a', "A's mug");

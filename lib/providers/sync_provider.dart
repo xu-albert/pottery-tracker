@@ -120,6 +120,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// runs it on its way out, so a sign-in's pull is never lost to the 500ms
   /// debounce happening to fire first.
   bool _fullSyncOwed = false;
+
+  /// Whether what is owed is a *forced* full sync — the sync tile's long
+  /// press, which is the only "re-upload everything" affordance there is, and
+  /// which races a drain scheduled 500ms after any edit. Replaying it as an
+  /// ordinary sync would quietly do something other than what was asked for,
+  /// so once a forced sync is owed it stays forced no matter what else queues
+  /// up behind it.
+  bool _owedSyncForced = false;
   Timer? _processTimer;
   Future<void>? _wipeInFlight;
 
@@ -190,7 +198,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _staleSyncInFlight = false;
       _drainingQueue = false;
       _syncing = false;
-      if (_fullSyncOwed) await syncNow();
+      if (_fullSyncOwed) await syncNow(forceFullSync: _owedSyncForced);
     }
   }
 
@@ -201,12 +209,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
       return;
     }
     if (_syncing || _wiping) {
-      if (_drainingQueue) _fullSyncOwed = true;
+      if (_drainingQueue) {
+        _fullSyncOwed = true;
+        if (forceFullSync) _owedSyncForced = true;
+      }
       return;
     }
     _syncing = true;
     // Committed to running now, so whatever was owed is about to be paid.
     _fullSyncOwed = false;
+    _owedSyncForced = false;
 
     final uid = auth.uid!;
     state = state.copyWith(status: SyncStatus.syncing);
