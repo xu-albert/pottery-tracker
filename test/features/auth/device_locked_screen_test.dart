@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -116,9 +117,9 @@ void main() {
   testWidgets('offers exactly the two ways out, and says why', (tester) async {
     await pumpLocked(tester);
 
-    expect(find.text('This device belongs to another account'), findsOneWidget);
+    expect(find.text('This device is locked'), findsOneWidget);
     expect(find.textContaining('read-only'), findsOneWidget);
-    expect(find.text('Sign In As Another Account'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
     expect(find.text('Erase This Device'), findsOneWidget);
   });
 
@@ -127,7 +128,7 @@ void main() {
   ) async {
     await pumpLocked(tester);
 
-    await tester.tap(find.text('Sign In As Another Account'));
+    await tester.tap(find.text('Sign In'));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 20));
     }
@@ -188,7 +189,62 @@ void main() {
     // transition), and asserted so a change to that precedence is visible.
     await tester.pump();
     expect(find.text('This device still has to be erased'), findsOneWidget);
-    expect(find.text('Sign In As Another Account'), findsNothing);
+    expect(find.text('Sign In'), findsNothing);
+  });
+
+  group("ruling 4: the explanation wraps, however long it runs", () {
+    // This guard used to live on the Settings sync tile and went with it when
+    // both blocked reasons started locking the router. The explanation moved
+    // here, so the assertion follows it: the recovery instruction is the whole
+    // point of that paragraph, and an ellipsis through it leaves the user with
+    // no stated way out of a state they cannot otherwise leave.
+    const narrowPhone = Size(390, 1400);
+
+    void expectWraps(WidgetTester tester, Finder text) {
+      expect(text, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+        isFalse,
+        reason: 'ruling 4: blocked-state explanations wrap without a limit',
+      );
+    }
+
+    testWidgets('the foreign-pottery explanation is not truncated', (
+      tester,
+    ) async {
+      tester.view.physicalSize = narrowPhone;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await pumpLocked(tester);
+      expectWraps(tester, find.textContaining('kept read-only'));
+    });
+
+    testWidgets('nor is the owed-wipe explanation and its account notice', (
+      tester,
+    ) async {
+      // The longest the screen ever gets: the owed-wipe explanation plus the
+      // surviving-account paragraph, which names two sequential steps. A
+      // device that stays on this lock is one whose wipe keeps failing — a
+      // wipe that succeeds clears the flag and the lock with it.
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+      tester.view.physicalSize = narrowPhone;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await pumpLocked(tester, owedWipe: true, accountOwed: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expectWraps(tester, find.textContaining('An erase was started'));
+      expectWraps(
+        tester,
+        find.textContaining('account itself was not deleted'),
+      );
+    });
   });
 
   group('an owed wipe', () {
@@ -206,15 +262,15 @@ void main() {
 
       expect(find.text('This device still has to be erased'), findsOneWidget);
       expect(
-        find.textContaining('You asked for the pottery stored here'),
+        find.textContaining('An erase was started on this device'),
         findsOneWidget,
       );
       expect(
-        find.text('This device belongs to another account'),
+        find.text('This device is locked'),
         findsNothing,
         reason:
-            "the pottery here is the signed-in user's own, and telling them "
-            'it belongs to a stranger is simply false',
+            'an unfinished erase is a different situation from pottery '
+            'waiting for its account, and needs its own words',
       );
     });
 
@@ -225,7 +281,7 @@ void main() {
 
       expect(find.text('Erase This Device'), findsOneWidget);
       expect(
-        find.text('Sign In As Another Account'),
+        find.text('Sign In'),
         findsNothing,
         reason:
             'that action deliberately keeps the local data, which is the '

@@ -59,8 +59,11 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
     }
   }
 
-  /// Leaves without destroying anything: none of the pottery here belongs to
-  /// the account being signed out, so there is nothing of theirs to delete.
+  /// Drops to the sign-in screen without destroying anything.
+  ///
+  /// Nothing here is the leaving session's to delete — and on a session-less
+  /// launch there is no session to leave at all, only the sign-in screen to
+  /// reach, which is where the owner signs back in.
   Future<void> _switchAccount() async {
     if (_busy) return;
     setState(() => _busy = true);

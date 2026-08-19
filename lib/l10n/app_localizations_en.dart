@@ -442,21 +442,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deviceLockedWipeMessage =>
-      'You asked for the pottery stored here to be deleted and it could not be. Nothing is uploaded and nothing can be changed until the erase finishes.';
+      'An erase was started on this device and did not finish. Nothing is uploaded and nothing can be changed until it completes.';
 
   @override
-  String get deviceLockedTitle => 'This device belongs to another account';
+  String get deviceLockedTitle => 'This device is locked';
 
   @override
   String get deviceLockedMessage =>
-      'The pottery stored here was made by a different account, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.';
+      'The pottery stored here belongs to an account that is not signed in, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.';
 
   @override
   String get deviceLockedAccountStillExists =>
       'Your account itself was not deleted — Firebase wanted a more recent sign-in. Erase this device first, then sign in again and use Delete Account & Data to remove it.';
 
   @override
-  String get deviceLockedSwitchAccount => 'Sign In As Another Account';
+  String get deviceLockedSwitchAccount => 'Sign In';
 
   @override
   String get deviceLockedErase => 'Erase This Device';

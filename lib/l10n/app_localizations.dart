@@ -892,22 +892,22 @@ abstract class AppLocalizations {
   /// **'This device still has to be erased'**
   String get deviceLockedWipeTitle;
 
-  /// Explains the lock screen's owed-wipe reason, which is the user's own unfinished erase rather than another account's pottery
+  /// Explains the lock screen's owed-wipe reason. States the device's condition rather than attributing the request, because whichever account signs in next reads this and it may not be the one that asked
   ///
   /// In en, this message translates to:
-  /// **'You asked for the pottery stored here to be deleted and it could not be. Nothing is uploaded and nothing can be changed until the erase finishes.'**
+  /// **'An erase was started on this device and did not finish. Nothing is uploaded and nothing can be changed until it completes.'**
   String get deviceLockedWipeMessage;
 
-  /// Title of the read-only lock screen
+  /// Title of the read-only lock screen. Says nothing about who the reader is: a session-less launch on a contested device is either the owner opening the app offline or a refused account relaunching, and the lock deliberately cannot tell them apart
   ///
   /// In en, this message translates to:
-  /// **'This device belongs to another account'**
+  /// **'This device is locked'**
   String get deviceLockedTitle;
 
-  /// Explains why the device is locked read-only
+  /// Explains why the device is locked read-only, in terms true for either reader — it never asserts whose pottery it is
   ///
   /// In en, this message translates to:
-  /// **'The pottery stored here was made by a different account, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.'**
+  /// **'The pottery stored here belongs to an account that is not signed in, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.'**
   String get deviceLockedMessage;
 
   /// Shown on the lock screen when a confirmed account deletion left the account behind, naming the steps in the order the lock permits
@@ -916,10 +916,10 @@ abstract class AppLocalizations {
   /// **'Your account itself was not deleted — Firebase wanted a more recent sign-in. Erase this device first, then sign in again and use Delete Account & Data to remove it.'**
   String get deviceLockedAccountStillExists;
 
-  /// Leaves the current session without deleting anything
+  /// Drops to the sign-in screen without deleting anything. Not "as another account": the reader may be the owner offline, signing in as themselves
   ///
   /// In en, this message translates to:
-  /// **'Sign In As Another Account'**
+  /// **'Sign In'**
   String get deviceLockedSwitchAccount;
 
   /// Destructive action on the lock screen
