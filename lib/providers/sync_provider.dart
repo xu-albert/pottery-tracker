@@ -375,7 +375,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   ///
   /// This is the deliberate way out of both blocked states, and it destroys
   /// data, so it must only ever be reached from a confirmation the user
-  /// answered — see `SettingsScreen._confirmEraseLocalData`.
+  /// answered. There is one per state: an owed wipe is erased from the sync
+  /// tile (`SettingsScreen._confirmEraseLocalData`), and a device holding
+  /// another account's pottery from the lock screen
+  /// (`DeviceLockedScreen._eraseDevice`) — Settings is not reachable at all
+  /// while that lock holds.
   /// A destructive action the user has already confirmed never ends in
   /// silence, so this reports what happened rather than returning void.
   Future<EraseLocalDataResult> eraseLocalDataNow() async {

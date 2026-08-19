@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pottery_tracker/features/auth/screens/device_locked_screen.dart';
 import 'package:pottery_tracker/features/auth/screens/sign_in_screen.dart';
 import 'package:pottery_tracker/l10n/app_localizations.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
@@ -162,6 +163,110 @@ void main() {
             'the lock is enforced at the router so no writable route — the '
             'album, the create flow, the piece editor, the material screens — '
             'is reachable while another account owns this device',
+      );
+    });
+
+    testWidgets('every route that can write is turned back at the lock', (
+      tester,
+    ) async {
+      final container = _container(
+        status: AuthStatus.authenticated,
+        deviceLocked: true,
+      );
+      addTearDown(container.dispose);
+
+      final router = await _pumpRouter(tester, container);
+      await tester.pumpAndSettle();
+
+      // Landing on the lock is not enough on its own: the ruling is that a
+      // refused account cannot reach a write surface *at all*, so each one is
+      // asked for by name. Anything a future route adds has to be added here.
+      const writable = <String>[
+        '/', // the album, which archives and deletes
+        '/create', // the create flow
+        '/piece/piece-a', // the piece editor
+        '/settings', // sign-out, erase, delete account
+        '/settings/clays',
+        '/settings/glazes',
+        '/settings/tags',
+      ];
+
+      for (final route in writable) {
+        router.go(route);
+        await tester.pumpAndSettle();
+
+        expect(
+          router.state.matchedLocation,
+          '/device-locked',
+          reason: '$route must not be reachable on a contested device',
+        );
+        expect(
+          find.byType(DeviceLockedScreen),
+          findsOneWidget,
+          reason: 'and the lock screen is what the user is left looking at',
+        );
+      }
+    });
+
+    testWidgets('the owner signing back in gives the device back', (
+      tester,
+    ) async {
+      // The first of the two ways out. The lock is derived state, so it is
+      // driven here the way the app drives it: it flips, and the router has to
+      // let go of the lock screen without being told again.
+      final locked = StateProvider<bool>((ref) => true);
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated),
+            ),
+          ),
+          deviceLockedProvider.overrideWith((ref) => ref.watch(locked)),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // `routerProvider` mints a fresh `GoRouter` whenever the lock changes, so
+      // this watches it the way `PotteryTrackerApp` does rather than holding
+      // the first instance — otherwise the release could never be observed.
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: Consumer(
+            builder: (context, ref, _) => MaterialApp.router(
+              routerConfig: ref.watch(routerProvider),
+              localizationsDelegates: const [
+                AppLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [Locale('en')],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/device-locked',
+      );
+      expect(find.byType(DeviceLockedScreen), findsOneWidget);
+
+      container.read(locked.notifier).state = false;
+      await tester.pump();
+      // The album subtree reaches for the database and the sync stack, which a
+      // test does not provide; its build failure is beside the point here,
+      // which is that the redirect no longer holds the user on the lock.
+      tester.takeException();
+
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/',
+        reason:
+            'signing back in as the owner is one of the only two ways out, so '
+            'the lock releasing has to hand the app back on its own',
       );
     });
   });

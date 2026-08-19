@@ -17,6 +17,18 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Force-quit and relaunch — user stays authenticated
 - [ ] Sign out from Settings → local data erased, redirected back to sign-in screen
 
+### Device Locked (`/device-locked`)
+Reached when a session ends involuntarily (offline launch, revoked token) and a *different* account
+signs in afterwards: the device still holds the previous account's pottery, so it is read-only.
+
+- [ ] Signing in as a different account after an involuntary sign-out lands on the lock screen, not the album
+- [ ] Nothing that can write is reachable while locked — album, create flow, piece editor, Settings and the Manage Clays/Glazes/Tags screens all come straight back to the lock
+- [ ] "Sign In As Another Account" ends the session and returns to sign-in **without** deleting anything
+- [ ] The owner signing back in releases the lock and hands the app back on its own
+- [ ] "Erase This Device" confirms first — "Cancel" is the default action and tapping outside the dialog does not erase
+- [ ] Confirming the erase deletes everything on the device, releases the lock, and lets the signed-in account start fresh
+- [ ] An erase that could not run (a sync or wipe in flight) says so rather than failing silently
+
 ---
 
 ### Splash Screen (`/splash`)
@@ -462,3 +474,4 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-05-09 | In-app review prompt + feedback form |
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |
 | 2026-08-18 | Sign-out erases this device's local data behind a "Sign Out & Erase" confirmation, an unfinished wipe pauses backup until it completes, the last remaining sign-in provider cannot be disconnected, and the feedback reply email is capped at 254 characters |
+| 2026-08-19 | A device still holding another account's pottery is locked read-only at `/device-locked`: no route that can write is reachable, and the only ways out are the owner signing back in or a confirmed erase |
