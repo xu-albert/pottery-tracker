@@ -58,19 +58,6 @@ _setup({AuthState auth = _signedOut}) {
   // Unowned by default: the device belongs to whoever signs in first.
   when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
-  when(
-    () => syncService.getForeignRowIds(),
-  ).thenAnswer((_) async => <String>{});
-  when(
-    () => syncService.rememberForeignRowIds(any()),
-  ).thenAnswer((_) async => <String>{});
-  when(() => syncService.releaseForeignRowId(any())).thenAnswer((_) async {});
-  when(
-    () => syncService.reconcileForeignRowIds(),
-  ).thenAnswer((_) async => <String>{});
-  when(() => syncService.getContestedBy()).thenAnswer((_) async => null);
-  when(() => syncService.setContestedBy(any())).thenAnswer((_) async {});
-  when(() => syncService.clearContestedBy()).thenAnswer((_) async {});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
@@ -259,16 +246,21 @@ void main() {
       expect(state.errorMessage, contains('network down'));
     });
 
-    test('does not run concurrently (second call is no-op)', () async {
+    test('a sync that stands down is replayed, not dropped', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
 
       // Track calls AFTER the constructor's auto-sync has completed
       var callCount = 0;
+      var running = 0;
+      var everOverlapped = false;
       when(() => s.syncService.pushAllLocal(any())).thenAnswer((_) async {
         callCount++;
+        running++;
+        if (running > 1) everOverlapped = true;
         await Future.delayed(const Duration(milliseconds: 50));
+        running--;
       });
 
       // Fire two syncs concurrently
@@ -276,8 +268,14 @@ void main() {
       final second = s.notifier.syncNow();
       await Future.wait([first, second]);
 
-      // Only one of the two concurrent calls should have run
-      expect(callCount, 1);
+      expect(everOverlapped, isFalse, reason: 'syncs must not run together');
+      expect(
+        callCount,
+        2,
+        reason:
+            'the second stood down for the first, but the debt is owed and '
+            'replayed afterwards — dropping it silently loses the pull',
+      );
     });
   });
 

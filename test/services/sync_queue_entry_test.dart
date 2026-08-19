@@ -53,53 +53,6 @@ void main() {
     });
   });
 
-  group('SyncQueueEntry uid', () {
-    test('round-trips the producing session', () {
-      const entry = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'piece-1',
-        uid: 'user-a',
-      );
-      expect(SyncQueueEntry.fromJson(entry.toJson()).uid, 'user-a');
-    });
-
-    test('reads an entry persisted before entries carried a uid', () {
-      // The on-disk shape written by shipped builds: no `uid` key at all.
-      final legacy = SyncQueueEntry.fromJson({
-        'op': 'pushPiece',
-        'id': 'piece-1',
-      });
-
-      expect(legacy.uid, isNull);
-      expect(legacy.operation, SyncOperation.pushPiece);
-      expect(legacy.entityId, 'piece-1');
-    });
-
-    test('omits the key entirely for a local-only write', () {
-      const entry = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'piece-1',
-      );
-      expect(entry.toJson().containsKey('uid'), isFalse);
-    });
-
-    test('two sessions writing the same row are different entries', () {
-      const a = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'piece-1',
-        uid: 'user-a',
-      );
-      const b = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'piece-1',
-        uid: 'user-b',
-      );
-
-      expect(a == b, isFalse);
-      expect(a.hashCode == b.hashCode, isFalse);
-    });
-  });
-
   group('SyncQueueEntry mergeWith', () {
     test('unions changedFields when both non-null', () {
       const a = SyncQueueEntry(

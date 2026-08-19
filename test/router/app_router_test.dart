@@ -7,16 +7,24 @@ import 'package:pottery_tracker/features/auth/screens/sign_in_screen.dart';
 import 'package:pottery_tracker/l10n/app_localizations.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
+import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/router/app_router.dart';
 
 import '../helpers/firebase_mocks.dart';
 
-ProviderContainer _container({required AuthStatus status}) {
+ProviderContainer _container({
+  required AuthStatus status,
+  bool deviceLocked = false,
+}) {
   return ProviderContainer(
     overrides: [
       authProvider.overrideWith(
         (ref) => AuthNotifier.withState(AuthState(status: status)),
       ),
+      // The router consults the read-only lock, which is derived from sync
+      // state and would otherwise pull in the database. Routing is what these
+      // tests are about, so the lock is supplied directly.
+      deviceLockedProvider.overrideWithValue(deviceLocked),
     ],
   );
 }
@@ -131,6 +139,30 @@ void main() {
 
     testWidgets('keeps a signed-in user on the album', (tester) async {
       expect(await pathFor(tester, AuthStatus.authenticated), '/');
+    });
+  });
+
+  group('read-only lock redirect', () {
+    testWidgets('a locked device cannot reach a screen that writes', (
+      tester,
+    ) async {
+      final container = _container(
+        status: AuthStatus.authenticated,
+        deviceLocked: true,
+      );
+      addTearDown(container.dispose);
+
+      final router = await _pumpRouter(tester, container);
+      await tester.pumpAndSettle();
+
+      expect(
+        router.state.matchedLocation,
+        '/device-locked',
+        reason:
+            'the lock is enforced at the router so no writable route — the '
+            'album, the create flow, the piece editor, the material screens — '
+            'is reachable while another account owns this device',
+      );
     });
   });
 }

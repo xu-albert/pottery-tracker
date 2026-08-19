@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
+import '../providers/sync_provider.dart';
+import '../features/auth/screens/device_locked_screen.dart';
 import '../features/auth/screens/sign_in_screen.dart';
 import '../features/shell/screens/shell_screen.dart';
 import '../features/album/screens/album_screen.dart';
@@ -66,6 +68,10 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authStatus = ref.watch(authProvider.select((s) => s.status));
+  // A device holding another account's pottery is read-only, and the lock is
+  // enforced here rather than screen by screen: no route that can write is
+  // reachable while it holds.
+  final deviceLocked = ref.watch(deviceLockedProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -86,9 +92,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isSignedIn && loc != '/sign-in') return '/sign-in';
       if (isSignedIn && loc == '/sign-in') return '/';
 
+      if (deviceLocked && loc != '/device-locked') return '/device-locked';
+      if (!deviceLocked && loc == '/device-locked') return '/';
+
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/device-locked',
+        pageBuilder: (context, state) =>
+            _appEntry(state, const DeviceLockedScreen()),
+      ),
       GoRoute(
         path: '/sign-in',
         pageBuilder: (context, state) => _appEntry(state, const SignInScreen()),

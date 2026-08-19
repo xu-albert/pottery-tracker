@@ -427,21 +427,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncSyncing => 'Syncing...';
 
   @override
-  String syncWithheld(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count changes not backed up',
-      one: '1 change not backed up',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get syncWithheldDetail =>
-      'These were made while another account was signed in on this device, so they are not uploaded. Edit a piece to back it up again, or erase this device.';
-
-  @override
   String syncPending(int count) {
     return '$count changes pending';
   }
@@ -460,14 +445,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'The previous account\'s data still has to be erased from this device before anything is uploaded.';
 
   @override
-  String get syncBlockedForeignData => 'Signed in as a different account';
+  String get deviceLockedTitle => 'This device belongs to another account';
 
   @override
-  String get syncBlockedForeignDataDetail =>
-      'This device still holds pottery from another account, so nothing is uploaded. Sign in as that account to continue, or erase this device.';
+  String get deviceLockedMessage =>
+      'The pottery stored here was made by a different account, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.';
 
   @override
-  String get syncBlockedErase => 'Erase Device';
+  String get deviceLockedSwitchAccount => 'Sign In As Another Account';
+
+  @override
+  String get deviceLockedErase => 'Erase This Device';
+
+  @override
+  String get eraseLocalDataBusy => 'Busy right now — try again in a moment.';
+
+  @override
+  String get eraseLocalDataFailed =>
+      'Could not erase this device. Nothing was deleted.';
+
+  @override
+  String get deleteAccountBusy => 'Busy right now — try again in a moment.';
+
+  @override
+  String get deleteAccountFailed =>
+      'Could not delete your account. Nothing was deleted.';
 
   @override
   String get eraseLocalDataConfirmTitle => 'Erase this device?';
@@ -475,14 +477,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get eraseLocalDataConfirmMessage =>
       'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.';
-
-  @override
-  String get eraseLocalDataBusy =>
-      'Backup is busy right now — nothing was erased. Try again in a moment.';
-
-  @override
-  String get eraseLocalDataFailed =>
-      'This device could not be erased. Nothing is uploaded until it is.';
 
   @override
   String get eraseLocalDataConfirm => 'Erase';

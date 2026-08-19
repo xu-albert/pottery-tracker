@@ -199,13 +199,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-
     final result = await ref
         .read(syncStateProvider.notifier)
         .eraseLocalDataNow();
     if (!mounted) return;
-    // A destructive action the user has already confirmed never ends in
-    // silence: either the device is erased, or they are told why it was not.
     switch (result) {
       case EraseLocalDataResult.erased:
         break;
@@ -296,7 +293,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final IconData icon;
     final String title;
     String? subtitle;
-    int? subtitleMaxLines = 3;
     Widget? trailing;
 
     switch (syncState.status) {
@@ -309,27 +305,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: CircularProgressIndicator(strokeWidth: 2),
         );
       case SyncStatus.idle:
-        if (syncState.withheldCount > 0) {
-          // An empty queue does not mean a complete backup here: these rows
-          // are refused, not pending, so saying "backed up" would be the same
-          // lie the blocked states exist to avoid.
-          icon = Icons.cloud_off;
-          title = l10n.syncWithheld(syncState.withheldCount);
-          subtitle = l10n.syncWithheldDetail;
-          subtitleMaxLines = null;
+        if (syncState.pendingCount > 0) {
+          icon = Icons.cloud_upload;
+          title = l10n.syncPending(syncState.pendingCount);
         } else {
-          if (syncState.pendingCount > 0) {
-            icon = Icons.cloud_upload;
-            title = l10n.syncPending(syncState.pendingCount);
-          } else {
-            icon = Icons.cloud_done;
-            title = l10n.syncBackedUp;
-          }
-          if (syncState.lastSyncedAt != null) {
-            subtitle = l10n.syncLastSynced(
-              DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!),
-            );
-          }
+          icon = Icons.cloud_done;
+          title = l10n.syncBackedUp;
+        }
+        if (syncState.lastSyncedAt != null) {
+          subtitle = l10n.syncLastSynced(
+            DateFormat.yMMMd().add_jm().format(syncState.lastSyncedAt!),
+          );
         }
         trailing = GestureDetector(
           onLongPress: () =>
@@ -355,32 +341,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         // Not an error the user caused: this device is holding data it is not
         // allowed to upload. The two reasons need different ways out.
         icon = Icons.cloud_off;
-        // Both explanations end in the only recovery instruction the user is
-        // ever given, so this state's subtitle is never cut short. A taller
-        // tile in a state this rare is the accepted cost.
-        subtitleMaxLines = null;
-        switch (syncState.blockedReason) {
-          case SyncBlockedReason.foreignLocalData:
-            // Nothing was deleted here — the session was lost, not signed out
-            // of — so the first offer is to get the owner back, not to erase.
-            title = l10n.syncBlockedForeignData;
-            subtitle = l10n.syncBlockedForeignDataDetail;
-            trailing = TextButton(
-              onPressed: _confirmEraseLocalData,
-              child: Text(l10n.syncBlockedErase),
-            );
-          case SyncBlockedReason.pendingWipe:
-          case null:
-            // "Sync Now" no longer carries the retry — a delete on the push
-            // path could land mid-session — so the retry is this button, and
-            // it confirms first.
-            title = l10n.syncBlockedWipePending;
-            subtitle = l10n.syncBlockedWipePendingDetail;
-            trailing = TextButton(
-              onPressed: _confirmEraseLocalData,
-              child: Text(l10n.syncBlockedRetry),
-            );
-        }
+        // Only the owed-wipe case can be seen from here: a device holding
+        // another account's pottery is locked read-only at the router, so
+        // Settings is not reachable on it at all.
+        // "Sync Now" no longer carries the retry — a delete on the push path
+        // could land mid-session — so the retry is this button, and it
+        // confirms first.
+        title = l10n.syncBlockedWipePending;
+        subtitle = l10n.syncBlockedWipePendingDetail;
+        trailing = TextButton(
+          onPressed: _confirmEraseLocalData,
+          child: Text(l10n.syncBlockedRetry),
+        );
       case SyncStatus.disabled:
         icon = Icons.cloud_off;
         title = l10n.syncDisabled;
@@ -390,10 +362,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       leading: Icon(icon),
       title: Text(title),
       subtitle: subtitle != null
+          // The blocked explanation carries the only recovery instruction the
+          // user gets, so it wraps in full rather than being ellipsized; the
+          // taller tile in that rare state is deliberate.
           ? Text(
               subtitle,
-              maxLines: subtitleMaxLines,
-              overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
+              maxLines: syncState.status == SyncStatus.blocked ? null : 3,
+              overflow: syncState.status == SyncStatus.blocked
+                  ? TextOverflow.clip
+                  : TextOverflow.ellipsis,
             )
           : null,
       trailing: trailing,
@@ -516,12 +493,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
           _SectionHeader(title: 'Account'),
           ListTile(
-            // Self-exclusion is not cosmetic: a second tap lands in
-            // deleteAllData's early return, but its `finally` clears
-            // _isDeletingAccount and re-enables Sign Out mid-delete. That path
-            // ends the Firebase session before the in-flight delete reaches
-            // the account deletion, so the cloud data goes and the account
-            // itself silently survives.
+            // Excludes itself as well as sign-out: a second tap lands in the
+            // busy early return, and its finally would otherwise re-enable the
+            // sign-out tile while the first delete is still running.
             enabled: !_isSigningOut && !_isDeletingAccount,
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text(
@@ -555,7 +529,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               if (confirmed != true || !context.mounted) return;
               setState(() => _isDeletingAccount = true);
               try {
-                await ref.read(syncStateProvider.notifier).deleteAllData();
+                final result = await ref
+                    .read(syncStateProvider.notifier)
+                    .deleteAllData();
+                if (!context.mounted) return;
+                switch (result) {
+                  case DeleteAllDataResult.deleted:
+                    break;
+                  case DeleteAllDataResult.busy:
+                    AppSnackbar.show(context, message: l10n.deleteAccountBusy);
+                  case DeleteAllDataResult.failed:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountFailed,
+                    );
+                }
               } finally {
                 if (mounted) setState(() => _isDeletingAccount = false);
               }

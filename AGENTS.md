@@ -72,8 +72,8 @@ All data lives in local SQLite first. Writes never block on the network: every D
 Every write path must go through `SyncTrigger`; a DAO write without one silently never reaches the cloud.
 
 No account may push another account's data. The *next* account's first sync calls `pushAllLocal`, so
-whatever is on the device gets uploaded into whichever cloud tree is signed in — three captain
-decisions (2026-08-18) settle how that is prevented, and they differ by how the session ended:
+whatever is on the device gets uploaded into whichever cloud tree is signed in. Captain decisions
+(2026-08-18/19) settle how that is prevented, and they differ by how the session ended:
 
 - **Explicit sign-out is destructive.** `SyncNotifier.signOutAndWipeLocalData` ends the session and
   then deletes the local database, the photo and cache files, the sync queue and every pull
@@ -81,33 +81,26 @@ decisions (2026-08-18) settle how that is prevented, and they differ by how the 
   cross-account leak, and the confirmation must keep saying plainly that local data is deleted.
 - **Involuntary session loss destroys nothing.** `AuthNotifier._init` signs out when `reload()`
   fails or times out — which includes an ordinary offline launch — so it wipes nothing and relies on
-  the `localDataOwnerUid` stamp instead: every push path refuses while the stamp names someone else
-  (`SyncStatus.blocked` with `SyncBlockedReason.foreignLocalData`). The way out is signing back in
-  as the owner, or an explicit erase.
+  the `localDataOwnerUid` stamp instead.
+- **A device holding another account's data is locked read-only**, at the router
+  (`deviceLockedProvider` → `/device-locked`), not screen by screen. A refused account never reaches
+  the album, the create flow, the piece editor or the material screens, so it cannot write at all.
+  Exactly two ways out: the owner signs back in, or the user erases the device deliberately.
+  Leaving via the lock screen ends the session **without** wiping — none of that pottery belongs to
+  the account leaving.
+
+  This replaced an earlier design that let a refused account write and then tracked which rows it
+  had touched (queue uid stamps, a contested marker, a foreign-row set, a withheld count). Do not
+  reintroduce it: over four review rounds it produced two paths that destroyed the owner's pottery
+  permanently and one that reported "All data backed up" while pieces were excluded. Making the
+  device unwritable is the whole point — there is then nothing to attribute.
 - **An owed wipe is only ever retried where the user expects it** — at an auth transition, or from
   the confirmed `eraseLocalDataNow`. Never from `syncNow` or the debounced `_pushQueue`: a delete on
   the push path fires 500ms after any edit and would destroy the *current* account's work.
-- **A refused account can still write, so the drain refuses its work.** Being blocked does not make
-  the app read-only. `SyncTrigger` therefore stamps every queue entry with the uid that made the
-  write, and `_claimOrBlock` records those ids through `SyncService.rememberForeignRowIds`. Both
-  push paths withhold them: the drain in `_processQueueInternal`, and `pushAllLocal`, which reads
-  the database rather than the queue and so needs the record of its own. Do not drop the stamp to
-  simplify the entry — without it the owner uploads the intervening account's pottery.
-- **A session-less write is only the owner's on an uncontested device.** Null uid normally means
-  local-only and belongs to whoever owns the device, which is what keeps the local-only upgrade
-  path working. But a refused account keeps using the device and an offline launch takes its
-  session away, so `_claimOrBlock` records the refusal in `localDataContestedBy` and `SyncTrigger`
-  attributes session-less writes to *that* account until the owner claims the device again or it is
-  erased. Resolve this at enqueue time, never at drain time: reclaiming must not retroactively
-  release what the refused account wrote.
-- **Withholding a row ends when the owner rewrites it, and is never silent.** `noteLocalWrite`
-  releases a row once the account named by the owner stamp writes it itself — the only event that
-  settles whose version is on disk, and unavailable from queue order because a later write merges
-  into an entry's first position. Until then `SyncState.withheldCount` carries the count and the
-  sync tile refuses to say "All data backed up", the same lie the blocked states exist to avoid.
+- **A destructive action the user has confirmed never ends in silence.** `eraseLocalDataNow` and
+  `deleteAllData` both return a result the caller reports.
 
-`test/providers/account_switch_test.dart` is the end-to-end guard for all of these, against a real
-Drift database.
+`test/providers/account_switch_test.dart` is the end-to-end guard, against a real Drift database.
 
 ## Design Constraints
 

@@ -15,59 +15,17 @@ enum SyncOperation {
   deleteMaterial,
 }
 
-extension SyncOperationKind on SyncOperation {
-  /// Whether this operation removes the row rather than rewriting it.
-  ///
-  /// A deleted row leaves nothing of its writer's contents on the device, so
-  /// there is nothing for a later account to withhold from its own backup —
-  /// and nothing anybody could ever rewrite to release it again. Exhaustive on
-  /// purpose: a new operation has to be classified here rather than silently
-  /// defaulting.
-  bool get isDeletion => switch (this) {
-    SyncOperation.deletePiece ||
-    SyncOperation.deletePhoto ||
-    SyncOperation.deleteMaterial => true,
-    SyncOperation.pushPiece ||
-    SyncOperation.pushPhoto ||
-    SyncOperation.pushPhotoFile ||
-    SyncOperation.pushClay ||
-    SyncOperation.pushGlaze ||
-    SyncOperation.pushTag ||
-    SyncOperation.pushPieceGlazes ||
-    SyncOperation.pushPieceTags => false,
-  };
-}
-
 class SyncQueueEntry {
   final SyncOperation operation;
   final String entityId;
   final String? extraData;
   final List<String>? changedFields;
 
-  /// The uid of the session that made the write, or null when it was made
-  /// local-only with nobody signed in.
-  ///
-  /// A null uid belongs to whoever owns the device — that is the local-only
-  /// upgrade path, where a user's pre-sign-in pottery is theirs to upload. A
-  /// non-null uid that differs from the account draining the queue is work
-  /// from a session this device refused, and must never reach the draining
-  /// account's cloud tree.
-  ///
-  /// This has to be captured at enqueue time: by the time the queue drains,
-  /// the session that produced the write may be long gone.
-  ///
-  /// Entries persisted by builds that shipped before entries carried a uid
-  /// have no `uid` key. They deserialize to null and are therefore treated as
-  /// local-only, which is the only safe reading — those builds had no way for
-  /// a second account to write here at all.
-  final String? uid;
-
   const SyncQueueEntry({
     required this.operation,
     required this.entityId,
     this.extraData,
     this.changedFields,
-    this.uid,
   });
 
   Map<String, dynamic> toJson() => {
@@ -75,7 +33,6 @@ class SyncQueueEntry {
     'id': entityId,
     if (extraData != null) 'extra': extraData,
     if (changedFields != null) 'changedFields': changedFields,
-    if (uid != null) 'uid': uid,
   };
 
   factory SyncQueueEntry.fromJson(Map<String, dynamic> json) {
@@ -86,7 +43,6 @@ class SyncQueueEntry {
       changedFields: (json['changedFields'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      uid: json['uid'] as String?,
     );
   }
 
@@ -100,23 +56,19 @@ class SyncQueueEntry {
       entityId: entityId,
       extraData: extraData,
       changedFields: merged,
-      uid: uid,
     );
   }
 
-  /// [uid] is part of identity, so a second account's write never merges
-  /// into the owner's entry and rides out under the owner's name.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SyncQueueEntry &&
           operation == other.operation &&
           entityId == other.entityId &&
-          extraData == other.extraData &&
-          uid == other.uid;
+          extraData == other.extraData;
 
   @override
-  int get hashCode => Object.hash(operation, entityId, extraData, uid);
+  int get hashCode => Object.hash(operation, entityId, extraData);
 }
 
 class SyncQueue {

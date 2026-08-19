@@ -19,10 +19,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     db = AppDatabase.forTesting(NativeDatabase.memory());
     queue = SyncQueue();
-    writer = MaterialWriter(
-      db.materialsDao,
-      SyncTrigger(queue, currentUid: () async => 'user-a'),
-    );
+    writer = MaterialWriter(db.materialsDao, SyncTrigger(queue));
   });
 
   tearDown(() async {

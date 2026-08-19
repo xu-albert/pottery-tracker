@@ -61,19 +61,6 @@ void main() {
     when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});
     when(() => syncService.pullAll(any())).thenAnswer((_) async {});
     when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
-    when(
-      () => syncService.getForeignRowIds(),
-    ).thenAnswer((_) async => <String>{});
-    when(
-      () => syncService.rememberForeignRowIds(any()),
-    ).thenAnswer((_) async => <String>{});
-    when(() => syncService.releaseForeignRowId(any())).thenAnswer((_) async {});
-    when(
-      () => syncService.reconcileForeignRowIds(),
-    ).thenAnswer((_) async => <String>{});
-    when(() => syncService.getContestedBy()).thenAnswer((_) async => null);
-    when(() => syncService.setContestedBy(any())).thenAnswer((_) async {});
-    when(() => syncService.clearContestedBy()).thenAnswer((_) async {});
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
   });
 
@@ -207,11 +194,13 @@ void main() {
   });
 
   group('blocked sync tile', () {
-    // Verbatim `syncBlockedForeignDataDetail`: its last sentence is the only
-    // place the user is ever told how to get backup working again.
-    const foreignDetail =
-        'This device still holds pottery from another account, so nothing is '
-        'uploaded. Sign in as that account to continue, or erase this device.';
+    // Verbatim `syncBlockedWipePendingDetail`. A device holding *another
+    // account's* pottery never reaches Settings at all — it is locked
+    // read-only at the router — so the owed-wipe case is the only blocked
+    // state this tile can show.
+    const wipeDetail =
+        "The previous account's data still has to be erased from this device "
+        'before anything is uploaded.';
 
     testWidgets('shows the whole explanation on a narrow phone', (
       tester,
@@ -221,18 +210,22 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      // The wipe has to stay owed for the tile to show the blocked state: a
+      // resumed wipe that succeeds simply clears it.
       when(
-        () => syncService.getLocalDataOwner(),
-      ).thenAnswer((_) async => 'user-b');
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
 
       await pumpSettings(tester);
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 20));
       }
 
-      expect(find.text(foreignDetail), findsOneWidget);
+      expect(find.text(wipeDetail), findsOneWidget);
       final paragraph = tester.renderObject<RenderParagraph>(
-        find.text(foreignDetail),
+        find.text(wipeDetail),
       );
       expect(
         paragraph.didExceedMaxLines,
@@ -246,9 +239,8 @@ void main() {
     testWidgets('a confirmed erase that fails tells the user so', (
       tester,
     ) async {
-      when(
-        () => syncService.getLocalDataOwner(),
-      ).thenAnswer((_) async => 'user-b');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
       when(
         () => syncService.deleteLocalData(),
       ).thenThrow(Exception('disk full'));
@@ -258,7 +250,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 20));
       }
 
-      await tester.tap(find.text('Erase Device'));
+      await tester.tap(find.text('Erase & Retry'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Erase'));
       for (var i = 0; i < 10; i++) {
@@ -266,37 +258,7 @@ void main() {
       }
 
       // The dialog closing with nothing said would read as a successful erase.
-      expect(find.textContaining('could not be erased'), findsOneWidget);
-    });
-  });
-
-  group('withheld rows', () {
-    testWidgets('the tile never claims a clean backup while rows are held', (
-      tester,
-    ) async {
-      when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
-      when(
-        () => syncService.getForeignRowIds(),
-      ).thenAnswer((_) async => {'piece-1', 'photo-1'});
-      when(
-        () => syncService.reconcileForeignRowIds(),
-      ).thenAnswer((_) async => {'piece-1', 'photo-1'});
-
-      await pumpSettings(tester);
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-      }
-
-      expect(
-        find.text('All data backed up'),
-        findsNothing,
-        reason: 'two rows are excluded from the backup',
-      );
-      expect(find.text('2 changes not backed up'), findsOneWidget);
-      expect(
-        find.textContaining('another account was signed in'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Could not erase'), findsOneWidget);
     });
   });
 

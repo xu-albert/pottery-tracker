@@ -868,18 +868,6 @@ abstract class AppLocalizations {
   /// **'Syncing...'**
   String get syncSyncing;
 
-  /// Sync status when rows are being withheld because another account wrote them
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =1{1 change not backed up} other{{count} changes not backed up}}'**
-  String syncWithheld(int count);
-
-  /// Explains why some rows are excluded from the backup and how to resolve it
-  ///
-  /// In en, this message translates to:
-  /// **'These were made while another account was signed in on this device, so they are not uploaded. Edit a piece to back it up again, or erase this device.'**
-  String get syncWithheldDetail;
-
   /// Sync status with pending changes
   ///
   /// In en, this message translates to:
@@ -910,23 +898,53 @@ abstract class AppLocalizations {
   /// **'The previous account\'s data still has to be erased from this device before anything is uploaded.'**
   String get syncBlockedWipePendingDetail;
 
-  /// Sync status when this device's data belongs to another account
+  /// Title of the read-only lock screen
   ///
   /// In en, this message translates to:
-  /// **'Signed in as a different account'**
-  String get syncBlockedForeignData;
+  /// **'This device belongs to another account'**
+  String get deviceLockedTitle;
 
-  /// Explains why backup is blocked after an involuntary sign-out
+  /// Explains why the device is locked read-only
   ///
   /// In en, this message translates to:
-  /// **'This device still holds pottery from another account, so nothing is uploaded. Sign in as that account to continue, or erase this device.'**
-  String get syncBlockedForeignDataDetail;
+  /// **'The pottery stored here was made by a different account, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.'**
+  String get deviceLockedMessage;
 
-  /// Button that erases the other account's data from this device
+  /// Leaves the current session without deleting anything
   ///
   /// In en, this message translates to:
-  /// **'Erase Device'**
-  String get syncBlockedErase;
+  /// **'Sign In As Another Account'**
+  String get deviceLockedSwitchAccount;
+
+  /// Destructive action on the lock screen
+  ///
+  /// In en, this message translates to:
+  /// **'Erase This Device'**
+  String get deviceLockedErase;
+
+  /// Shown when an erase was refused because a sync or wipe is running
+  ///
+  /// In en, this message translates to:
+  /// **'Busy right now — try again in a moment.'**
+  String get eraseLocalDataBusy;
+
+  /// Shown when an erase failed
+  ///
+  /// In en, this message translates to:
+  /// **'Could not erase this device. Nothing was deleted.'**
+  String get eraseLocalDataFailed;
+
+  /// Shown when an account deletion was refused because a sync is running
+  ///
+  /// In en, this message translates to:
+  /// **'Busy right now — try again in a moment.'**
+  String get deleteAccountBusy;
+
+  /// Shown when an account deletion failed
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete your account. Nothing was deleted.'**
+  String get deleteAccountFailed;
 
   /// Title of the confirmation shown before erasing local data
   ///
@@ -939,18 +957,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.'**
   String get eraseLocalDataConfirmMessage;
-
-  /// Shown when a confirmed erase could not run because a sync or wipe was in flight
-  ///
-  /// In en, this message translates to:
-  /// **'Backup is busy right now — nothing was erased. Try again in a moment.'**
-  String get eraseLocalDataBusy;
-
-  /// Shown when a confirmed erase was attempted and failed
-  ///
-  /// In en, this message translates to:
-  /// **'This device could not be erased. Nothing is uploaded until it is.'**
-  String get eraseLocalDataFailed;
 
   /// Destructive confirm button for erasing local data
   ///
