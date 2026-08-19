@@ -6,10 +6,9 @@ import 'sync_trigger.dart';
 /// created.
 ///
 /// `MaterialsDao.findOrCreate*` returns an existing row untouched, so a caller
-/// that enqueues unconditionally reports a write that never happened. On a
-/// device another account has been refused on, that records the owner's own
-/// material as somebody else's and withholds it from the backup — picking a
-/// clay from the dropdown is enough to trigger it.
+/// that enqueues unconditionally reports a write that never happened and
+/// queues a no-op push — picking a clay from the dropdown is enough to
+/// trigger it.
 ///
 /// Every caller goes through here so the rule lives at one boundary rather
 /// than being restated at each call site, where a new one would silently miss

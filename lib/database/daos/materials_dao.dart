@@ -52,10 +52,8 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
   /// Returns the row for [name] and whether it had to be created.
   ///
   /// An existing row is returned untouched, so a caller that enqueues a
-  /// sync unconditionally would report a write that never happened —
-  /// which on a device another account has been refused on records the
-  /// owner's own material as somebody else's and withholds it from the
-  /// backup. Only enqueue when the row was created.
+  /// sync unconditionally would report a write that never happened and queue
+  /// a no-op push. Only enqueue when the row was created.
   Future<(ClayOption, bool)> findOrCreateClay(String name) async {
     final trimmed = name.trim();
     final existing =
@@ -178,10 +176,8 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
   /// Returns the row for [name] and whether it had to be created.
   ///
   /// An existing row is returned untouched, so a caller that enqueues a
-  /// sync unconditionally would report a write that never happened —
-  /// which on a device another account has been refused on records the
-  /// owner's own material as somebody else's and withholds it from the
-  /// backup. Only enqueue when the row was created.
+  /// sync unconditionally would report a write that never happened and queue
+  /// a no-op push. Only enqueue when the row was created.
   Future<(GlazeOption, bool)> findOrCreateGlaze(String name) async {
     final trimmed = name.trim();
     final existing =
@@ -358,10 +354,8 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
   /// Returns the row for [name] and whether it had to be created.
   ///
   /// An existing row is returned untouched, so a caller that enqueues a
-  /// sync unconditionally would report a write that never happened —
-  /// which on a device another account has been refused on records the
-  /// owner's own material as somebody else's and withholds it from the
-  /// backup. Only enqueue when the row was created.
+  /// sync unconditionally would report a write that never happened and queue
+  /// a no-op push. Only enqueue when the row was created.
   Future<(TagOption, bool)> findOrCreateTag(String name) async {
     final trimmed = name.trim();
     final existing =
