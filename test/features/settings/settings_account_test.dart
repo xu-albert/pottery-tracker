@@ -64,8 +64,6 @@ void main() {
     // The refusal marker is device-ownership state like the stamp above: the
     // notifier reads it on every claim, so a mock has to answer for it.
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
-    when(() => syncService.setDeviceContested()).thenAnswer((_) async {});
-    when(() => syncService.clearDeviceContested()).thenAnswer((_) async {});
     // Unowned by default: Settings is only reachable on a device this account
     // owns, since a contested one is locked read-only at the router.
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
@@ -201,6 +199,36 @@ void main() {
   });
 
   group('delete account tile', () {
+    testWidgets('a wipe that fails after the cloud went still reports', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Delete Account & Data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete Everything'));
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+
+      // The wipe now raises the read-only lock, which in the app redirects to
+      // the lock screen — so this is the case where the result went silent.
+      // Whichever partial outcome it is, the surviving local copy is named.
+      expect(find.textContaining('copy on this device'), findsOneWidget);
+    });
+
     testWidgets('excludes itself and Sign Out while a delete is in flight', (
       tester,
     ) async {

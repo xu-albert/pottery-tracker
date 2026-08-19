@@ -204,18 +204,6 @@ class SyncService {
     return prefs.getBool(deviceContestedKey) ?? false;
   }
 
-  /// Records that an account was refused this device.
-  Future<void> setDeviceContested() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(deviceContestedKey, true);
-  }
-
-  /// Drops the refusal, which only the owner reclaiming the device may do.
-  Future<void> clearDeviceContested() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(deviceContestedKey);
-  }
-
   /// Clears every per-uid pull watermark.
   ///
   /// Leaving one behind is not just untidy: the same account signing back in

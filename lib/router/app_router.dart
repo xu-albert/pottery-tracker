@@ -73,6 +73,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   // enforced here rather than screen by screen: no route that can write is
   // reachable while it holds.
   final deviceLocked = ref.watch(deviceLockedProvider);
+  // The lock is decided here, so the refusal it implies is recorded here too:
+  // the shell never mounts on the lock screen, so nothing on the sync path is
+  // guaranteed to run on the very path that refuses somebody.
+  ref.watch(deviceRefusalRecorderProvider);
   // Whether anyone already has a stake in what is on this device, which is
   // what decides whether the redirect may pass through while auth resolves.
   final deviceStamped = ref.watch(deviceStampedProvider);

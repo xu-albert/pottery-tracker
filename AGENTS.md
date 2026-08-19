@@ -82,18 +82,33 @@ whatever is on the device gets uploaded into whichever cloud tree is signed in. 
 - **Involuntary session loss destroys nothing.** `AuthNotifier._init` signs out when `reload()`
   fails or times out — which includes an ordinary offline launch — so it wipes nothing and relies on
   the `localDataOwnerUid` stamp instead.
-- **A device holding another account's data is locked read-only**, at the router
-  (`deviceLockedProvider` → `/device-locked`), not screen by screen. A refused account never reaches
-  the album, the create flow, the piece editor or the material screens, so it cannot write at all.
-  Exactly two ways out: the owner signs back in, or the user erases the device deliberately.
-  Leaving via the lock screen ends the session **without** wiping — none of that pottery belongs to
-  the account leaving.
+- **A locked device is locked read-only at the router** (`deviceLockedProvider` → `/device-locked`),
+  not screen by screen, so a refused account never reaches the album, the create flow, the piece
+  editor or the material screens and cannot write at all. `deviceLockReasonProvider` says which of
+  two situations it is, and they are opposites — the screen picks its words and its actions from it:
+  - **Foreign pottery.** Exactly two ways out: the owner signs back in, or the user erases the
+    device deliberately. Leaving via the lock screen ends the session **without** wiping — none of
+    that pottery belongs to the account leaving.
+  - **An owed wipe** the user confirmed and did not get. It is their own library, so leaving is not
+    offered; finishing the erase is the only way out. The lock reflects an *owed* wipe, never one in
+    flight: locking during a wipe redirects away from the screen that owes the user its result.
 
-  This replaced an earlier design that let a refused account write and then tracked which rows it
-  had touched (queue uid stamps, a contested marker, a foreign-row set, a withheld count). Do not
-  reintroduce it: over four review rounds it produced two paths that destroyed the owner's pottery
-  permanently and one that reported "All data backed up" while pieces were excluded. Making the
-  device unwritable is the whole point — there is then nothing to attribute.
+  Every input to the lock is persisted (`localDataOwnerUid`, `localDataContested`,
+  `pendingLocalDataWipe`) and seeded in `main()` before `runApp`, never derived from `SyncStatus` —
+  status is transient, and each transition that released the lock reopened the hole.
+
+  `localDataContested` is one **device-level** flag recording that somebody was refused here, and it
+  is deliberate and required: a session-less launch is how the owner opens the app offline *and* how
+  a refused account returns after force-quitting the lock screen, so nothing derived from the
+  session can tell them apart. It is written by `deviceRefusalRecorderProvider`, where the lock is
+  decided — not on the sync path, which the refusal never has to reach.
+
+  It is **not** the per-row attribution design that preceded all this, which let a refused account
+  write and then tracked which rows it had touched: queue uid stamps, a foreign-row set, a withheld
+  count, reconciliation, deletion skipping. Do not reintroduce any of those. Over four review rounds
+  they produced two paths that destroyed the owner's pottery permanently and one that reported
+  "All data backed up" while pieces were excluded. Making the device unwritable is the whole point —
+  there is then nothing to attribute.
 - **An owed wipe is only ever retried where the user expects it** — at an auth transition, or from
   the confirmed `eraseLocalDataNow`. Never from `syncNow` or the debounced `_pushQueue`: a delete on
   the push path fires 500ms after any edit and would destroy the *current* account's work.

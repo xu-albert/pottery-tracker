@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -111,6 +112,9 @@ void main() {
       ],
     );
     notifier = container.read(syncStateProvider.notifier);
+    // `routerProvider` keeps this alive in the app. It owns the refusal marker,
+    // which is deliberately not written from the sync path.
+    container.read(deviceRefusalRecorderProvider);
     // Reading the provider starts A's first sync; let it finish so no test
     // begins with one still in flight.
     await settle();
@@ -1036,6 +1040,82 @@ void main() {
     });
   });
 
+  group('a wipe in flight is not an owed wipe', () {
+    // The lock exists for a wipe that was confirmed and did not happen. While
+    // one is still running it must not engage, because the router would tear
+    // down the screen that owes the user the result of what they confirmed.
+    test('the lock stays down while a confirmed wipe is running', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      final gate = Completer<void>();
+      syncService.wipeGate = gate;
+      final erase = notifier.eraseLocalDataNow();
+      await settle();
+
+      expect(
+        container.read(deviceLockedProvider),
+        isFalse,
+        reason:
+            'the wipe is in flight, not owed — locking here redirects away '
+            'from the screen that has to report how it went',
+      );
+
+      gate.complete();
+      syncService.wipeGate = null;
+      expect(await erase, EraseLocalDataResult.erased);
+      await settle();
+      expect(container.read(deviceLockedProvider), isFalse);
+    });
+
+    test('a sign-out wipe reports before the lock goes up', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      final gate = Completer<void>();
+      syncService.wipeGate = gate;
+      syncService.wipeFails = true;
+      final signOut = notifier.signOutAndWipeLocalData(() async {});
+      await settle();
+
+      expect(
+        container.read(deviceLockedProvider),
+        isFalse,
+        reason: 'Settings has to survive long enough to say the wipe failed',
+      );
+
+      gate.complete();
+      syncService.wipeGate = null;
+      await expectLater(signOut, throwsException);
+      await settle();
+
+      expect(
+        container.read(deviceLockedProvider),
+        isTrue,
+        reason: 'and once it has failed the wipe really is owed',
+      );
+    });
+
+    test('a delete-account wipe reports before the lock goes up', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      final gate = Completer<void>();
+      syncService.wipeGate = gate;
+      syncService.wipeFails = true;
+      final delete = notifier.deleteAllData();
+      await settle();
+
+      expect(container.read(deviceLockedProvider), isFalse);
+
+      gate.complete();
+      syncService.wipeGate = null;
+      expect(await delete, DeleteAllDataResult.accountAndLocalDataSurvived);
+      await settle();
+      expect(container.read(deviceLockedProvider), isTrue);
+    });
+  });
+
   test(
     'a delete that loses both halves never reports the account as gone',
     () async {
@@ -1110,8 +1190,14 @@ class _FlakyWipeSyncService extends SyncService {
   /// Holds `pushAllLocal` open, standing in for a slow first sync.
   Duration pushAllLocalDelay = Duration.zero;
 
+  /// Holds `deleteLocalData` open, so a test can look at the device while the
+  /// wipe the user confirmed is still running.
+  Completer<void>? wipeGate;
+
   @override
   Future<void> deleteLocalData() async {
+    final gate = wipeGate;
+    if (gate != null) await gate.future;
     if (wipeFails) throw Exception('simulated local wipe failure');
     return super.deleteLocalData();
   }

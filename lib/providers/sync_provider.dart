@@ -394,7 +394,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // wipe still owed, and nothing may push until it is done.
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(pendingWipeKey, true);
-      _publishPendingWipe(true);
 
       try {
         await endSession();
@@ -416,6 +415,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       await _wipeLocalData();
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
+    } catch (e) {
+      await _publishOwedWipe();
+      rethrow;
     } finally {
       _wiping = false;
     }
@@ -460,6 +462,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
     } catch (e) {
       debugPrint('SyncNotifier: explicit erase failed: $e');
+      await _publishOwedWipe();
       state = state.copyWith(
         status: SyncStatus.error,
         errorMessage: e.toString(),
@@ -484,17 +487,28 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final staleSync = _staleSyncInFlight;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(pendingWipeKey, true);
-    _publishPendingWipe(true);
     await _queue.clear();
     await _syncService.deleteLocalData();
     // deleteLocalData clears the stamp and the refusal, so nobody owns this
     // device now and there is nothing left here to be refused over.
     _publishLocalDataOwner(null);
     _publishDeviceContested(false);
-    if (!staleSync) {
-      await prefs.remove(pendingWipeKey);
-      _publishPendingWipe(false);
-    }
+    if (!staleSync) await prefs.remove(pendingWipeKey);
+    await _publishOwedWipe();
+  }
+
+  /// Publishes whether a wipe is *owed* — outstanding with nothing currently
+  /// attempting it — which is what the read-only lock is about.
+  ///
+  /// Only ever called once a wipe attempt has settled. The flag on disk goes
+  /// down *before* the delete, so a process killed mid-wipe comes back owing
+  /// one; the lock must not follow it there, because a wipe in flight is the
+  /// user's confirmed action still running, and locking then redirects the
+  /// router away from the screen that owes them the result. A launch that
+  /// finds the flag already set is the owed case, and `main` seeds it.
+  Future<void> _publishOwedWipe() async {
+    final prefs = await SharedPreferences.getInstance();
+    _publishPendingWipe(prefs.getBool(pendingWipeKey) == true);
   }
 
   /// Claims this device for [uid], or refuses it — the one boundary every
@@ -507,25 +521,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// invariant is that a device which has pushed for an account is stamped
   /// with it, whichever path did the pushing.
   Future<bool> _claimOrBlock(String uid) async {
-    if (await _blockedByPendingWipe() ||
-        await _blockedByForeignLocalData(uid)) {
-      // Remember the refusal itself, not just who owns the device. A refused
-      // account that force-quits and relaunches offline comes back with no
-      // uid at all, which is indistinguishable from the owner opening the app
-      // offline — so the stamp alone would hand the album straight back.
-      await _syncService.setDeviceContested();
-      _publishDeviceContested(true);
-      return true;
-    }
+    if (await _blockedByPendingWipe()) return true;
+    if (await _blockedByForeignLocalData(uid)) return true;
     // Allowed to sync, so this account owns what is on the device from here
     // on. Claiming it before the push matters: if the process dies mid-sync,
     // the stamp is already correct.
     await _syncService.setLocalDataOwner(uid);
     _publishLocalDataOwner(uid);
-    // A claim that succeeded is the owner back on their own device, which is
-    // the only thing short of an erase that lifts a refusal.
-    await _syncService.clearDeviceContested();
-    _publishDeviceContested(false);
     return false;
   }
 
@@ -621,6 +623,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // Leave the flag set: [_blockedByPendingWipe] then refuses every push
       // until a later attempt succeeds, rather than uploading what survived.
       debugPrint('SyncNotifier: resumed wipe failed, still pending: $e');
+      await _publishOwedWipe();
     }
   }
 
@@ -662,6 +665,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _wipeLocalData();
       } catch (e) {
         debugPrint('SyncNotifier: deleteAllData local wipe failed: $e');
+        await _publishOwedWipe();
         state = state.copyWith(
           status: SyncStatus.error,
           errorMessage: e.toString(),
@@ -795,6 +799,68 @@ final deviceLockReasonProvider = Provider<DeviceLockReason?>((ref) {
   }
   return null;
 });
+
+/// Persists the refusal marker at the moment the lock is *decided*, and drops
+/// it the moment the owner is back.
+///
+/// It cannot live on the push path. `SyncNotifier` is only constructed once
+/// something reads [syncStateProvider], which on the primary refusal — B signs
+/// in, the stamp sends them straight to `/device-locked` — never happens: the
+/// shell does not mount on the lock screen, on sign-in or on the holding
+/// route, so no claim is ever attempted and the refusal went unrecorded. The
+/// same gap swallowed the mirror case, where a process killed before the
+/// owner's first claim left a stale refusal locking the owner out of their own
+/// device, against ruling 2. Deriving both from the lock reason itself means
+/// they happen wherever the decision does, which is everywhere it matters.
+///
+/// Kept alive by `routerProvider`, which is where the lock is enforced and
+/// which exists for as long as the app does.
+final deviceRefusalRecorderProvider = Provider<void>((ref) {
+  var alive = true;
+  ref.onDispose(() => alive = false);
+
+  void record(DeviceLockReason? reason) {
+    if (!alive) return;
+    if (reason == DeviceLockReason.foreignLocalData) {
+      if (ref.read(deviceContestedProvider)) return;
+      ref.read(deviceContestedProvider.notifier).state = true;
+      unawaited(_writeDeviceContested(true));
+      return;
+    }
+    // Only the owner may lift a refusal. A session-less launch cannot, or the
+    // refused account would clear it simply by force-quitting and reopening.
+    final uid = ref.read(authProvider).uid;
+    final owner = ref.read(localDataOwnerProvider);
+    if (uid == null || (owner != null && owner != uid)) return;
+    if (!ref.read(deviceContestedProvider)) return;
+    ref.read(deviceContestedProvider.notifier).state = false;
+    unawaited(_writeDeviceContested(false));
+  }
+
+  ref.listen<DeviceLockReason?>(
+    deviceLockReasonProvider,
+    (_, reason) => record(reason),
+  );
+  // The first answer counts as much as any later one — a refusal is usually
+  // already true on the frame the app starts — but a provider may not write to
+  // another one while it is building, so the opening read waits a microtask.
+  // Nothing is lost: the lock itself reads the stamp directly and is right on
+  // that first frame; only the record of it is a beat behind.
+  Future.microtask(() => record(ref.read(deviceLockReasonProvider)));
+});
+
+/// Writes the marker straight to preferences rather than through
+/// [SyncService], whose constructor would drag the database into the router.
+/// The key stays declared there, and `deleteLocalData` still clears it, so an
+/// erase lifts the refusal along with everything else.
+Future<void> _writeDeviceContested(bool contested) async {
+  final prefs = await SharedPreferences.getInstance();
+  if (contested) {
+    await prefs.setBool(SyncService.deviceContestedKey, true);
+  } else {
+    await prefs.remove(SyncService.deviceContestedKey);
+  }
+}
 
 /// Whether this device is locked read-only. See [deviceLockReasonProvider],
 /// which also says which of the two situations the user is in — they need

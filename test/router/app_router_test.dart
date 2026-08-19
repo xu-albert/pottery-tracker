@@ -5,12 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pottery_tracker/features/auth/screens/device_locked_screen.dart';
 import 'package:pottery_tracker/features/auth/screens/sign_in_screen.dart';
+import 'package:pottery_tracker/features/shell/screens/shell_screen.dart';
 import 'package:pottery_tracker/features/shell/screens/starting_screen.dart';
 import 'package:pottery_tracker/l10n/app_localizations.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/router/app_router.dart';
+import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/firebase_mocks.dart';
 
@@ -74,6 +77,8 @@ Future<GoRouter> _pumpRouter(
 
 void main() {
   setUpAll(setupFirebaseCoreMocks);
+
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('splashCompleteProvider', () {
     test('defaults to false', () {
@@ -308,6 +313,119 @@ void main() {
           reason: 'and the lock screen is what the user is left looking at',
         );
       }
+    });
+
+    testWidgets('a refusal is recorded even though the shell never mounts', (
+      tester,
+    ) async {
+      // The primary refusal: the device is stamped for A, B signs in, and the
+      // stamp sends B straight to the lock screen. Nothing mounts the shell on
+      // that route, so `SyncNotifier` is never built and no claim is ever
+      // attempted — the refusal has to be recorded from the lock decision
+      // itself or it is not recorded at all.
+      SharedPreferences.setMockInitialValues({
+        SyncService.localDataOwnerKey: 'account-a',
+      });
+
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => AuthNotifier.withState(
+              const AuthState(
+                status: AuthStatus.authenticated,
+                uid: 'account-b',
+              ),
+            ),
+          ),
+          localDataOwnerProvider.overrideWith((ref) => 'account-a'),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = await _pumpRouter(tester, container);
+      await tester.pumpAndSettle();
+
+      expect(router.state.matchedLocation, '/device-locked');
+      expect(
+        find.byType(ShellScreen),
+        findsNothing,
+        reason:
+            'the shell is what constructs SyncNotifier, and it never mounts '
+            'on the lock screen — so nothing on the sync path can be relied '
+            'on to record the refusal',
+      );
+
+      // The recorder records off the build, so give it its turn.
+      await tester.pumpAndSettle();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(SyncService.deviceContestedKey), isTrue);
+
+      // Force-quit and relaunch offline: `AuthNotifier._init` cannot verify
+      // the token, so it comes back session-less. Seeded from preferences
+      // exactly as `main` seeds it.
+      final relaunched = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated),
+            ),
+          ),
+          localDataOwnerProvider.overrideWith(
+            (ref) => prefs.getString(SyncService.localDataOwnerKey),
+          ),
+          deviceContestedProvider.overrideWith(
+            (ref) => prefs.getBool(SyncService.deviceContestedKey) ?? false,
+          ),
+        ],
+      );
+      addTearDown(relaunched.dispose);
+
+      expect(
+        relaunched.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            'otherwise killing the app from the lock screen is a way back '
+            "onto the owner's writable album",
+      );
+    });
+
+    testWidgets('the owner reclaiming the device clears the refusal', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        SyncService.localDataOwnerKey: 'account-a',
+        SyncService.deviceContestedKey: true,
+      });
+
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => AuthNotifier.withState(
+              const AuthState(
+                status: AuthStatus.authenticated,
+                uid: 'account-a',
+              ),
+            ),
+          ),
+          localDataOwnerProvider.overrideWith((ref) => 'account-a'),
+          deviceContestedProvider.overrideWith((ref) => true),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpRouter(tester, container);
+      tester.takeException();
+
+      await tester.pumpAndSettle();
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getBool(SyncService.deviceContestedKey),
+        isNull,
+        reason:
+            'a stale refusal would lock the owner out of their own device on '
+            'the next offline launch, which is what ruling 2 forbids',
+      );
+      expect(container.read(deviceLockedProvider), isFalse);
     });
 
     testWidgets('the owner signing back in gives the device back', (

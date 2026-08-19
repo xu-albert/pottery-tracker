@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants/app_colors.dart';
 import '../database/daos/pieces_dao.dart';
+import '../providers/auth_provider.dart';
 import '../providers/pieces_provider.dart';
 import '../providers/splash_provider.dart';
 import 'vase_logo.dart';
@@ -46,6 +47,7 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
   late final AnimationController _exitController;
   late final CurvedAnimation _exit;
   ProviderSubscription<AsyncValue<List<PieceWithCover>>>? _piecesSub;
+  ProviderSubscription<AuthStatus>? _authSub;
   Timer? _fallbackTimer;
   Timer? _holdTimer;
   bool _drawDone = false;
@@ -72,6 +74,15 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
       (previous, next) => _liftIfReady(),
     );
 
+    // On a device an account already claims, the router holds on a bare
+    // holding route until auth resolves — so lifting before then reveals
+    // nothing at all. Waiting for the answer costs the owner nothing: the
+    // album is already built and its query already run underneath.
+    _authSub = ref.listenManual(
+      authProvider.select((s) => s.status),
+      (previous, next) => _liftIfReady(),
+    );
+
     _fallbackTimer = Timer(SplashOverlay.fallback, _release);
   }
 
@@ -80,6 +91,7 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
     _fallbackTimer?.cancel();
     _holdTimer?.cancel();
     _piecesSub?.close();
+    _authSub?.close();
     _exit.dispose();
     _exitController.dispose();
     super.dispose();
@@ -95,6 +107,7 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
     if (!mounted || !_drawDone) return;
     if (_holdTimer?.isActive ?? false) return;
     if (!ref.read(filteredPiecesProvider).hasValue) return;
+    if (ref.read(authProvider).status == AuthStatus.unknown) return;
     if (_exitController.status == AnimationStatus.dismissed) {
       _exitController.forward();
     }

@@ -63,8 +63,6 @@ void main() {
     // The refusal marker is device-ownership state like the stamp above: the
     // notifier reads it on every claim, so a mock has to answer for it.
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
-    when(() => syncService.setDeviceContested()).thenAnswer((_) async {});
-    when(() => syncService.clearDeviceContested()).thenAnswer((_) async {});
   });
 
   /// [owedWipe] picks which of the two locks the screen is standing in for.
@@ -167,6 +165,15 @@ void main() {
 
     // The dialog closing with nothing said would read as a successful erase.
     expect(find.textContaining('Could not erase'), findsOneWidget);
+
+    // The failed wipe leaves one owed, and the owed-wipe reason outranks the
+    // stamp — so the screen changes underneath the message, dropping the
+    // "sign in as the owner" way out. Deliberate (B did confirm the
+    // destruction, and the owed wipe is retried at the owner's next auth
+    // transition), and asserted so a change to that precedence is visible.
+    await tester.pump();
+    expect(find.text('Backup paused'), findsOneWidget);
+    expect(find.text('Sign In As Another Account'), findsNothing);
   });
 
   group('an owed wipe', () {

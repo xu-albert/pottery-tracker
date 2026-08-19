@@ -61,8 +61,6 @@ _setup({AuthState auth = _signedOut}) {
   // The refusal marker is device-ownership state like the stamp above: the
   // notifier reads it on every claim, so a mock has to answer for it.
   when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
-  when(() => syncService.setDeviceContested()).thenAnswer((_) async {});
-  when(() => syncService.clearDeviceContested()).thenAnswer((_) async {});
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
