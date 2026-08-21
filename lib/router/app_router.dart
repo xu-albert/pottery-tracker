@@ -80,9 +80,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   // Whether anyone already has a stake in what is on this device, which is
   // what decides whether the redirect may pass through while auth resolves.
   final deviceStamped = ref.watch(deviceStampedProvider);
-  // Whether the user asked the lock screen for the sign-in screen. Read
-  // here so the answer outlives the rebuild that signing out causes.
+  // Which lock the user asked to leave for the sign-in screen, and which one
+  // is actually up. Read here so the answer outlives the rebuild that signing
+  // out causes, and compared so that consent given for one lock cannot answer
+  // for another — only the foreign-pottery lock offers this way out at all.
   final lockExitRequested = ref.watch(lockExitRequestedProvider);
+  final lockReason = ref.watch(deviceLockReasonProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -121,12 +124,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       //
       // So a locked device rests on '/device-locked', which is what keeps the
       // explanation and the erase reachable with no session, and it steps
-      // aside for the sign-in screen once the user has asked for it. That
-      // request is what carries the way out across the rebuild: this provider
-      // is re-read after signing out mints a new router, whereas the lock
-      // screen's own navigation would be thrown away with the old one.
+      // aside for the sign-in screen once the user has asked to leave *this*
+      // lock. That request is what carries the way out across the rebuild: the
+      // provider is re-read after signing out mints a new router, whereas the
+      // lock screen's own navigation would be thrown away with the old one.
+      // Named rather than merely matched: finishing the erase is the only way
+      // out of an owed wipe, so that lock does not open this door for any
+      // request at all, and a tap meant for a foreign-pottery lock cannot
+      // reach past the one surface that retries the wipe.
       if (deviceLocked) {
-        if (lockExitRequested && !isSignedIn) {
+        if (lockReason == DeviceLockReason.foreignLocalData &&
+            lockExitRequested == lockReason &&
+            !isSignedIn) {
           return loc == '/sign-in' ? null : '/sign-in';
         }
         if (loc != '/device-locked') return '/device-locked';

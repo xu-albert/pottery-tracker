@@ -516,12 +516,20 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// with it, whichever path did the pushing.
   Future<bool> _claimOrBlock(String uid) async {
     if (await _blockedByPendingWipe()) return true;
-    if (await _blockedByForeignLocalData(uid)) return true;
+    final foreign = await _blockedByForeignLocalData(uid);
+    if (foreign.blocked) return true;
     // Allowed to sync, so this account owns what is on the device from here
     // on. Claiming it before the push matters: if the process dies mid-sync,
     // the stamp is already correct.
-    await _syncService.setLocalDataOwner(uid);
-    _publishLocalDataOwner(uid);
+    //
+    // Only when it is not already ours, though. This runs on every debounced
+    // push — 500ms after any edit — and the platform stores rewrite the whole
+    // backing file per write, so an unguarded claim meant a disk write per
+    // sync for a value that changes at most once per account.
+    if (foreign.owner != uid) {
+      await _syncService.setLocalDataOwner(uid);
+      _publishLocalDataOwner(uid);
+    }
     return false;
   }
 
@@ -587,13 +595,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// anything. The stamp left behind is what stops the next account pushing
   /// the previous one's pieces into its own cloud tree. The way out is to
   /// sign back in as the owner, or to erase the device on purpose.
-  Future<bool> _blockedByForeignLocalData(String uid) async {
+  /// Returns the stamp it read alongside the decision, so the caller can tell
+  /// "nobody owns this device" from "we already do" without a second read.
+  Future<({bool blocked, String? owner})> _blockedByForeignLocalData(
+    String uid,
+  ) async {
     final owner = await _syncService.getLocalDataOwner();
     _publishLocalDataOwner(owner);
-    if (owner == null || owner == uid) return false;
+    if (owner == null || owner == uid) {
+      return (blocked: false, owner: owner);
+    }
     debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
     state = state.copyWith(status: SyncStatus.blocked);
-    return true;
+    return (blocked: true, owner: owner);
   }
 
   /// Whether an owed local wipe has to stop this device from pushing.
@@ -666,12 +680,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _wiping = true;
     state = state.copyWith(status: SyncStatus.syncing);
 
+    // Declared outside the try so the outer catch can still say what actually
+    // happened. Inside it, every unexpected throw past the cloud delete came
+    // back as "nothing was deleted" — the same lie as reporting a live account
+    // deleted, only mirrored, and just as impossible for the user to act on.
+    var cloudDeleted = false;
+    var accountSurvived = false;
+    var localWiped = false;
+
     try {
       final auth = _ref.read(authProvider);
 
       // Delete cloud data and account only if signed in
-      var cloudDeleted = false;
-      var accountSurvived = false;
       if (auth.isSignedIn && auth.uid != null) {
         await _syncService.deleteCloudData(auth.uid!);
         cloudDeleted = true;
@@ -700,6 +720,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // gone, so a failure here is partial, not "nothing was deleted".
       try {
         await _wipeLocalData();
+        localWiped = true;
       } catch (e) {
         debugPrint('SyncNotifier: deleteAllData local wipe failed: $e');
         await _publishOwedWipe();
@@ -730,7 +751,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
         status: SyncStatus.error,
         errorMessage: e.toString(),
       );
-      return DeleteAllDataResult.failed;
+      // Only "nothing was deleted" when nothing was. Past the cloud delete the
+      // outcome is partial, and which part survived depends on how far it got:
+      // a throw while recording the owed deletion leaves the local library
+      // standing, while one from the closing sign-out leaves it already gone.
+      if (!cloudDeleted) return DeleteAllDataResult.failed;
+      if (!localWiped) {
+        return accountSurvived
+            ? DeleteAllDataResult.accountAndLocalDataSurvived
+            : DeleteAllDataResult.localDataSurvived;
+      }
+      return accountSurvived
+          ? DeleteAllDataResult.accountSurvived
+          : DeleteAllDataResult.deleted;
     } finally {
       // Clear the stale-sync marker too: leaving it set would make the next
       // wipe keep an already-satisfied flag, and refuse the next sign-in once
@@ -904,6 +937,13 @@ final deviceRefusalRecorderProvider = Provider<void>((ref) {
 
   void record(DeviceLockReason? reason) {
     if (!alive) return;
+    // A request to leave belongs to the lock that was on screen when it was
+    // made. Once that lock changes or lifts, the request has been answered or
+    // overtaken — leaving it set would let it speak for whatever comes next,
+    // including a refusal the user has not been shown yet.
+    if (ref.read(lockExitRequestedProvider) != reason) {
+      ref.read(lockExitRequestedProvider.notifier).state = null;
+    }
     if (reason == DeviceLockReason.foreignLocalData) {
       if (ref.read(deviceContestedProvider)) return;
       ref.read(deviceContestedProvider.notifier).state = true;
@@ -955,7 +995,7 @@ final deviceLockedProvider = Provider<bool>((ref) {
   return ref.watch(deviceLockReasonProvider) != null;
 });
 
-/// Whether the user has asked to leave the lock for the sign-in screen.
+/// Which lock, if any, the user has asked to leave for the sign-in screen.
 ///
 /// Deliberately in memory only. `routerProvider` watches the auth status, so
 /// signing out mints a fresh `GoRouter` at its initial location and throws
@@ -968,7 +1008,17 @@ final deviceLockedProvider = Provider<bool>((ref) {
 /// lock and its explanation instead of to a bare sign-in screen. It grants
 /// nothing on its own — a locked device stays locked, and the redirect only
 /// consults it while there is no session to write with.
-final lockExitRequestedProvider = StateProvider<bool>((ref) => false);
+///
+/// It records the *reason* rather than a bare yes so that consent given for one
+/// lock cannot answer for another. Only the foreign-pottery lock offers this
+/// way out; the owed-wipe lock deliberately offers the erase alone, because
+/// finishing the wipe is the only way out of it. Held as a flag, an earlier
+/// tap on a foreign-pottery lock sent a *later* owed wipe to the sign-in screen
+/// instead of the lock screen — past the only surface that retries the wipe and
+/// offers that erase.
+final lockExitRequestedProvider = StateProvider<DeviceLockReason?>(
+  (ref) => null,
+);
 
 /// Whether continuing without an account would land on a device that already
 /// holds somebody's pottery. "Skip for now" is hidden then: it is the one door

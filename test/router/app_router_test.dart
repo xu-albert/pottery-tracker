@@ -643,33 +643,6 @@ void main() {
         );
       });
 
-      testWidgets('$reason: asking to leave reaches sign-in', (tester) async {
-        final container = await signedOutWith(reason);
-        addTearDown(container.dispose);
-
-        await _pumpWatchedRouter(tester, container);
-        await tester.pumpAndSettle();
-        expect(
-          container.read(routerProvider).state.matchedLocation,
-          '/device-locked',
-        );
-
-        // What the lock screen's button does. The redirect is what acts on it,
-        // so this asserts where the request actually lands rather than that it
-        // was recorded.
-        container.read(lockExitRequestedProvider.notifier).state = true;
-        await tester.pumpAndSettle();
-
-        expect(
-          container.read(routerProvider).state.matchedLocation,
-          '/sign-in',
-          reason:
-              'the owner signing back in is one of the two ways out, so the '
-              'lock cannot hold that door shut once it is asked',
-        );
-        expect(find.byType(SignInScreen), findsOneWidget);
-      });
-
       testWidgets('$reason: sign-in is shut until it is asked for', (
         tester,
       ) async {
@@ -722,6 +695,134 @@ void main() {
         }
       });
     }
+
+    testWidgets('$foreignPottery: asking to leave reaches sign-in', (
+      tester,
+    ) async {
+      final container = await signedOutWith(foreignPottery);
+      addTearDown(container.dispose);
+
+      await _pumpWatchedRouter(tester, container);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/device-locked',
+      );
+
+      // What the lock screen's button does. The redirect is what acts on it,
+      // so this asserts where the request actually lands rather than that it
+      // was recorded.
+      container.read(lockExitRequestedProvider.notifier).state =
+          DeviceLockReason.foreignLocalData;
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/sign-in',
+        reason:
+            'the owner signing back in is one of the two ways out, so the '
+            'lock cannot hold that door shut once it is asked',
+      );
+      expect(find.byType(SignInScreen), findsOneWidget);
+    });
+
+    testWidgets('$owedWipe: asking cannot open a door it never offered', (
+      tester,
+    ) async {
+      // The owed-wipe lock shows the erase alone, because finishing the wipe
+      // is the only way out of it. The redirect names that reason rather than
+      // trusting the screen not to offer the button, so a request that somehow
+      // arrives against it changes nothing.
+      final container = await signedOutWith(owedWipe);
+      addTearDown(container.dispose);
+
+      await _pumpWatchedRouter(tester, container);
+      await tester.pumpAndSettle();
+
+      container.read(lockExitRequestedProvider.notifier).state =
+          DeviceLockReason.pendingWipe;
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/device-locked',
+        reason:
+            'the lock screen is the only surface that retries the owed wipe, '
+            'so nothing may route the user past it',
+      );
+    });
+
+    testWidgets('a request made against one lock cannot answer for another', (
+      tester,
+    ) async {
+      // The reported sequence, end to end. B is refused and asks to leave; the
+      // owner reclaims the device and the lock lifts; later a confirmed wipe
+      // fails and locks the device again with no session. Held as a bare flag,
+      // B's tap from earlier in the same process answered for that second lock
+      // and sent the user to sign-in — past the retry and past the erase.
+      SharedPreferences.setMockInitialValues({
+        SyncService.localDataOwnerKey: 'account-a',
+        SyncService.deviceContestedKey: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+
+      final owner = StateProvider<String?>((ref) => 'account-a');
+      final contested = StateProvider<bool>((ref) => true);
+      final owedWipeFlag = StateProvider<bool>((ref) => false);
+
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.unauthenticated),
+            ),
+          ),
+          localDataOwnerProvider.overrideWith((ref) => ref.watch(owner)),
+          deviceContestedProvider.overrideWith((ref) => ref.watch(contested)),
+          pendingLocalWipeProvider.overrideWith(
+            (ref) => ref.watch(owedWipeFlag),
+          ),
+          accountDeletionOwedProvider.overrideWith(
+            (ref) => prefs.getString(SyncService.accountDeletionOwedKey),
+          ),
+          syncServiceProvider.overrideWithValue(
+            _StubSyncService(owner: 'account-a', contested: true),
+          ),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpWatchedRouter(tester, container);
+      await tester.pumpAndSettle();
+
+      // B asks to leave the foreign-pottery lock.
+      container.read(lockExitRequestedProvider.notifier).state =
+          DeviceLockReason.foreignLocalData;
+      await tester.pumpAndSettle();
+      expect(container.read(routerProvider).state.matchedLocation, '/sign-in');
+
+      // The owner reclaims the device: the stamp is theirs again and the
+      // refusal is lifted, so the lock goes.
+      container.read(contested.notifier).state = false;
+      container.read(owner.notifier).state = null;
+      await tester.pumpAndSettle();
+      tester.takeException();
+      expect(container.read(deviceLockedProvider), isFalse);
+
+      // Later, a confirmed wipe fails and locks the device again.
+      container.read(owedWipeFlag.notifier).state = true;
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/device-locked',
+        reason:
+            'the earlier tap belonged to a lock that is long gone, and this '
+            'one has only one way out — the erase the lock screen offers',
+      );
+      expect(find.byType(DeviceLockedScreen), findsOneWidget);
+    });
 
     testWidgets('$foreignPottery: the way out survives signing out', (
       tester,
@@ -805,27 +906,48 @@ void main() {
     });
 
     testWidgets('and the sign-in it reaches is not a way in', (tester) async {
-      // The reachable sign-in screen has to stay a dead end for anyone who is
-      // not the owner. This is the case the owner stamp alone cannot cover: a
-      // wipe that failed *after* clearing the stamp leaves an owed wipe and no
-      // owner, so a door gated on the stamp would swing back open onto the
-      // library the user confirmed for destruction.
-      final container = await signedOutWith(owedWipe);
+      // The sign-in screen a locked device can reach must stay a dead end for
+      // anyone who is not the owner: continuing without an account is the one
+      // door into a writable session that no lock covers.
+      final container = await signedOutWith(foreignPottery);
       addTearDown(container.dispose);
-      expect(container.read(localDataOwnerProvider), isNull);
 
       await _pumpWatchedRouter(tester, container);
       await tester.pumpAndSettle();
-      container.read(lockExitRequestedProvider.notifier).state = true;
+      container.read(lockExitRequestedProvider.notifier).state =
+          DeviceLockReason.foreignLocalData;
       await tester.pumpAndSettle();
 
       expect(find.byType(SignInScreen), findsOneWidget);
       expect(
         find.text('Skip for now'),
         findsNothing,
+        reason: 'skipping would hand over the pottery the lock is protecting',
+      );
+    });
+
+    test('an owed wipe closes that door too, with no stamp to close it', () {
+      // The owed-wipe lock keeps the user off the sign-in screen entirely, so
+      // this is the belt to that braces — and it is the case an owner stamp
+      // cannot cover, because a wipe that failed after clearing the stamp
+      // leaves one owed with no owner at all. If the routing above is ever
+      // relaxed, the door stays shut on its own account.
+      final container = ProviderContainer(
+        overrides: [
+          localDataOwnerProvider.overrideWith((ref) => null),
+          deviceContestedProvider.overrideWith((ref) => false),
+          pendingLocalWipeProvider.overrideWith((ref) => true),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(localDataOwnerProvider), isNull);
+      expect(
+        container.read(skipSignInAllowedProvider),
+        isFalse,
         reason:
-            'continuing without an account is the one door into a writable '
-            'session that no lock covers',
+            'the library the user confirmed for destruction is still on this '
+            'device, and skipping would open it',
       );
     });
   });

@@ -76,7 +76,9 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
       // discard a push and leave the user looking at the same lock. The
       // refusal itself outlives the session — only the owner may lift it — so
       // without this the way out would do nothing at all.
-      ref.read(lockExitRequestedProvider.notifier).state = true;
+      ref.read(lockExitRequestedProvider.notifier).state = ref.read(
+        deviceLockReasonProvider,
+      );
       await ref.read(authProvider.notifier).signOut();
     } finally {
       if (mounted) setState(() => _busy = false);

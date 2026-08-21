@@ -26,7 +26,7 @@ the wipe going and it never finished, so the signed-out account's whole library 
 Foreign pottery:
 - [ ] Signing in as a different account after an involuntary sign-out lands on the lock screen, not the album
 - [ ] Nothing that can write is reachable while locked — album, create flow, piece editor, Settings and the Manage Clays/Glazes/Tags screens all come straight back to the lock
-- [ ] "Sign In As Another Account" ends the session and returns to sign-in **without** deleting anything
+- [ ] "Sign In" ends the session and returns to sign-in **without** deleting anything — the label is deliberately not "as another account", since the reader may be the owner signing in as themselves
 - [ ] The owner signing back in releases the lock and hands the app back on its own
 - [ ] Force-quitting the lock screen and relaunching with no network lands back on the lock, not on the owner's album
 - [ ] The owner's own offline launch (no network, nobody refused here) opens the album as usual
@@ -34,7 +34,7 @@ Foreign pottery:
 Owed wipe:
 - [ ] Force-quit mid-wipe → the lock reads "This device still has to be erased" and says the pottery the user asked to have deleted is still here — never that it belongs to another account, because it is their own
 - [ ] Opening the lock retries the wipe on its own; a failure that was transient clears without the user tapping anything
-- [ ] Its primary action is "Erase This Device" — it never offers "Sign In As Another Account", which would keep the data the user asked to destroy
+- [ ] Its primary action is "Erase This Device" — it never offers "Sign In", which would keep the data the user asked to destroy
 - [ ] A "Delete Account & Data" whose local wipe failed lands here, and its message names erasing this device first — the one step reachable from the lock — before signing in again to retry the account
 
 Both:

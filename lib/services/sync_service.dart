@@ -159,7 +159,7 @@ class SyncService {
       debugPrint('SyncService: VACUUM after wipe failed: $e');
     }
 
-    await _deleteLocalPhotoFiles();
+    final photoFailure = await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
 
     // The data is gone, so nobody owns this device any more: the next account
@@ -168,9 +168,26 @@ class SyncService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(localDataOwnerKey);
     await prefs.remove(deviceContestedKey);
+
+    // Raised last, so everything that could be cleared has been: the wipe is
+    // best-effort, the *reporting* is not. The confirmation the user answered
+    // promises every photo on this device is deleted, and an erase that left
+    // them on disk must not come back as done — the wipe stays owed, and the
+    // lock screen keeps offering the retry that finishes it.
+    if (photoFailure != null) {
+      throw StateError('local photo files were not deleted: $photoFailure');
+    }
   }
 
-  Future<void> _deleteLocalPhotoFiles() async {
+  /// Deletes the photo files, returning what stopped it or null if nothing did.
+  ///
+  /// The two directories are not equivalent. The photos directory holds the
+  /// user's pottery photographs, which the erase promised to destroy, so a
+  /// failure there is returned and becomes the caller's problem. The temp
+  /// directory holds `image_picker`'s copies — worth clearing, but a cache
+  /// entry the platform will not release is not the erase failing.
+  Future<Object?> _deleteLocalPhotoFiles() async {
+    Object? photoFailure;
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${appDir.path}/photos');
@@ -180,6 +197,7 @@ class SyncService {
       }
     } catch (e) {
       debugPrint('SyncService: local file cleanup error: $e');
+      photoFailure = e;
     }
 
     // image_picker copies every picked photo into the platform temp directory
@@ -199,6 +217,8 @@ class SyncService {
     } catch (e) {
       debugPrint('SyncService: temp file cleanup error: $e');
     }
+
+    return photoFailure;
   }
 
   /// The uid this device's local data belongs to, or null when it belongs to

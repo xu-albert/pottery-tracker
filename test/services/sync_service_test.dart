@@ -3,6 +3,9 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
@@ -15,8 +18,25 @@ void main() {
   late FakeFirebaseFirestore firestore;
   late MockFirebaseStorage storage;
   late SyncService syncService;
+  late Directory docsDir;
+  late Directory cacheDir;
 
   setUp(() {
+    // `deleteLocalData` deletes the photo files as well as the rows, and now
+    // reports a failure there instead of swallowing it — so these need real
+    // directories to delete rather than a plugin that is not there.
+    TestWidgetsFlutterBinding.ensureInitialized();
+    docsDir = Directory.systemTemp.createTempSync('sync_service_docs_');
+    cacheDir = Directory.systemTemp.createTempSync('sync_service_cache_');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => switch (call.method) {
+            'getApplicationDocumentsDirectory' => docsDir.path,
+            'getTemporaryDirectory' => cacheDir.path,
+            _ => null,
+          },
+        );
     db = AppDatabase.forTesting(NativeDatabase.memory());
     firestore = FakeFirebaseFirestore();
     storage = MockFirebaseStorage();
@@ -26,6 +46,14 @@ void main() {
 
   tearDown(() async {
     await db.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
+    for (final dir in [docsDir, cacheDir]) {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    }
   });
 
   // ── Helpers ────────────────────────────────────
@@ -789,6 +817,77 @@ void main() {
       // incremental branch, which never re-downloads what was deleted here.
       expect(await syncService.getLastPulledAt(_uid), isNull);
       expect(await syncService.getLastPulledAt('other-user'), isNull);
+    });
+  });
+
+  group('deleteLocalData reports a photo wipe it could not finish', () {
+    test('an undeletable photo directory fails the wipe instead of passing', () async {
+      final photosDir = Directory('${docsDir.path}/photos')
+        ..createSync(recursive: true);
+      File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
+
+      // Take away the parent's write permission so the directory cannot be
+      // unlinked. Root ignores the mode bits, so the test verifies the setup
+      // actually bites before asserting anything about it.
+      Process.runSync('chmod', ['500', docsDir.path]);
+      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+      var deletionIsBlocked = false;
+      try {
+        photosDir.deleteSync(recursive: true);
+      } catch (_) {
+        deletionIsBlocked = true;
+      }
+      if (!deletionIsBlocked) {
+        markTestSkipped('the filesystem here does not enforce the mode bits');
+        return;
+      }
+
+      await expectLater(
+        syncService.deleteLocalData(),
+        throwsA(isA<StateError>()),
+        reason:
+            'the confirmation the user answered promises every photo on this '
+            'device is deleted, so an erase that left them behind must not '
+            'come back as done',
+      );
+      expect(
+        photosDir.existsSync(),
+        isTrue,
+        reason: 'and the photos really are still here, which is the point',
+      );
+    });
+
+    test('the rest of the wipe still runs before the failure surfaces', () async {
+      await insertPiece(id: 'piece-a', title: 'Mug');
+      final photosDir = Directory('${docsDir.path}/photos')
+        ..createSync(recursive: true);
+      File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
+
+      Process.runSync('chmod', ['500', docsDir.path]);
+      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+      var deletionIsBlocked = false;
+      try {
+        photosDir.deleteSync(recursive: true);
+      } catch (_) {
+        deletionIsBlocked = true;
+      }
+      if (!deletionIsBlocked) {
+        markTestSkipped('the filesystem here does not enforce the mode bits');
+        return;
+      }
+
+      await expectLater(
+        syncService.deleteLocalData(),
+        throwsA(isA<StateError>()),
+      );
+
+      // The wipe is best-effort; only the reporting is not. Giving up at the
+      // photos would strand the rows and the ownership stamp, and the stamp is
+      // what decides whether the next account is refused.
+      expect(await db.select(db.pieces).get(), isEmpty);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
+      expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
     });
   });
 }
