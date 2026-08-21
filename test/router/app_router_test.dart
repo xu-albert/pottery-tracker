@@ -12,6 +12,8 @@ import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/router/app_router.dart';
+import 'package:pottery_tracker/services/auth_service.dart';
+import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,6 +25,25 @@ class _TestAuthNotifier extends AuthNotifier {
   _TestAuthNotifier(super.initial) : super.withState();
 
   void set(AuthState next) => state = next;
+
+  /// Ends the session the way the real one leaves it. The real one awaits
+  /// `FirebaseAuth.instance.signOut()`, which never returns under the test
+  /// harness, so a test tapping a sign-out button would hang before reaching
+  /// anything worth asserting.
+  @override
+  Future<void> signOut() async {
+    state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+}
+
+/// The bare [AuthService] the lock screen hands to `endForeignSession`.
+class _StubAuthService implements AuthService {
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used here');
 }
 
 ProviderContainer _container({
@@ -73,6 +94,63 @@ Future<GoRouter> _pumpRouter(
   );
   await tester.pump();
   return router;
+}
+
+/// Stands in for the real service so a router test needs no database.
+///
+/// It answers the device-state reads [SyncNotifier] makes as it is built, and
+/// fails the wipe. Failing it is deliberate rather than incidental: an owed
+/// wipe that succeeded would clear the flag and unlock the device, and the
+/// state under test here is the one where it is still owed.
+class _StubSyncService implements SyncService {
+  _StubSyncService({required this.owner, required this.contested});
+
+  final String? owner;
+  final bool contested;
+
+  @override
+  Future<String?> getLocalDataOwner() async => owner;
+
+  @override
+  Future<bool> getDeviceContested() async => contested;
+
+  @override
+  Future<void> deleteLocalData() async {
+    throw StateError('the wipe cannot finish, so it stays owed');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used here');
+}
+
+/// Pumps the router the way `PotteryTrackerApp` mounts it — watched, not held.
+///
+/// `routerProvider` mints a fresh `GoRouter` whenever auth, the lock or the
+/// request to leave it changes, so a test holding the first instance would
+/// keep showing the answer from before the change it is about.
+Future<void> _pumpWatchedRouter(
+  WidgetTester tester,
+  ProviderContainer container,
+) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: Consumer(
+        builder: (context, ref, _) => MaterialApp.router(
+          routerConfig: ref.watch(routerProvider),
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en')],
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
 }
 
 void main() {
@@ -487,6 +565,267 @@ void main() {
         reason:
             'signing back in as the owner is one of the only two ways out, so '
             'the lock releasing has to hand the app back on its own',
+      );
+    });
+  });
+
+  group('the lock settles when the session is gone', () {
+    // Both locked states are reachable with no session at all. A refused
+    // account that force-quits the lock screen relaunches signed out, because
+    // `signOut` clears the onboarding flag and `_init` then answers
+    // `unauthenticated`; so does a sign-out whose wipe never finished. Pairing
+    // that with the lock left the redirect nowhere to settle — signed-out sent
+    // the user to sign-in, and the lock sent sign-in straight back — and
+    // go_router answers a cycle by replacing the app with its error page,
+    // which took away both ways out at once.
+    const foreignPottery = 'another account owns this device';
+    const owedWipe = 'a confirmed wipe is still owed';
+
+    /// Seeds the device state on disk and builds the container off it through
+    /// `deviceStateOverrides`, which is the same seeding `main` runs before
+    /// `runApp`. Going through preferences rather than pinning the providers
+    /// matters: `SyncNotifier` re-reads all three from disk on construction,
+    /// so a lock forced straight onto the providers would quietly come undone
+    /// at exactly the moment these tests are about.
+    Future<ProviderContainer> signedOutWith(String reason) async {
+      SharedPreferences.setMockInitialValues(
+        reason == foreignPottery
+            ? {
+                SyncService.localDataOwnerKey: 'account-a',
+                SyncService.deviceContestedKey: true,
+              }
+            : {SyncNotifier.pendingWipeKey: true},
+      );
+      final prefs = await SharedPreferences.getInstance();
+
+      final syncService = _StubSyncService(
+        owner: prefs.getString(SyncService.localDataOwnerKey),
+        contested: prefs.getBool(SyncService.deviceContestedKey) ?? false,
+      );
+      return ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.unauthenticated),
+            ),
+          ),
+          ...deviceStateOverrides(prefs),
+          // The owed-wipe lock resumes the wipe as it opens, which builds
+          // the sync stack. The stub keeps the database out and lets that
+          // retry fail, so the wipe stays owed and the device stays locked —
+          // which is the situation these tests are about.
+          syncServiceProvider.overrideWithValue(syncService),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+        ],
+      );
+    }
+
+    for (final reason in const [foreignPottery, owedWipe]) {
+      testWidgets('$reason: the lock is what the user is left on', (
+        tester,
+      ) async {
+        final container = await signedOutWith(reason);
+        addTearDown(container.dispose);
+        expect(container.read(deviceLockedProvider), isTrue);
+
+        final router = await _pumpRouter(tester, container);
+        await tester.pumpAndSettle();
+
+        expect(router.state.matchedLocation, '/device-locked');
+        expect(
+          find.byType(DeviceLockedScreen),
+          findsOneWidget,
+          reason:
+              'the lock screen is the only surface offering either way out, '
+              'so it has to be the screen actually on display — a redirect '
+              'with no fixed point leaves go_router rendering its error page '
+              'here instead',
+        );
+      });
+
+      testWidgets('$reason: asking to leave reaches sign-in', (tester) async {
+        final container = await signedOutWith(reason);
+        addTearDown(container.dispose);
+
+        await _pumpWatchedRouter(tester, container);
+        await tester.pumpAndSettle();
+        expect(
+          container.read(routerProvider).state.matchedLocation,
+          '/device-locked',
+        );
+
+        // What the lock screen's button does. The redirect is what acts on it,
+        // so this asserts where the request actually lands rather than that it
+        // was recorded.
+        container.read(lockExitRequestedProvider.notifier).state = true;
+        await tester.pumpAndSettle();
+
+        expect(
+          container.read(routerProvider).state.matchedLocation,
+          '/sign-in',
+          reason:
+              'the owner signing back in is one of the two ways out, so the '
+              'lock cannot hold that door shut once it is asked',
+        );
+        expect(find.byType(SignInScreen), findsOneWidget);
+      });
+
+      testWidgets('$reason: sign-in is shut until it is asked for', (
+        tester,
+      ) async {
+        final container = await signedOutWith(reason);
+        addTearDown(container.dispose);
+
+        final router = await _pumpRouter(tester, container);
+        await tester.pumpAndSettle();
+
+        router.go('/sign-in');
+        await tester.pumpAndSettle();
+
+        expect(
+          router.state.matchedLocation,
+          '/device-locked',
+          reason:
+              'the lock screen carries the explanation and the erase, so a '
+              'device nobody has asked to leave rests there rather than on a '
+              'bare sign-in screen',
+        );
+      });
+
+      testWidgets('$reason: no write surface opened up with it', (
+        tester,
+      ) async {
+        final container = await signedOutWith(reason);
+        addTearDown(container.dispose);
+
+        final router = await _pumpRouter(tester, container);
+        await tester.pumpAndSettle();
+
+        // Letting sign-in through must not have let anything else through:
+        // read-only is the entire point of the state, session or no session.
+        for (final route in const [
+          '/',
+          '/create',
+          '/piece/piece-a',
+          '/settings',
+          '/settings/clays',
+          '/settings/glazes',
+          '/settings/tags',
+        ]) {
+          router.go(route);
+          await tester.pumpAndSettle();
+          expect(
+            router.state.matchedLocation,
+            '/device-locked',
+            reason: '$route must stay shut with no session either',
+          );
+        }
+      });
+    }
+
+    testWidgets('$foreignPottery: the way out survives signing out', (
+      tester,
+    ) async {
+      // The way out is the whole reason the lock screen has a button, and it
+      // has to work from the state it is normally reached in: a refused
+      // account is still signed in. Ending that session rebuilds the router at
+      // its initial location, so anything the screen navigated to is gone by
+      // the time the user could see it — which is why the redirect, not the
+      // screen, is what performs this.
+      SharedPreferences.setMockInitialValues({
+        SyncService.localDataOwnerKey: 'account-a',
+        SyncService.deviceContestedKey: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (ref) => _TestAuthNotifier(
+              const AuthState(
+                status: AuthStatus.authenticated,
+                uid: 'account-b',
+              ),
+            ),
+          ),
+          ...deviceStateOverrides(prefs),
+          authServiceProvider.overrideWithValue(_StubAuthService()),
+          syncServiceProvider.overrideWithValue(
+            _StubSyncService(owner: 'account-a', contested: true),
+          ),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // Watched rather than held, the way `PotteryTrackerApp` does it: signing
+      // out mints a new `GoRouter`, and holding the first one would hide the
+      // very rebuild this is about.
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: Consumer(
+            builder: (context, ref, _) => MaterialApp.router(
+              routerConfig: ref.watch(routerProvider),
+              localizationsDelegates: const [
+                AppLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [Locale('en')],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/device-locked',
+      );
+
+      await tester.tap(find.text('Sign In'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(routerProvider).state.matchedLocation,
+        '/sign-in',
+        reason:
+            'the owner signing back in is one of the only two ways out, so '
+            'asking for it has to actually arrive somewhere',
+      );
+      expect(find.byType(SignInScreen), findsOneWidget);
+      expect(
+        container.read(deviceLockedProvider),
+        isTrue,
+        reason:
+            'and it is a detour, not a release — only the owner reclaiming '
+            'the device lifts the refusal',
+      );
+    });
+
+    testWidgets('and the sign-in it reaches is not a way in', (tester) async {
+      // The reachable sign-in screen has to stay a dead end for anyone who is
+      // not the owner. This is the case the owner stamp alone cannot cover: a
+      // wipe that failed *after* clearing the stamp leaves an owed wipe and no
+      // owner, so a door gated on the stamp would swing back open onto the
+      // library the user confirmed for destruction.
+      final container = await signedOutWith(owedWipe);
+      addTearDown(container.dispose);
+      expect(container.read(localDataOwnerProvider), isNull);
+
+      await _pumpWatchedRouter(tester, container);
+      await tester.pumpAndSettle();
+      container.read(lockExitRequestedProvider.notifier).state = true;
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SignInScreen), findsOneWidget);
+      expect(
+        find.text('Skip for now'),
+        findsNothing,
+        reason:
+            'continuing without an account is the one door into a writable '
+            'session that no lock covers',
       );
     });
   });

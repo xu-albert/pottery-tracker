@@ -80,6 +80,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   // Whether anyone already has a stake in what is on this device, which is
   // what decides whether the redirect may pass through while auth resolves.
   final deviceStamped = ref.watch(deviceStampedProvider);
+  // Whether the user asked the lock screen for the sign-in screen. Read
+  // here so the answer outlives the rebuild that signing out causes.
+  final lockExitRequested = ref.watch(lockExitRequestedProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -107,11 +110,34 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       final isSignedIn = authStatus == AuthStatus.authenticated;
 
-      if (!isSignedIn && loc != '/sign-in') return '/sign-in';
-      if (isSignedIn && loc == '/sign-in') return '/';
+      // The lock is answered before the session is.
+      //
+      // Both locked states are reachable with no session at all: a refused
+      // account that force-quits the lock screen relaunches signed out, and so
+      // does a sign-out whose wipe never finished. Sending those to '/sign-in'
+      // while the lock sent '/sign-in' straight back left that pair with no
+      // fixed point — go_router answers a cycle by replacing the app with its
+      // error page, which took away both ways out at once.
+      //
+      // So a locked device rests on '/device-locked', which is what keeps the
+      // explanation and the erase reachable with no session, and it steps
+      // aside for the sign-in screen once the user has asked for it. That
+      // request is what carries the way out across the rebuild: this provider
+      // is re-read after signing out mints a new router, whereas the lock
+      // screen's own navigation would be thrown away with the old one.
+      if (deviceLocked) {
+        if (lockExitRequested && !isSignedIn) {
+          return loc == '/sign-in' ? null : '/sign-in';
+        }
+        if (loc != '/device-locked') return '/device-locked';
+      } else if (loc == '/device-locked') {
+        return '/';
+      }
 
-      if (deviceLocked && loc != '/device-locked') return '/device-locked';
-      if (!deviceLocked && loc == '/device-locked') return '/';
+      if (!isSignedIn && loc != '/sign-in' && loc != '/device-locked') {
+        return '/sign-in';
+      }
+      if (isSignedIn && loc == '/sign-in') return '/';
 
       return null;
     },

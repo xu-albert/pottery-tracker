@@ -955,13 +955,36 @@ final deviceLockedProvider = Provider<bool>((ref) {
   return ref.watch(deviceLockReasonProvider) != null;
 });
 
+/// Whether the user has asked to leave the lock for the sign-in screen.
+///
+/// Deliberately in memory only. `routerProvider` watches the auth status, so
+/// signing out mints a fresh `GoRouter` at its initial location and throws
+/// away any navigation the lock screen had just performed — the way out has to
+/// be something the *redirect* can still see afterwards, not a push that the
+/// rebuild discards.
+///
+/// Not persisting it is the point rather than an economy: the detour lasts as
+/// long as the session that asked for it, so force-quitting comes back to the
+/// lock and its explanation instead of to a bare sign-in screen. It grants
+/// nothing on its own — a locked device stays locked, and the redirect only
+/// consults it while there is no session to write with.
+final lockExitRequestedProvider = StateProvider<bool>((ref) => false);
+
 /// Whether continuing without an account would land on a device that already
-/// belongs to someone else. "Skip for now" is hidden then: it is the one door
-/// into a writable session that the owner stamp cannot see, and leaving it
-/// open would give a refused account unrestricted access to the owner's
-/// pottery without erasing and without the owner ever signing back in.
+/// holds somebody's pottery. "Skip for now" is hidden then: it is the one door
+/// into a writable session that no lock covers, and leaving it open would give
+/// a refused account unrestricted access to the owner's pottery without
+/// erasing and without the owner ever signing back in.
+///
+/// It answers off [deviceStampedProvider] rather than the owner stamp alone,
+/// because sign-in is reachable while the device is locked — the owner
+/// returning is one of the two ways out — so the stamp is no longer the only
+/// state that has to close this door. A wipe that failed *after* clearing the
+/// stamp leaves an owed wipe and no owner, and on the stamp alone the button
+/// would come back and walk into the very library the user confirmed for
+/// destruction.
 final skipSignInAllowedProvider = Provider<bool>((ref) {
-  return ref.watch(localDataOwnerProvider) == null;
+  return !ref.watch(deviceStampedProvider);
 });
 
 /// The one place a material is created and queued for backup. See
