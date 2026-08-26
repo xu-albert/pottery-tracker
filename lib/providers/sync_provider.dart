@@ -244,6 +244,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       );
     } finally {
       _staleSyncInFlight = false;
+      _publishStaleSyncBlockingWipe(false);
       _syncing = false;
     }
     await _payOwedSync();
@@ -311,6 +312,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       );
     } finally {
       _staleSyncInFlight = false;
+      _publishStaleSyncBlockingWipe(false);
       _syncing = false;
     }
     await _payOwedSync();
@@ -420,7 +422,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // photo files behind the delete, so the device is not provably clean.
       // Wipe anyway, but keep the flag: nothing may clear it until that sync
       // is gone and a later wipe has run clean.
-      if (_syncing) _staleSyncInFlight = true;
+      if (_syncing) {
+        _staleSyncInFlight = true;
+        _publishStaleSyncBlockingWipe(true);
+      }
 
       await _wipeLocalData();
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
@@ -580,6 +585,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
   void _publishPendingWipe(bool pending) {
     if (!mounted) return;
     _ref.read(pendingLocalWipeProvider.notifier).state = pending;
+  }
+
+  /// Mirrors [_staleSyncInFlight] into [staleSyncBlockingWipeProvider].
+  void _publishStaleSyncBlockingWipe(bool blocking) {
+    if (!mounted) return;
+    _ref.read(staleSyncBlockingWipeProvider.notifier).state = blocking;
   }
 
   /// Records that [uid]'s account survived the deletion [uid] confirmed.
@@ -803,6 +814,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // wipe keep an already-satisfied flag, and refuse the next sign-in once
       // for no reason.
       _staleSyncInFlight = false;
+      _publishStaleSyncBlockingWipe(false);
       _wiping = false;
       _syncing = false;
     }
@@ -1049,6 +1061,22 @@ Future<void> _writeDeviceContested(bool contested) async {
 final deviceLockedProvider = Provider<bool>((ref) {
   return ref.watch(deviceLockReasonProvider) != null;
 });
+
+/// Whether a sync that outlived a confirmed wipe is still running.
+///
+/// A wipe that lands while one is in flight deletes as usual but keeps the
+/// owed-wipe flag, because a sync still writing behind the delete means the
+/// device is not provably clean. Nothing about *that* is observable from the
+/// lock screen, and the screen is the only place the retry may happen — the
+/// Aug 19 ruling keeps it off `syncNow`, off the debounced push and off the
+/// sync's own completion — so it is published here for the screen to wait on.
+///
+/// Without it the retry could only fire once, on mount, while the stale sync
+/// was still running: it read the same blocked condition, kept the flag a
+/// second time, and the device stayed locked after the sync had long since
+/// unwound. Reading the private flag through sync status instead would not
+/// help, because the status is written before the flag is cleared.
+final staleSyncBlockingWipeProvider = StateProvider<bool>((ref) => false);
 
 /// Which lock, if any, the user has asked to leave for the sign-in screen.
 ///

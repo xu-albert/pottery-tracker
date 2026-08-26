@@ -52,7 +52,6 @@ _setup({AuthState auth = _signedOut}) {
     () => syncService.pullChangedSince(any(), any()),
   ).thenAnswer((_) async {});
   when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
-  when(() => syncService.deleteAllData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
   // Unowned by default: the device belongs to whoever signs in first.

@@ -758,37 +758,6 @@ void main() {
     );
   });
 
-  // ── deleteAllData ──────────────────────────────
-
-  group('deleteAllData', () {
-    test('removes all Firestore docs and local DB rows', () async {
-      // Seed local data
-      await insertPiece(id: 'p1');
-      await insertPhoto(id: 'ph1', pieceId: 'p1');
-      await insertClay(id: 'c1', name: 'Stoneware');
-
-      // Seed remote data
-      await col('pieces').doc('p1').set({'title': 'Bowl'});
-      await col('photos').doc('ph1').set({'pieceId': 'p1'});
-      await col('clays').doc('c1').set({'name': 'Stoneware'});
-
-      await syncService.deleteAllData(_uid);
-
-      // Firestore should be empty
-      expect((await col('pieces').get()).docs, isEmpty);
-      expect((await col('photos').get()).docs, isEmpty);
-      expect((await col('clays').get()).docs, isEmpty);
-
-      // Local DB should be empty
-      final pieces = await db.select(db.pieces).get();
-      expect(pieces, isEmpty);
-      final photos = await db.select(db.photos).get();
-      expect(photos, isEmpty);
-      final clays = await db.materialsDao.getAllClays();
-      expect(clays, isEmpty);
-    });
-  });
-
   // ── deleteLocalData ────────────────────────────
 
   group('deleteLocalData', () {

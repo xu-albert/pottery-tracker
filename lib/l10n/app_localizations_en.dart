@@ -473,6 +473,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.';
 
   @override
+  String get deleteAccountTitle => 'Delete Account & Data';
+
+  @override
+  String get deleteAccountSubtitle =>
+      'Permanently deletes your account and all data';
+
+  @override
+  String get deleteAccountConfirmTitle => 'Delete Account & Data?';
+
+  @override
+  String get deleteAccountConfirmMessage =>
+      'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.';
+
+  @override
   String get deleteAccountBusy => 'Busy right now — try again in a moment.';
 
   @override

@@ -1410,6 +1410,54 @@ void main() {
       );
     },
   );
+
+  group('a sync that outlives a confirmed wipe', () {
+    test('is published while it runs, and withdrawn when it ends', () async {
+      await settle();
+      await insertPieceWithPhoto('piece-a', "A's mug");
+
+      // Hold a sync open past the window the sign-out wait watches. That wait
+      // is 5s, so the stall has to outlast it for the device to reach the
+      // state this is about.
+      syncService.pushAllLocalDelay = const Duration(seconds: 7);
+      unawaited(notifier.syncNow(forceFullSync: true));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        container.read(staleSyncBlockingWipeProvider),
+        isFalse,
+        reason: 'nothing has confirmed a wipe yet',
+      );
+
+      await notifier.signOutAndWipeLocalData(() async {});
+
+      expect(
+        container.read(staleSyncBlockingWipeProvider),
+        isTrue,
+        reason:
+            'the sync outlasted the wait, so the delete cannot be shown to '
+            'have beaten its writes',
+      );
+      expect(
+        container.read(pendingLocalWipeProvider),
+        isTrue,
+        reason: 'which is why the wipe stays owed and the lock holds',
+      );
+
+      // Let the straggler unwind.
+      syncService.pushAllLocalDelay = Duration.zero;
+      for (var i = 0; i < 100 && container.read(staleSyncBlockingWipeProvider); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+
+      expect(
+        container.read(staleSyncBlockingWipeProvider),
+        isFalse,
+        reason:
+            'the lock screen waits on this to know the retry is worth making '
+            'again — left set, the device stays locked for good',
+      );
+    }, timeout: const Timeout(Duration(seconds: 90)));
+  });
 }
 
 /// The real [SyncService] with one seam: [wipeFails] makes `deleteLocalData`

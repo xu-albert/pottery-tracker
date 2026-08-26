@@ -75,6 +75,7 @@ void main() {
     WidgetTester tester, {
     bool owedWipe = false,
     bool accountOwed = false,
+    bool staleSyncBlocking = false,
   }) async {
     if (owedWipe || accountOwed) {
       SharedPreferences.setMockInitialValues({
@@ -95,6 +96,9 @@ void main() {
           syncQueueProvider.overrideWithValue(queue),
           localDataOwnerProvider.overrideWith((ref) => 'the-owner'),
           pendingLocalWipeProvider.overrideWith((ref) => owedWipe),
+          staleSyncBlockingWipeProvider.overrideWith(
+            (ref) => staleSyncBlocking,
+          ),
           accountDeletionOwedProvider.overrideWith(
             (ref) => accountOwed ? 'someone' : null,
           ),
@@ -291,6 +295,53 @@ void main() {
       when(
         () => syncService.deleteLocalData(),
       ).thenThrow(Exception('disk full'));
+    });
+
+    testWidgets('tries again once the sync that was blocking it ends', (
+      tester,
+    ) async {
+      // A wipe that lands while a sync outlives it keeps the owed flag, and
+      // this screen opens while that sync is still running — so the attempt it
+      // makes on mount is refused for the same reason. That used to be the
+      // only attempt there was, and the device sat locked long after the sync
+      // had unwound, with the erase button as the one way off it.
+      var attempts = 0;
+      when(() => syncService.deleteLocalData()).thenAnswer((_) async {
+        attempts++;
+        throw Exception('disk full');
+      });
+
+      await pumpLocked(tester, owedWipe: true);
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      final onMount = attempts;
+      expect(onMount, greaterThan(0), reason: 'the screen does try on mount');
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(DeviceLockedScreen)),
+      );
+      // A sync takes hold and then finishes. Driven in both directions from
+      // the test, because the transition is the signal — the screen must not
+      // depend on which frame it happened to mount on.
+      container.read(staleSyncBlockingWipeProvider.notifier).state = true;
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(attempts, onMount, reason: 'nothing to try while it still holds');
+
+      container.read(staleSyncBlockingWipeProvider.notifier).state = false;
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        attempts,
+        greaterThan(onMount),
+        reason:
+            'the blocker is gone, so the wipe the user confirmed gets another '
+            'attempt without them having to ask for it again',
+      );
     });
 
     testWidgets('is described as the unfinished erase it is', (tester) async {

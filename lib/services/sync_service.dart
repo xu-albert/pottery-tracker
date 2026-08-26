@@ -278,11 +278,6 @@ class SyncService {
     }
   }
 
-  Future<void> deleteAllData(String uid) async {
-    await deleteCloudData(uid);
-    await deleteLocalData();
-  }
-
   // ════════════════════════════════════════════
   // Push methods
   // ════════════════════════════════════════════

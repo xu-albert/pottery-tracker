@@ -46,6 +46,15 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   /// the auth transition that used to carry it never runs. A wipe that failed
   /// on something transient therefore still heals itself, and the erase below
   /// is what is left when it does not.
+  ///
+  /// Reached twice, because once was not enough. A wipe that landed while a
+  /// sync outlived it keeps the flag deliberately, and this screen opens while
+  /// that sync is still running — so the mount-time attempt read the same
+  /// blocked condition and kept the flag again, leaving the device locked long
+  /// after the sync had unwound. [build] watches for that to clear and comes
+  /// back here. The retry stays on this screen either way: it is never fired
+  /// from `syncNow`, from the debounced push, or from the sync's own
+  /// completion, so no delete can land behind an edit.
   Future<void> _resumeOwedWipe() async {
     if (!mounted || _busy) return;
     if (ref.read(deviceLockReasonProvider) != DeviceLockReason.pendingWipe) {
@@ -134,6 +143,12 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+
+    // The sync that was blocking the wipe has finished, so the attempt that
+    // was refused on mount is worth making again.
+    ref.listen<bool>(staleSyncBlockingWipeProvider, (was, isBlocking) {
+      if (was == true && !isBlocking) _resumeOwedWipe();
+    });
     final reason = ref.watch(deviceLockReasonProvider);
     final owedWipe = reason == DeviceLockReason.pendingWipe;
     // A "Delete Account & Data" whose local wipe failed lands here, and the

@@ -946,6 +946,30 @@ abstract class AppLocalizations {
   /// **'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.'**
   String get eraseLocalDataPhotosSurvived;
 
+  /// Settings tile that deletes the account and everything with it
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Account & Data'**
+  String get deleteAccountTitle;
+
+  /// Delete-account tile subtitle when nothing is outstanding
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently deletes your account and all data'**
+  String get deleteAccountSubtitle;
+
+  /// Title of the confirmation dialog for deleting the account
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Account & Data?'**
+  String get deleteAccountConfirmTitle;
+
+  /// Body of the confirmation dialog for deleting the account — names what is destroyed and that it cannot be undone
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.'**
+  String get deleteAccountConfirmMessage;
+
   /// Shown when an account deletion was refused because a sync is running
   ///
   /// In en, this message translates to:

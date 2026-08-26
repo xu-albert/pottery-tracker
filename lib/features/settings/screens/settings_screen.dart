@@ -451,23 +451,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // sign-out tile while the first delete is still running.
             enabled: !_isSigningOut && !_isDeletingAccount,
             leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text(
-              'Delete Account & Data',
-              style: TextStyle(color: Colors.red),
+            title: Text(
+              l10n.deleteAccountTitle,
+              style: const TextStyle(color: Colors.red),
             ),
             subtitle: Text(
               ref.watch(accountDeletionOwedForSessionProvider)
                   ? l10n.deleteAccountStillExists
-                  : 'Permanently deletes your account and all data',
+                  : l10n.deleteAccountSubtitle,
             ),
             onTap: () async {
               final confirmed = await showCupertinoDialog<bool>(
                 context: context,
                 builder: (context) => CupertinoAlertDialog(
-                  title: const Text('Delete Account & Data?'),
-                  content: const Text(
-                    'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.',
-                  ),
+                  title: Text(l10n.deleteAccountConfirmTitle),
+                  content: Text(l10n.deleteAccountConfirmMessage),
                   actions: [
                     CupertinoDialogAction(
                       onPressed: () => Navigator.pop(context, false),
