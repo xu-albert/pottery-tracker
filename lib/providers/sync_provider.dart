@@ -63,7 +63,22 @@ class SyncState {
 }
 
 /// What an explicit erase actually did, so the caller can tell the user.
-enum EraseLocalDataResult { erased, busy, failed }
+enum EraseLocalDataResult {
+  /// Every local store is gone and the device is unclaimed.
+  erased,
+
+  /// Nothing was attempted: a sync or wipe held the device.
+  busy,
+
+  /// Nothing was deleted.
+  failed,
+
+  /// The rows, the queue, the watermarks and the ownership stamp are gone,
+  /// but some photo files are still on disk and the wipe stays owed. Reported
+  /// separately because "nothing was deleted" is false here, and the user has
+  /// a retry available on the lock screen that finishes it.
+  photosSurvived,
+}
 
 /// What a confirmed account deletion actually did. Mirrors
 /// [EraseLocalDataResult]: both are destructive actions the user has already
@@ -454,13 +469,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       await _wipeLocalData();
       state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
+    } on LocalPhotoWipeException catch (e) {
+      await _recordFailedErase(e);
+      return EraseLocalDataResult.photosSurvived;
     } catch (e) {
-      debugPrint('SyncNotifier: explicit erase failed: $e');
-      await _publishOwedWipe();
-      state = state.copyWith(
-        status: SyncStatus.error,
-        errorMessage: e.toString(),
-      );
+      await _recordFailedErase(e);
       return EraseLocalDataResult.failed;
     } finally {
       _wiping = false;
@@ -469,6 +482,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // it over and back up normally.
     await syncNow();
     return EraseLocalDataResult.erased;
+  }
+
+  /// Leaves a failed erase owed and visible: the lock stays up and the sync
+  /// status carries the error, whichever part of the wipe it was that failed.
+  Future<void> _recordFailedErase(Object error) async {
+    debugPrint('SyncNotifier: explicit erase failed: $error');
+    await _publishOwedWipe();
+    state = state.copyWith(
+      status: SyncStatus.error,
+      errorMessage: error.toString(),
+    );
   }
 
   /// Deletes every local store, flagged so an interruption is recoverable.
@@ -687,6 +711,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     var cloudDeleted = false;
     var accountSurvived = false;
     var localWiped = false;
+    var sessionEnded = false;
 
     try {
       final auth = _ref.read(authProvider);
@@ -732,6 +757,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
           // Never report the account gone when it is not: a live account
           // described as deleted is the one thing the caller can act on and
           // will not, because it has been told there is nothing left to do.
+          // And when it *is* gone, the session goes with it — see
+          // [_endDeletedAccountSession] — while a surviving account keeps its
+          // session, which is what lets the lock screen say it survived.
+          if (!accountSurvived) {
+            await _endDeletedAccountSession();
+            sessionEnded = true;
+          }
           return accountSurvived
               ? DeleteAllDataResult.accountAndLocalDataSurvived
               : DeleteAllDataResult.localDataSurvived;
@@ -741,6 +773,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // Sign out locally
       await _ref.read(authProvider.notifier).signOut();
+      sessionEnded = true;
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
       return accountSurvived
           ? DeleteAllDataResult.accountSurvived
@@ -756,6 +789,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // a throw while recording the owed deletion leaves the local library
       // standing, while one from the closing sign-out leaves it already gone.
       if (!cloudDeleted) return DeleteAllDataResult.failed;
+      if (!accountSurvived && !sessionEnded) await _endDeletedAccountSession();
       if (!localWiped) {
         return accountSurvived
             ? DeleteAllDataResult.accountAndLocalDataSurvived
@@ -771,6 +805,27 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _staleSyncInFlight = false;
       _wiping = false;
       _syncing = false;
+    }
+  }
+
+  /// Ends the local session once Firebase has deleted the account behind it.
+  ///
+  /// `User.delete()` signs the SDK out as it goes, so from that point the
+  /// app's own session names a user that no longer exists. Left standing, it
+  /// puts the album back on screen once an owed wipe finally succeeds, and the
+  /// first push from there stamps the device for the dead uid — a stamp no
+  /// account can ever match again, which locks the next sign-in out for good.
+  /// With no session there is no push, so the stamp is never written.
+  ///
+  /// Guarded so a failure here cannot change what the caller is told about
+  /// the cloud data, the account or the local copy.
+  Future<void> _endDeletedAccountSession() async {
+    try {
+      await _ref.read(authProvider.notifier).signOut();
+    } catch (e) {
+      debugPrint(
+        "SyncNotifier: ending the deleted account's session failed: $e",
+      );
     }
   }
 

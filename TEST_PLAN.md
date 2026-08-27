@@ -36,12 +36,14 @@ Owed wipe:
 - [ ] Opening the lock retries the wipe on its own; a failure that was transient clears without the user tapping anything
 - [ ] Its primary action is "Erase This Device" — it never offers "Sign In", which would keep the data the user asked to destroy
 - [ ] A "Delete Account & Data" whose local wipe failed lands here, and its message names erasing this device first — the one step reachable from the lock — before signing in again to retry the account
+- [ ] A "Delete Account & Data" that did remove the account but whose local wipe failed arrives here signed out; once the wipe finishes, the device is unclaimed — never stamped for the deleted account — and signing in with the same provider works
 
 Both:
 - [ ] "Erase This Device" confirms first — "Cancel" is the default action and tapping outside the dialog does not erase
 - [ ] Confirming the erase deletes everything on the device, releases the lock, and lets the signed-in account start fresh
 - [ ] An erase that could not run (a sync or wipe in flight) says so rather than failing silently
 - [ ] An erase that failed says so rather than closing the dialog on silence
+- [ ] An erase that removed the pieces and materials but not every photo file says exactly that — never "Nothing was deleted" — and the lock stays up, still offering the erase that finishes it
 
 ---
 
@@ -248,6 +250,7 @@ Both:
 - [ ] Confirming "Sign Out & Erase" clears auth, deletes the local library and photo files, and redirects to sign-in
 - [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
 - [ ] Force-quit mid-wipe → the device comes back locked read-only, the lock screen finishes the wipe on its own without being asked, and nothing is uploaded before it does; Settings is not reachable at all while it is owed
+- [ ] A "Sign Out & Erase" whose wipe failed says the device stays locked until the erase finishes — it never promises that the next sign-in will do it, because the lock is what retries it
 - [ ] The only connected sign-in provider cannot be disconnected — its row is disabled and explains why
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
 - [ ] "Cloud Backup" section shows the current sync status and a "Sync Now" action

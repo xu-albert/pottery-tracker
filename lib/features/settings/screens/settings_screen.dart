@@ -169,7 +169,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           .signOutAndWipeLocalData(_authService.signOut);
     } catch (e) {
       // The session is already gone and the wipe is still flagged pending, so
-      // it will be finished on the next sign-in. Say so rather than implying
+      // the lock screen takes over and retries it. Say so rather than implying
       // the device is clean.
       debugPrint('SettingsScreen: sign-out wipe failed: $e');
       if (mounted) {

@@ -36,6 +36,14 @@ class _FakeAuthService implements AuthService {
 
 class _FakeAuthNotifier extends AuthNotifier {
   _FakeAuthNotifier(super.initial) : super.withState();
+
+  /// The real one ends the Firebase session over a method channel that has
+  /// no handler in a widget test and never answers. Here the session simply
+  /// ends, which is all the screen under test can observe.
+  @override
+  Future<void> signOut() async {
+    state = const AuthState(status: AuthStatus.unauthenticated);
+  }
 }
 
 void main() {

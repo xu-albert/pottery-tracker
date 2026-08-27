@@ -826,10 +826,10 @@ abstract class AppLocalizations {
   /// **'Signing out and erasing this device…'**
   String get signingOut;
 
-  /// Shown when the local wipe on sign-out did not finish
+  /// Shown when the local wipe on sign-out did not finish. Names the lock rather than a later sign-in: the owed wipe locks the router, and the lock screen is what retries it
   ///
   /// In en, this message translates to:
-  /// **'Signed out, but some data on this device could not be deleted. It will be removed the next time you sign in.'**
+  /// **'Signed out, but some data on this device could not be deleted. This device stays locked until the erase finishes.'**
   String get signOutWipeFailed;
 
   /// Explains why the last remaining provider cannot be disconnected
@@ -934,11 +934,17 @@ abstract class AppLocalizations {
   /// **'Busy right now — try again in a moment.'**
   String get eraseLocalDataBusy;
 
-  /// Shown when an erase failed
+  /// Shown only when an erase deleted nothing at all; a wipe that removed the rows but not every photo file uses eraseLocalDataPhotosSurvived instead
   ///
   /// In en, this message translates to:
   /// **'Could not erase this device. Nothing was deleted.'**
   String get eraseLocalDataFailed;
+
+  /// Shown when an erase removed every row but left photo files behind. Says what is true — the library is gone, the photographs are not, the wipe is still owed — and points at the retry the lock screen keeps offering
+  ///
+  /// In en, this message translates to:
+  /// **'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.'**
+  String get eraseLocalDataPhotosSurvived;
 
   /// Shown when an account deletion was refused because a sync is running
   ///

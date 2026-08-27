@@ -37,6 +37,11 @@ void main() {
   const uidB = 'account-b';
   const uidC = 'account-c';
 
+  /// Whether Firebase accepts the account deletion. In production it refuses
+  /// with `requires-recent-login` far more often than not, so that is the
+  /// default here; a test that needs the account really gone flips it.
+  var accountDeleteSucceeds = false;
+
   AuthState signedInAs(String uid) =>
       AuthState(status: AuthStatus.authenticated, uid: uid);
 
@@ -103,12 +108,25 @@ void main() {
     syncService = _FlakyWipeSyncService(db, firestore, storage);
     queue = _StallableSyncQueue();
     auth = _TestAuthNotifier(signedInAs(uidA));
+    accountDeleteSucceeds = false;
 
     container = ProviderContainer(
       overrides: [
         authProvider.overrideWith((_) => auth),
         syncQueueProvider.overrideWithValue(queue),
         syncServiceProvider.overrideWithValue(syncService),
+        syncStateProvider.overrideWith(
+          (ref) => SyncNotifier(
+            ref,
+            queue,
+            syncService,
+            deleteAuthAccount: () async {
+              if (!accountDeleteSucceeds) {
+                throw PlatformException(code: 'requires-recent-login');
+              }
+            },
+          ),
+        ),
       ],
     );
     notifier = container.read(syncStateProvider.notifier);
@@ -567,10 +585,67 @@ void main() {
     await notifier.syncNow(forceFullSync: true);
 
     syncService.wipeFails = true;
-    expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.failed);
+    expect(
+      await notifier.eraseLocalDataNow(),
+      EraseLocalDataResult.failed,
+      reason: 'nothing was deleted, so this is the outcome that says so',
+    );
     expect(container.read(syncStateProvider).status, SyncStatus.error);
     expect(await db.select(db.pieces).get(), isNotEmpty);
   });
+
+  test(
+    'an erase that removed everything but the photo files says exactly that',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      // Take away the documents directory's write permission so the photos
+      // directory inside it cannot be unlinked. Root ignores the mode bits,
+      // so the setup is checked before anything is asserted on it.
+      final photosDir = Directory('${docsDir.path}/photos');
+      Process.runSync('chmod', ['500', docsDir.path]);
+      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+      var deletionIsBlocked = false;
+      try {
+        photosDir.deleteSync(recursive: true);
+      } catch (_) {
+        deletionIsBlocked = true;
+      }
+      if (!deletionIsBlocked) {
+        markTestSkipped('the filesystem here does not enforce the mode bits');
+        return;
+      }
+
+      expect(
+        await notifier.eraseLocalDataNow(),
+        EraseLocalDataResult.photosSurvived,
+        reason:
+            '"nothing was deleted" would be false: every row is gone and '
+            'only the photographs are not',
+      );
+      await settle();
+
+      expect(await db.select(db.pieces).get(), isEmpty);
+      expect(photosDir.existsSync(), isTrue);
+      expect(
+        container.read(deviceLockReasonProvider),
+        DeviceLockReason.pendingWipe,
+        reason: 'the photographs are still here, so the erase is still owed',
+      );
+
+      // The lock screen keeps offering the erase. Once the directory can be
+      // removed again, retrying is what finishes it. (The photos directory
+      // itself comes straight back: A's backed-up mug is pulled down again by
+      // the sync that follows a clean erase.)
+      Process.runSync('chmod', ['700', docsDir.path]);
+      expect(await notifier.eraseLocalDataNow(), EraseLocalDataResult.erased);
+      await settle();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+      expect(container.read(deviceLockReasonProvider), isNull);
+    },
+  );
 
   test(
     'a forced full sync that loses the race is replayed as forced',
@@ -1152,6 +1227,78 @@ void main() {
       );
     },
   );
+
+  group('a deletion Firebase accepts', () {
+    setUp(() => accountDeleteSucceeds = true);
+
+    test('ends the session along with everything else', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+
+      expect(await notifier.deleteAllData(), DeleteAllDataResult.deleted);
+      await settle();
+
+      expect(container.read(authProvider).isSignedIn, isFalse);
+      expect(await db.select(db.pieces).get(), isEmpty);
+      expect(await cloudPieceIds(uidA), isEmpty);
+      expect(await syncService.getLocalDataOwner(), isNull);
+      expect(container.read(deviceLockedProvider), isFalse);
+    });
+
+    test('whose local wipe failed still ends the session, and never stamps the '
+        'deleted uid', () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      await notifier.syncNow(forceFullSync: true);
+      expect(await syncService.getLocalDataOwner(), uidA);
+
+      syncService.wipeFails = true;
+      expect(
+        await notifier.deleteAllData(),
+        DeleteAllDataResult.localDataSurvived,
+      );
+      await settle();
+
+      // User.delete signed the SDK out as it went. The app has to agree,
+      // or the album comes back for an account that no longer exists.
+      expect(
+        container.read(authProvider).isSignedIn,
+        isFalse,
+        reason: 'the account is gone, so the session naming it must be too',
+      );
+      expect(
+        container.read(deviceLockReasonProvider),
+        DeviceLockReason.pendingWipe,
+        reason: 'the local copy survived, and the wipe is still owed',
+      );
+      expect(await db.select(db.pieces).get(), isNotEmpty);
+
+      // The lock screen retries the wipe when it opens; this time it goes
+      // through, and the lock lifts.
+      syncService.wipeFails = false;
+      await notifier.retryOwedWipe();
+      await settle();
+      expect(container.read(deviceLockReasonProvider), isNull);
+      expect(await db.select(db.pieces).get(), isEmpty);
+
+      // Nothing is left that could claim the device for A: with no session
+      // neither the debounced push nor a manual sync reaches the stamp.
+      syncService.pushAllLocalCalls.clear();
+      notifier.scheduleProcessQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await notifier.syncNow(forceFullSync: true);
+      await settle();
+
+      expect(
+        await syncService.getLocalDataOwner(),
+        isNull,
+        reason:
+            'a stamp for a deleted uid can never be matched by any '
+            'sign-in again, so it would lock this device for good',
+      );
+      expect(container.read(localDataOwnerProvider), isNull);
+      expect(syncService.pushAllLocalCalls, isEmpty);
+    });
+  });
 
   group('a half-finished account deletion', () {
     /// Relaunches the app the way `main` does — every persisted input seeded

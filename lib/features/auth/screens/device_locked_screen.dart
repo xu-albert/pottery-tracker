@@ -123,6 +123,8 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
           AppSnackbar.show(context, message: l10n.eraseLocalDataBusy);
         case EraseLocalDataResult.failed:
           AppSnackbar.show(context, message: l10n.eraseLocalDataFailed);
+        case EraseLocalDataResult.photosSurvived:
+          AppSnackbar.show(context, message: l10n.eraseLocalDataPhotosSurvived);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

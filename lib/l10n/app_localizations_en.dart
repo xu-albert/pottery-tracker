@@ -405,7 +405,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signOutWipeFailed =>
-      'Signed out, but some data on this device could not be deleted. It will be removed the next time you sign in.';
+      'Signed out, but some data on this device could not be deleted. This device stays locked until the erase finishes.';
 
   @override
   String get lastProviderCannotDisconnect =>
@@ -467,6 +467,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get eraseLocalDataFailed =>
       'Could not erase this device. Nothing was deleted.';
+
+  @override
+  String get eraseLocalDataPhotosSurvived =>
+      'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.';
 
   @override
   String get deleteAccountBusy => 'Busy right now — try again in a moment.';

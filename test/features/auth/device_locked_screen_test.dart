@@ -181,6 +181,11 @@ void main() {
 
     // The dialog closing with nothing said would read as a successful erase.
     expect(find.textContaining('Could not erase'), findsOneWidget);
+    expect(
+      find.textContaining('Nothing was deleted'),
+      findsOneWidget,
+      reason: 'true here: the wipe threw before it removed anything',
+    );
 
     // The failed wipe leaves one owed, and the owed-wipe reason outranks the
     // stamp — so the screen changes underneath the message, dropping the
@@ -190,6 +195,37 @@ void main() {
     await tester.pump();
     expect(find.text('This device still has to be erased'), findsOneWidget);
     expect(find.text('Sign In'), findsNothing);
+  });
+
+  testWidgets('an erase that left photo files behind never says "nothing"', (
+    tester,
+  ) async {
+    // The rows, the queue, the watermarks and the stamp are all gone by the
+    // time this is thrown; only the photographs are not.
+    when(
+      () => syncService.deleteLocalData(),
+    ).thenThrow(LocalPhotoWipeException(Exception('photos directory is busy')));
+    await pumpLocked(tester);
+
+    await tester.tap(find.text('Erase This Device'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Erase'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(find.textContaining('could not be removed'), findsOneWidget);
+    expect(
+      find.textContaining('Nothing was deleted'),
+      findsNothing,
+      reason: 'the library really was erased; only the photo files survived',
+    );
+
+    // The erase stays owed, and the screen underneath now says so too — the
+    // two statements agree instead of contradicting each other.
+    await tester.pump();
+    expect(find.text('This device still has to be erased'), findsOneWidget);
+    expect(find.text('Erase This Device'), findsOneWidget);
   });
 
   group("ruling 4: the explanation wraps, however long it runs", () {

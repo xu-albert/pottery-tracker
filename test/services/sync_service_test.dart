@@ -844,7 +844,7 @@ void main() {
 
       await expectLater(
         syncService.deleteLocalData(),
-        throwsA(isA<StateError>()),
+        throwsA(isA<LocalPhotoWipeException>()),
         reason:
             'the confirmation the user answered promises every photo on this '
             'device is deleted, so an erase that left them behind must not '
@@ -878,7 +878,7 @@ void main() {
 
       await expectLater(
         syncService.deleteLocalData(),
-        throwsA(isA<StateError>()),
+        throwsA(isA<LocalPhotoWipeException>()),
       );
 
       // The wipe is best-effort; only the reporting is not. Giving up at the

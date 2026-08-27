@@ -9,6 +9,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 
+/// Raised by [SyncService.deleteLocalData] when everything but the photo
+/// files was destroyed.
+///
+/// Its own type rather than a [StateError], because the caller has to tell
+/// this outcome apart from a wipe that deleted nothing: the rows, the queue,
+/// the watermarks and the ownership stamp are all gone, the photographs are
+/// not, and the erase stays owed. Matching on a message would break the first
+/// time the wording changed or another error arrived from the same call.
+class LocalPhotoWipeException implements Exception {
+  /// What stopped the photos directory from being removed.
+  final Object cause;
+
+  LocalPhotoWipeException(this.cause);
+
+  @override
+  String toString() =>
+      'LocalPhotoWipeException: local photo files were not deleted: $cause';
+}
+
 class SyncService {
   final AppDatabase _db;
   final FirebaseFirestore _firestore;
@@ -175,7 +194,7 @@ class SyncService {
     // them on disk must not come back as done — the wipe stays owed, and the
     // lock screen keeps offering the retry that finishes it.
     if (photoFailure != null) {
-      throw StateError('local photo files were not deleted: $photoFailure');
+      throw LocalPhotoWipeException(photoFailure);
     }
   }
 
