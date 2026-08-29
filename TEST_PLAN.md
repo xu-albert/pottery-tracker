@@ -9,7 +9,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ### Sign-In Screen (`/sign-in`)
 - [ ] "Sign in with Google" button launches Google sign-in flow
 - [ ] "Sign in with Apple" button appears only on iOS
-- [ ] "Skip for now" bypasses auth and enters app
+- [ ] "Skip for now" bypasses auth and enters app — offered only while nobody has a stake in this device; it disappears once an account has claimed it, been refused here, or is owed a wipe
 - [ ] Auth state persists across app restarts (SharedPreferences)
 - [ ] After sign-in or skip, user lands on Album screen
 

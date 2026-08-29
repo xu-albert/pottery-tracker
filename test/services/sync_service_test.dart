@@ -790,73 +790,79 @@ void main() {
   });
 
   group('deleteLocalData reports a photo wipe it could not finish', () {
-    test('an undeletable photo directory fails the wipe instead of passing', () async {
-      final photosDir = Directory('${docsDir.path}/photos')
-        ..createSync(recursive: true);
-      File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
+    test(
+      'an undeletable photo directory fails the wipe instead of passing',
+      () async {
+        final photosDir = Directory('${docsDir.path}/photos')
+          ..createSync(recursive: true);
+        File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
 
-      // Take away the parent's write permission so the directory cannot be
-      // unlinked. Root ignores the mode bits, so the test verifies the setup
-      // actually bites before asserting anything about it.
-      Process.runSync('chmod', ['500', docsDir.path]);
-      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
-      var deletionIsBlocked = false;
-      try {
-        photosDir.deleteSync(recursive: true);
-      } catch (_) {
-        deletionIsBlocked = true;
-      }
-      if (!deletionIsBlocked) {
-        markTestSkipped('the filesystem here does not enforce the mode bits');
-        return;
-      }
+        // Take away the parent's write permission so the directory cannot be
+        // unlinked. Root ignores the mode bits, so the test verifies the setup
+        // actually bites before asserting anything about it.
+        Process.runSync('chmod', ['500', docsDir.path]);
+        addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+        var deletionIsBlocked = false;
+        try {
+          photosDir.deleteSync(recursive: true);
+        } catch (_) {
+          deletionIsBlocked = true;
+        }
+        if (!deletionIsBlocked) {
+          markTestSkipped('the filesystem here does not enforce the mode bits');
+          return;
+        }
 
-      await expectLater(
-        syncService.deleteLocalData(),
-        throwsA(isA<LocalPhotoWipeException>()),
-        reason:
-            'the confirmation the user answered promises every photo on this '
-            'device is deleted, so an erase that left them behind must not '
-            'come back as done',
-      );
-      expect(
-        photosDir.existsSync(),
-        isTrue,
-        reason: 'and the photos really are still here, which is the point',
-      );
-    });
+        await expectLater(
+          syncService.deleteLocalData(),
+          throwsA(isA<LocalPhotoWipeException>()),
+          reason:
+              'the confirmation the user answered promises every photo on this '
+              'device is deleted, so an erase that left them behind must not '
+              'come back as done',
+        );
+        expect(
+          photosDir.existsSync(),
+          isTrue,
+          reason: 'and the photos really are still here, which is the point',
+        );
+      },
+    );
 
-    test('the rest of the wipe still runs before the failure surfaces', () async {
-      await insertPiece(id: 'piece-a', title: 'Mug');
-      final photosDir = Directory('${docsDir.path}/photos')
-        ..createSync(recursive: true);
-      File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
+    test(
+      'the rest of the wipe still runs before the failure surfaces',
+      () async {
+        await insertPiece(id: 'piece-a', title: 'Mug');
+        final photosDir = Directory('${docsDir.path}/photos')
+          ..createSync(recursive: true);
+        File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
 
-      Process.runSync('chmod', ['500', docsDir.path]);
-      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
-      var deletionIsBlocked = false;
-      try {
-        photosDir.deleteSync(recursive: true);
-      } catch (_) {
-        deletionIsBlocked = true;
-      }
-      if (!deletionIsBlocked) {
-        markTestSkipped('the filesystem here does not enforce the mode bits');
-        return;
-      }
+        Process.runSync('chmod', ['500', docsDir.path]);
+        addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+        var deletionIsBlocked = false;
+        try {
+          photosDir.deleteSync(recursive: true);
+        } catch (_) {
+          deletionIsBlocked = true;
+        }
+        if (!deletionIsBlocked) {
+          markTestSkipped('the filesystem here does not enforce the mode bits');
+          return;
+        }
 
-      await expectLater(
-        syncService.deleteLocalData(),
-        throwsA(isA<LocalPhotoWipeException>()),
-      );
+        await expectLater(
+          syncService.deleteLocalData(),
+          throwsA(isA<LocalPhotoWipeException>()),
+        );
 
-      // The wipe is best-effort; only the reporting is not. Giving up at the
-      // photos would strand the rows and the ownership stamp, and the stamp is
-      // what decides whether the next account is refused.
-      expect(await db.select(db.pieces).get(), isEmpty);
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
-      expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
-    });
+        // The wipe is best-effort; only the reporting is not. Giving up at the
+        // photos would strand the rows and the ownership stamp, and the stamp is
+        // what decides whether the next account is refused.
+        expect(await db.select(db.pieces).get(), isEmpty);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
+        expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
+      },
+    );
   });
 }

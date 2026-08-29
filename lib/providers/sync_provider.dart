@@ -398,8 +398,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   ///
   /// [endSession] drops the Firebase/Google session and runs *before* the
   /// wipe: if the process dies in between, the device comes back signed out
-  /// with the pending-wipe flag set, and the next sign-in finishes the wipe
-  /// before it pushes anything.
+  /// with the pending-wipe flag set, which locks it read-only at the router.
+  /// The lock screen finishes the wipe — see [retryOwedWipe] — and nothing
+  /// can push until it has.
   Future<void> signOutAndWipeLocalData(
     Future<void> Function() endSession,
   ) async {
