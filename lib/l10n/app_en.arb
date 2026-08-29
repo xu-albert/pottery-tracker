@@ -315,7 +315,7 @@
   "eraseLocalDataFailed": "Could not erase this device. Nothing was deleted.",
   "@eraseLocalDataFailed": { "description": "Shown only when an erase deleted nothing at all; a wipe that removed the rows but not every photo file uses eraseLocalDataPhotosSurvived instead" },
   "eraseLocalDataPhotosSurvived": "Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.",
-  "@eraseLocalDataPhotosSurvived": { "description": "Shown when an erase removed every row but left photo files behind. Says what is true — the library is gone, the photographs are not, the wipe is still owed — and points at the retry the lock screen keeps offering" },
+  "@eraseLocalDataPhotosSurvived": { "description": "Shown when an erase removed every row but left photo files behind, including a Delete Account & Data from a session with no account, where the local wipe is the whole action. Says what is true — the library is gone, the photographs are not, the wipe is still owed — and points at the retry the lock screen keeps offering" },
   "deleteAccountTitle": "Delete Account & Data",
   "@deleteAccountTitle": { "description": "Settings tile that deletes the account and everything with it" },
   "deleteAccountSubtitle": "Permanently deletes your account and all data",

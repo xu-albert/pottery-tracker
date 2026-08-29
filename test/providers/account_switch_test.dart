@@ -1411,52 +1411,122 @@ void main() {
     },
   );
 
-  group('a sync that outlives a confirmed wipe', () {
-    test('is published while it runs, and withdrawn when it ends', () async {
-      await settle();
-      await insertPieceWithPhoto('piece-a', "A's mug");
-
-      // Hold a sync open past the window the sign-out wait watches. That wait
-      // is 5s, so the stall has to outlast it for the device to reach the
-      // state this is about.
-      syncService.pushAllLocalDelay = const Duration(seconds: 7);
-      unawaited(notifier.syncNow(forceFullSync: true));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      expect(
-        container.read(staleSyncBlockingWipeProvider),
-        isFalse,
-        reason: 'nothing has confirmed a wipe yet',
-      );
-
+  group('a "Delete Account & Data" from a session with no account', () {
+    // "Skip for now" leaves a session with no uid, and the tile is offered
+    // there too. With no account there is no cloud delete, so the local wipe
+    // is the whole action — and what it reports has to be what it did.
+    setUp(() async {
       await notifier.signOutAndWipeLocalData(() async {});
+      auth.set(const AuthState(status: AuthStatus.authenticated));
+      await settle();
+      await insertPieceWithPhoto('piece-local', 'Made before signing in');
+    });
+
+    test(
+      'that left only photo files behind says so, never "nothing"',
+      () async {
+        syncService.photoWipeFails = true;
+
+        expect(
+          await notifier.deleteAllData(),
+          DeleteAllDataResult.localPhotosSurvived,
+          reason:
+              '"nothing was deleted" would be false: every row is gone and '
+              'only the photographs are not',
+        );
+        await settle();
+
+        expect(await db.select(db.pieces).get(), isEmpty);
+        expect(await db.select(db.photos).get(), isEmpty);
+        expect(
+          container.read(deviceLockReasonProvider),
+          DeviceLockReason.pendingWipe,
+          reason: 'the photo files are still here, so the wipe is still owed',
+        );
+        expect(container.read(syncStateProvider).status, SyncStatus.error);
+
+        // The lock screen keeps offering the erase, and retries on its own.
+        // Once the directory can go, that is what finishes it.
+        syncService.photoWipeFails = false;
+        await notifier.retryOwedWipe();
+        await settle();
+        expect(container.read(deviceLockReasonProvider), isNull);
+      },
+    );
+
+    test('that deleted nothing still says nothing was deleted', () async {
+      syncService.wipeFails = true;
 
       expect(
-        container.read(staleSyncBlockingWipeProvider),
-        isTrue,
-        reason:
-            'the sync outlasted the wait, so the delete cannot be shown to '
-            'have beaten its writes',
+        await notifier.deleteAllData(),
+        DeleteAllDataResult.failed,
+        reason: 'true here: the throw came before any row went',
       );
-      expect(
-        container.read(pendingLocalWipeProvider),
-        isTrue,
-        reason: 'which is why the wipe stays owed and the lock holds',
-      );
+      await settle();
 
-      // Let the straggler unwind.
-      syncService.pushAllLocalDelay = Duration.zero;
-      for (var i = 0; i < 100 && container.read(staleSyncBlockingWipeProvider); i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-
+      expect(await db.select(db.pieces).get(), isNotEmpty);
       expect(
-        container.read(staleSyncBlockingWipeProvider),
-        isFalse,
-        reason:
-            'the lock screen waits on this to know the retry is worth making '
-            'again — left set, the device stays locked for good',
+        container.read(deviceLockReasonProvider),
+        DeviceLockReason.pendingWipe,
+        reason: 'the wipe the user confirmed is still owed either way',
       );
-    }, timeout: const Timeout(Duration(seconds: 90)));
+    });
+  });
+
+  group('a sync that outlives a confirmed wipe', () {
+    test(
+      'is published while it runs, and withdrawn when it ends',
+      () async {
+        await settle();
+        await insertPieceWithPhoto('piece-a', "A's mug");
+
+        // Hold a sync open past the window the sign-out wait watches. That wait
+        // is 5s, so the stall has to outlast it for the device to reach the
+        // state this is about.
+        syncService.pushAllLocalDelay = const Duration(seconds: 7);
+        unawaited(notifier.syncNow(forceFullSync: true));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(
+          container.read(staleSyncBlockingWipeProvider),
+          isFalse,
+          reason: 'nothing has confirmed a wipe yet',
+        );
+
+        await notifier.signOutAndWipeLocalData(() async {});
+
+        expect(
+          container.read(staleSyncBlockingWipeProvider),
+          isTrue,
+          reason:
+              'the sync outlasted the wait, so the delete cannot be shown to '
+              'have beaten its writes',
+        );
+        expect(
+          container.read(pendingLocalWipeProvider),
+          isTrue,
+          reason: 'which is why the wipe stays owed and the lock holds',
+        );
+
+        // Let the straggler unwind.
+        syncService.pushAllLocalDelay = Duration.zero;
+        for (
+          var i = 0;
+          i < 100 && container.read(staleSyncBlockingWipeProvider);
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+
+        expect(
+          container.read(staleSyncBlockingWipeProvider),
+          isFalse,
+          reason:
+              'the lock screen waits on this to know the retry is worth making '
+              'again — left set, the device stays locked for good',
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
   });
 }
 
@@ -1467,6 +1537,11 @@ class _FlakyWipeSyncService extends SyncService {
   _FlakyWipeSyncService(super.db, super.firestore, super.storage);
 
   bool wipeFails = false;
+
+  /// Stands in for the photos directory refusing to go. The real wipe throws
+  /// this only once every table, the queue, the watermarks and the stamp are
+  /// gone, so here too the rows really are deleted before it is thrown.
+  bool photoWipeFails = false;
 
   /// Every uid `pushAllLocal` has run for. Only [SyncNotifier.syncNow] takes
   /// that branch, so it is how a test tells which of the two push paths did an
@@ -1489,7 +1564,12 @@ class _FlakyWipeSyncService extends SyncService {
     final gate = wipeGate;
     if (gate != null) await gate.future;
     if (wipeFails) throw Exception('simulated local wipe failure');
-    return super.deleteLocalData();
+    await super.deleteLocalData();
+    if (photoWipeFails) {
+      throw LocalPhotoWipeException(
+        Exception('simulated photos directory failure'),
+      );
+    }
   }
 
   @override

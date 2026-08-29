@@ -34,6 +34,7 @@ Foreign pottery:
 Owed wipe:
 - [ ] Force-quit mid-wipe → the lock reads "This device still has to be erased" and says the pottery the user asked to have deleted is still here — never that it belongs to another account, because it is their own
 - [ ] Opening the lock retries the wipe on its own; a failure that was transient clears without the user tapping anything
+- [ ] Sign out while a long sync is running (many queued edits, network off): the lock opens while that sync is still unwinding, and once it ends the wipe is retried on its own — the device does not stay locked until "Erase This Device" is tapped
 - [ ] Its primary action is "Erase This Device" — it never offers "Sign In", which would keep the data the user asked to destroy
 - [ ] A "Delete Account & Data" whose local wipe failed lands here, and its message names erasing this device first — the one step reachable from the lock — before signing in again to retry the account
 - [ ] A "Delete Account & Data" that did remove the account but whose local wipe failed arrives here signed out; once the wipe finishes, the device is unclaimed — never stamped for the deleted account — and signing in with the same provider works
@@ -44,6 +45,7 @@ Both:
 - [ ] An erase that could not run (a sync or wipe in flight) says so rather than failing silently
 - [ ] An erase that failed says so rather than closing the dialog on silence
 - [ ] An erase that removed the pieces and materials but not every photo file says exactly that — never "Nothing was deleted" — and the lock stays up, still offering the erase that finishes it
+- [ ] The same from "Delete Account & Data" in a session with no account ("Skip for now"): the message says the pieces and materials are gone and some photo files remain — never "Nothing was deleted" — and the lock underneath agrees
 
 ---
 

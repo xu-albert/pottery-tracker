@@ -940,7 +940,7 @@ abstract class AppLocalizations {
   /// **'Could not erase this device. Nothing was deleted.'**
   String get eraseLocalDataFailed;
 
-  /// Shown when an erase removed every row but left photo files behind. Says what is true — the library is gone, the photographs are not, the wipe is still owed — and points at the retry the lock screen keeps offering
+  /// Shown when an erase removed every row but left photo files behind, including a Delete Account & Data from a session with no account, where the local wipe is the whole action. Says what is true — the library is gone, the photographs are not, the wipe is still owed — and points at the retry the lock screen keeps offering
   ///
   /// In en, this message translates to:
   /// **'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.'**

@@ -111,6 +111,13 @@ enum DeleteAllDataResult {
   /// rather than collapsing into either one, because each of the two needs a
   /// different action from the user and neither may be left unsaid.
   accountAndLocalDataSurvived,
+
+  /// There was no account, so the local wipe was the whole action — and it
+  /// removed every row, the queue, the watermarks and the stamp, leaving only
+  /// photo files behind with the wipe still owed. Reported separately from
+  /// [failed] because "nothing was deleted" is false here, and separately
+  /// from [localDataSurvived] because there is no cloud side to speak of.
+  localPhotosSurvived,
 }
 
 Future<void> _deleteFirebaseAccount() async {
@@ -475,10 +482,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
       await _wipeLocalData();
       state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
     } on LocalPhotoWipeException catch (e) {
-      await _recordFailedErase(e);
+      await _recordFailedWipe('explicit erase', e);
       return EraseLocalDataResult.photosSurvived;
     } catch (e) {
-      await _recordFailedErase(e);
+      await _recordFailedWipe('explicit erase', e);
       return EraseLocalDataResult.failed;
     } finally {
       _wiping = false;
@@ -489,10 +496,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return EraseLocalDataResult.erased;
   }
 
-  /// Leaves a failed erase owed and visible: the lock stays up and the sync
+  /// Leaves a failed wipe owed and visible: the lock stays up and the sync
   /// status carries the error, whichever part of the wipe it was that failed.
-  Future<void> _recordFailedErase(Object error) async {
-    debugPrint('SyncNotifier: explicit erase failed: $error');
+  Future<void> _recordFailedWipe(String action, Object error) async {
+    debugPrint('SyncNotifier: $action failed: $error');
     await _publishOwedWipe();
     state = state.copyWith(
       status: SyncStatus.error,
@@ -654,8 +661,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// account's cloud tree. The owed wipe is deliberately *not* retried here:
   /// a delete on the push path would fire on the debounce after any edit and
   /// destroy the current account's work. It is retried at an auth transition,
-  /// from [retryOwedWipe] when the lock screen opens on it, and from the
-  /// confirmed [eraseLocalDataNow] — nowhere else.
+  /// from [retryOwedWipe] on the lock screen — when it opens on the owed
+  /// wipe, and again when [staleSyncBlockingWipeProvider] reports the sync
+  /// that blocked the last attempt has ended — and from the confirmed
+  /// [eraseLocalDataNow]; nowhere else.
   Future<bool> _blockedByPendingWipe() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(pendingWipeKey) != true) return false;
@@ -667,12 +676,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// Retries a wipe the user confirmed and did not get, without asking again.
   ///
   /// `DeviceLockedScreen` calls this when it opens for
-  /// [DeviceLockReason.pendingWipe], which is the only place the owed wipe can
-  /// still be reached: the flag locks the router on the first frame, so the
-  /// shell never mounts and the auth transition that used to carry the retry
-  /// never runs. A transient failure — a photo file briefly locked — therefore
-  /// heals on its own again, and the erase is still there when it does not.
-  /// This is a mount, not the push path: no delete ever fires behind an edit.
+  /// [DeviceLockReason.pendingWipe], and again when the sync that blocked the
+  /// last attempt ends — the only place the owed wipe can still be reached:
+  /// the flag locks the router on the first frame, so the shell never mounts
+  /// and the auth transition that used to carry the retry never runs. A
+  /// transient failure — a photo file briefly locked — therefore heals on its
+  /// own again, and the erase is still there when it does not. The screen
+  /// owns both triggers, not the push path or the sync's own completion: no
+  /// delete ever fires behind an edit.
   Future<void> retryOwedWipe() => _finishInterruptedWipe();
 
   /// Re-runs a wipe that was started but never confirmed complete.
@@ -752,34 +763,36 @@ class SyncNotifier extends StateNotifier<SyncState> {
         }
       }
 
-      // Always delete local data. Past this point the cloud side is already
-      // gone, so a failure here is partial, not "nothing was deleted".
+      // Always delete local data. Past the cloud delete a failure here is
+      // partial, not "nothing was deleted". With no account there was no
+      // cloud delete and the wipe is the whole action — then only a throw
+      // that left every row standing may be reported as nothing, and the
+      // photo failure is told apart by its type: it is thrown only once the
+      // rows, the queue, the watermarks and the stamp are already gone.
       try {
         await _wipeLocalData();
         localWiped = true;
+      } on LocalPhotoWipeException catch (e) {
+        await _recordFailedWipe('deleteAllData local wipe', e);
+        if (!cloudDeleted) return DeleteAllDataResult.localPhotosSurvived;
       } catch (e) {
-        debugPrint('SyncNotifier: deleteAllData local wipe failed: $e');
-        await _publishOwedWipe();
-        state = state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: e.toString(),
-        );
-        if (cloudDeleted) {
-          // Never report the account gone when it is not: a live account
-          // described as deleted is the one thing the caller can act on and
-          // will not, because it has been told there is nothing left to do.
-          // And when it *is* gone, the session goes with it — see
-          // [_endDeletedAccountSession] — while a surviving account keeps its
-          // session, which is what lets the lock screen say it survived.
-          if (!accountSurvived) {
-            await _endDeletedAccountSession();
-            sessionEnded = true;
-          }
-          return accountSurvived
-              ? DeleteAllDataResult.accountAndLocalDataSurvived
-              : DeleteAllDataResult.localDataSurvived;
+        await _recordFailedWipe('deleteAllData local wipe', e);
+        if (!cloudDeleted) rethrow;
+      }
+      if (!localWiped) {
+        // Never report the account gone when it is not: a live account
+        // described as deleted is the one thing the caller can act on and
+        // will not, because it has been told there is nothing left to do.
+        // And when it *is* gone, the session goes with it — see
+        // [_endDeletedAccountSession] — while a surviving account keeps its
+        // session, which is what lets the lock screen say it survived.
+        if (!accountSurvived) {
+          await _endDeletedAccountSession();
+          sessionEnded = true;
         }
-        rethrow;
+        return accountSurvived
+            ? DeleteAllDataResult.accountAndLocalDataSurvived
+            : DeleteAllDataResult.localDataSurvived;
       }
 
       // Sign out locally

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -341,6 +343,107 @@ void main() {
         reason:
             'the blocker is gone, so the wipe the user confirmed gets another '
             'attempt without them having to ask for it again',
+      );
+    });
+
+    /// Holds every `deleteLocalData` call open on its own gate, so a test
+    /// can act while an attempt is running and then let it fail.
+    List<Completer<void>> gateEveryAttempt() {
+      final gates = <Completer<void>>[];
+      when(() => syncService.deleteLocalData()).thenAnswer((_) async {
+        final gate = Completer<void>();
+        gates.add(gate);
+        await gate.future;
+        throw Exception('disk full');
+      });
+      return gates;
+    }
+
+    Future<void> pumpABit(WidgetTester tester) async {
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
+
+    testWidgets('a sync that ends during an attempt still earns another', (
+      tester,
+    ) async {
+      // The likeliest timing, not a corner: the attempt made on mount is the
+      // one the stale sync refuses, and that sync unwinds while the attempt
+      // is still running. The attempt captured the blocked condition when it
+      // started, so it keeps the flag — and a signal dropped here never comes
+      // again, leaving the device locked until the user re-confirms.
+      final gates = gateEveryAttempt();
+
+      await pumpLocked(tester, owedWipe: true, staleSyncBlocking: true);
+      await pumpABit(tester);
+      expect(gates, hasLength(1), reason: 'the mount attempt is running');
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(DeviceLockedScreen)),
+      );
+      container.read(staleSyncBlockingWipeProvider.notifier).state = false;
+      await pumpABit(tester);
+      expect(
+        gates,
+        hasLength(1),
+        reason: 'one attempt at a time; the signal waits for it',
+      );
+
+      gates[0].complete();
+      await pumpABit(tester);
+      expect(
+        gates,
+        hasLength(2),
+        reason:
+            'the blocker ended while the first attempt ran, so that attempt '
+            'could not have seen it; a further one has to follow',
+      );
+
+      gates[1].complete();
+      await pumpABit(tester);
+      expect(
+        gates,
+        hasLength(2),
+        reason: 'nothing arrived during the follow-up, so it settles',
+      );
+    });
+
+    testWidgets('several syncs ending during one attempt earn exactly one', (
+      tester,
+    ) async {
+      final gates = gateEveryAttempt();
+
+      await pumpLocked(tester, owedWipe: true, staleSyncBlocking: true);
+      await pumpABit(tester);
+      expect(gates, hasLength(1));
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(DeviceLockedScreen)),
+      );
+      final blocking = container.read(staleSyncBlockingWipeProvider.notifier);
+      blocking.state = false;
+      for (var i = 0; i < 3; i++) {
+        blocking.state = true;
+        blocking.state = false;
+      }
+      await pumpABit(tester);
+      expect(gates, hasLength(1));
+
+      gates[0].complete();
+      await pumpABit(tester);
+      expect(
+        gates,
+        hasLength(2),
+        reason: 'four signals during one attempt owe one follow-up, not four',
+      );
+
+      gates[1].complete();
+      await pumpABit(tester);
+      expect(
+        gates,
+        hasLength(2),
+        reason: 'and the follow-up settles rather than re-arming itself',
       );
     });
 

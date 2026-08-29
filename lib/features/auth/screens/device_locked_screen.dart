@@ -33,10 +33,34 @@ class DeviceLockedScreen extends ConsumerStatefulWidget {
 class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   bool _busy = false;
 
+  /// Whether a retry was asked for while an attempt was already running.
+  ///
+  /// The sync that blocks a wipe most often ends *during* the attempt it
+  /// refused — that attempt captured the blocked condition when it started,
+  /// so it keeps the flag, and a signal dropped at that moment would never
+  /// come again. One flag rather than a count: any number of signals during
+  /// one attempt owe exactly one follow-up, and a follow-up that no signal
+  /// reached settles instead of re-arming.
+  bool _retryOwed = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _resumeOwedWipe());
+  }
+
+  /// Runs [action] as the screen's one action in flight, then pays a retry
+  /// that was asked for while it ran.
+  Future<void> _whileBusy(Future<void> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted || !_retryOwed) return;
+    _retryOwed = false;
+    await _resumeOwedWipe();
   }
 
   /// Finishes an owed wipe without asking, because the user already said yes.
@@ -47,25 +71,28 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   /// on something transient therefore still heals itself, and the erase below
   /// is what is left when it does not.
   ///
-  /// Reached twice, because once was not enough. A wipe that landed while a
-  /// sync outlived it keeps the flag deliberately, and this screen opens while
-  /// that sync is still running — so the mount-time attempt read the same
-  /// blocked condition and kept the flag again, leaving the device locked long
-  /// after the sync had unwound. [build] watches for that to clear and comes
-  /// back here. The retry stays on this screen either way: it is never fired
-  /// from `syncNow`, from the debounced push, or from the sync's own
-  /// completion, so no delete can land behind an edit.
+  /// Reached more than once, because once was not enough. A wipe that landed
+  /// while a sync outlived it keeps the flag deliberately, and this screen
+  /// opens while that sync is still running — so the mount-time attempt read
+  /// the same blocked condition and kept the flag again, leaving the device
+  /// locked long after the sync had unwound. [build] watches for that to
+  /// clear and comes back here; if it arrives while an attempt is running it
+  /// is remembered in [_retryOwed] and paid when that attempt settles. The
+  /// retry stays on this screen either way: it is never fired from `syncNow`,
+  /// from the debounced push, or from the sync's own completion, so no delete
+  /// can land behind an edit.
   Future<void> _resumeOwedWipe() async {
-    if (!mounted || _busy) return;
+    if (!mounted) return;
+    if (_busy) {
+      _retryOwed = true;
+      return;
+    }
     if (ref.read(deviceLockReasonProvider) != DeviceLockReason.pendingWipe) {
       return;
     }
-    setState(() => _busy = true);
-    try {
-      await ref.read(syncStateProvider.notifier).retryOwedWipe();
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    await _whileBusy(
+      () => ref.read(syncStateProvider.notifier).retryOwedWipe(),
+    );
   }
 
   /// Drops to the sign-in screen without destroying anything.
@@ -75,8 +102,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
   /// reach, which is where the owner signs back in.
   Future<void> _switchAccount() async {
     if (_busy) return;
-    setState(() => _busy = true);
-    try {
+    await _whileBusy(() async {
       await ref
           .read(syncStateProvider.notifier)
           .endForeignSession(ref.read(authServiceProvider).signOut);
@@ -89,9 +115,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
         deviceLockReasonProvider,
       );
       await ref.read(authProvider.notifier).signOut();
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    });
   }
 
   Future<void> _eraseDevice() async {
@@ -119,8 +143,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    setState(() => _busy = true);
-    try {
+    await _whileBusy(() async {
       final result = await ref
           .read(syncStateProvider.notifier)
           .eraseLocalDataNow();
@@ -135,9 +158,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
         case EraseLocalDataResult.photosSurvived:
           AppSnackbar.show(context, message: l10n.eraseLocalDataPhotosSurvived);
       }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    });
   }
 
   @override
@@ -145,7 +166,7 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     // The sync that was blocking the wipe has finished, so the attempt that
-    // was refused on mount is worth making again.
+    // was refused is worth making again — after the one in flight, if any.
     ref.listen<bool>(staleSyncBlockingWipeProvider, (was, isBlocking) {
       if (was == true && !isBlocking) _resumeOwedWipe();
     });

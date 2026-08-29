@@ -109,11 +109,14 @@ whatever is on the device gets uploaded into whichever cloud tree is signed in. 
   they produced two paths that destroyed the owner's pottery permanently and one that reported
   "All data backed up" while pieces were excluded. Making the device unwritable is the whole point —
   there is then nothing to attribute.
-- **An owed wipe is only ever retried where the user expects it** — at an auth transition, when
-  `DeviceLockedScreen` opens on the owed-wipe reason (`retryOwedWipe`, the only trigger left once
-  the flag locks the router before the shell can mount), or from the confirmed `eraseLocalDataNow`.
-  Never from `syncNow` or the debounced `_pushQueue`: a delete on the push path fires 500ms after
-  any edit and would destroy the *current* account's work.
+- **An owed wipe is only ever retried where the user expects it** — at an auth transition; from
+  `DeviceLockedScreen` via `retryOwedWipe`, both when it opens on the owed-wipe reason (the flag
+  locks the router before the shell can mount, so the auth transition never runs) and when
+  `staleSyncBlockingWipeProvider` reports that the sync which blocked the last attempt has ended
+  (a signal that lands mid-attempt is kept in one coalesced flag and paid once that attempt
+  settles); or from the confirmed `eraseLocalDataNow`. Never from `syncNow`, the debounced
+  `_pushQueue`, or the sync's own completion: a delete on the push path fires 500ms after any
+  edit and would destroy the *current* account's work.
 - **A destructive action the user has confirmed never ends in silence.** `eraseLocalDataNow` and
   `deleteAllData` both return a result the caller reports.
 

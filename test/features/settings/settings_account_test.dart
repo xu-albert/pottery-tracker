@@ -77,21 +77,26 @@ void main() {
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   });
 
+  /// [localOnly] is the session "Skip for now" leaves behind: authenticated
+  /// in the app's own sense, with no account behind it.
   Future<void> pumpSettings(
     WidgetTester tester, {
     Set<String> linkedProviders = const {'google.com', 'apple.com'},
+    bool localOnly = false,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           authProvider.overrideWith(
             (ref) => _FakeAuthNotifier(
-              AuthState(
-                status: AuthStatus.authenticated,
-                uid: 'user-a',
-                displayName: 'A',
-                linkedProviders: linkedProviders,
-              ),
+              localOnly
+                  ? const AuthState(status: AuthStatus.authenticated)
+                  : AuthState(
+                      status: AuthStatus.authenticated,
+                      uid: 'user-a',
+                      displayName: 'A',
+                      linkedProviders: linkedProviders,
+                    ),
             ),
           ),
           authServiceProvider.overrideWithValue(authService),
@@ -281,6 +286,71 @@ void main() {
       // the lock screen — so this is the case where the result went silent.
       // Whichever partial outcome it is, the surviving local copy is named.
       expect(find.textContaining('copy on this device'), findsOneWidget);
+    });
+
+    testWidgets('with no account, a wipe that left photo files behind never '
+        'says "nothing"', (tester) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // The rows, the queue, the watermarks and the stamp are all gone by the
+      // time this is thrown; only the photographs are not. With no account
+      // there was no cloud side, so the local wipe was the whole action.
+      when(() => syncService.deleteLocalData()).thenThrow(
+        LocalPhotoWipeException(Exception('photos directory is busy')),
+      );
+
+      await pumpSettings(tester, localOnly: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Delete Account & Data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete Everything'));
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+
+      expect(find.textContaining('could not be removed'), findsOneWidget);
+      expect(
+        find.textContaining('Nothing was deleted'),
+        findsNothing,
+        reason: 'the library really was erased; only the photo files survived',
+      );
+      verifyNever(() => syncService.deleteCloudData(any()));
+    });
+
+    testWidgets('with no account, a wipe that deleted nothing says so', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+
+      await pumpSettings(tester, localOnly: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Delete Account & Data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete Everything'));
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+
+      expect(
+        find.textContaining('Nothing was deleted'),
+        findsOneWidget,
+        reason: 'true here: the wipe threw before it removed anything',
+      );
+      expect(find.textContaining('could not be removed'), findsNothing);
     });
 
     testWidgets('excludes itself and Sign Out while a delete is in flight', (

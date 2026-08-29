@@ -516,6 +516,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       message: l10n.deleteAccountAndLocalSurvived,
                       duration: _partialOutcomeDuration,
                     );
+                  // No account was involved, so the erase's own words fit:
+                  // the library is gone, the photo files are not, and the
+                  // lock screen still offers the erase that finishes it.
+                  case DeleteAllDataResult.localPhotosSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.eraseLocalDataPhotosSurvived,
+                      duration: _partialOutcomeDuration,
+                    );
                 }
               } finally {
                 if (mounted) setState(() => _isDeletingAccount = false);
