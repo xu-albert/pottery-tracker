@@ -1,5 +1,5 @@
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,9 +16,11 @@ import '../../../providers/database_provider.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
+import '../../../providers/piece_writer_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../widgets/app_snackbar.dart';
+import '../widgets/delete_piece_dialog.dart';
 import '../widgets/photo_gallery.dart';
 import '../widgets/metadata_form.dart';
 import '../widgets/photo_timeline.dart' show LastUpdatedInfo;
@@ -97,6 +99,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     try {
       final imageService = ref.read(imageServiceProvider);
       final photosDao = ref.read(photosDaoProvider);
+      final writer = ref.read(pieceWriterProvider);
 
       final result = await imageService.pickAndProcessImage(
         source: source,
@@ -105,34 +108,16 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       if (result == null) return;
 
       final sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
-      await photosDao.insertPhoto(
-        PhotosCompanion(
-          id: Value(result.photoId),
-          pieceId: Value(widget.pieceId),
-          localPath: Value(result.localPath),
-          thumbnailPath: Value(result.thumbnailPath),
-          dateTaken: Value(result.dateTaken),
-          createdAt: Value(DateTime.now()),
-          sortOrder: Value(sortOrder),
-        ),
+      await writer.addPhoto(
+        pieceId: widget.pieceId,
+        photo: result,
+        sortOrder: sortOrder,
       );
-
-      // Update piece timestamp and set new photo as cover
-      final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(
-        PiecesCompanion(
-          id: Value(widget.pieceId),
-          coverPhotoId: Value(result.photoId),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
+      await writer.setCoverPhoto(widget.pieceId, result.photoId);
       HapticFeedback.lightImpact();
       ref
           .read(analyticsProvider)
           .logEvent(name: 'photo_added', parameters: {'source': source.name});
-      final trigger = ref.read(syncTriggerProvider);
-      await trigger.afterPhotoWrite(result.photoId, includeFile: true);
-      await trigger.afterPieceWrite(widget.pieceId);
       _loadPiece();
     } catch (e) {
       if (mounted) {
@@ -142,46 +127,28 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   Future<void> _deletePhoto(Photo photo) async {
-    final photosDao = ref.read(photosDaoProvider);
-    final imageService = ref.read(imageServiceProvider);
-
-    await photosDao.deletePhoto(photo.id);
-    await imageService.deletePhotoFiles(widget.pieceId, photo.id);
+    final wasCover = _piece?.coverPhotoId == photo.id;
+    await ref
+        .read(pieceWriterProvider)
+        .deletePhoto(
+          pieceId: widget.pieceId,
+          photoId: photo.id,
+          coverPhotoId: _piece?.coverPhotoId,
+        );
     HapticFeedback.lightImpact();
-    await ref.read(syncTriggerProvider).afterPhotoDeletion(photo.id);
-
-    // If deleted photo was cover, set new cover
-    if (_piece?.coverPhotoId == photo.id) {
-      final remaining = await photosDao.getPhotosForPiece(widget.pieceId);
-      final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(
-        PiecesCompanion(
-          id: Value(widget.pieceId),
-          coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
-      await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
-      _loadPiece();
-    }
+    if (wasCover) _loadPiece();
   }
 
   Future<void> _toggleArchive() async {
     final wasArchived = _piece!.isArchived;
     final l10n = AppLocalizations.of(context)!;
-    final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(
-      PiecesCompanion(
-        id: Value(widget.pieceId),
-        isArchived: Value(!wasArchived),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+    await ref
+        .read(pieceWriterProvider)
+        .setArchived(widget.pieceId, !wasArchived);
     HapticFeedback.lightImpact();
     ref
         .read(analyticsProvider)
         .logEvent(name: wasArchived ? 'piece_unarchived' : 'piece_archived');
-    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     if (mounted) {
       AppSnackbar.show(
         context,
@@ -194,44 +161,11 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   Future<void> _deletePiece() async {
-    final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(l10n.deletePieceConfirmTitle),
-        content: Text(l10n.deletePieceConfirmMessage),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.cancel),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
-    );
+    if (!await confirmDeletePiece(context)) return;
 
-    if (confirmed != true) return;
-
-    final piecesDao = ref.read(piecesDaoProvider);
-    final photosDao = ref.read(photosDaoProvider);
-    final imageService = ref.read(imageServiceProvider);
-
-    // Capture photo IDs before deletion for sync
-    final photos = await photosDao.getPhotosForPiece(widget.pieceId);
-    final photoIds = photos.map((p) => p.id).toList();
-
-    await photosDao.deletePhotosForPiece(widget.pieceId);
-    await piecesDao.deletePiece(widget.pieceId);
-    await imageService.deletePhotos(widget.pieceId);
+    await ref.read(pieceWriterProvider).deletePiece(widget.pieceId);
     HapticFeedback.mediumImpact();
     ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
-    await ref
-        .read(syncTriggerProvider)
-        .afterPieceDeletion(widget.pieceId, photoIds);
 
     if (mounted) context.go('/');
   }
@@ -243,28 +177,16 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     String? clayType,
     String? notes,
   }) async {
-    final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(
-      PiecesCompanion(
-        id: Value(widget.pieceId),
-        title: title != null
-            ? Value(title.isEmpty ? null : title)
-            : const Value.absent(),
-        stage: clearStage
-            ? const Value(null)
-            : stage != null
-            ? Value(stage.name)
-            : const Value.absent(),
-        clayType: clayType != null
-            ? Value(clayType.isEmpty ? null : clayType)
-            : const Value.absent(),
-        notes: notes != null
-            ? Value(notes.isEmpty ? null : notes)
-            : const Value.absent(),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
-    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
+    await ref
+        .read(pieceWriterProvider)
+        .updateFields(
+          widget.pieceId,
+          title: title,
+          stage: stage,
+          clearStage: clearStage,
+          clayType: clayType,
+          notes: notes,
+        );
     _loadPiece();
   }
 
@@ -291,15 +213,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final date = await _showCupertinoDatePicker(current);
     if (date == null || !mounted) return;
 
-    final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(
-      PiecesCompanion(
-        id: Value(widget.pieceId),
-        displayDate: Value(date),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
-    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
+    await ref.read(pieceWriterProvider).setDisplayDate(widget.pieceId, date);
     _loadPiece();
   }
 
@@ -312,11 +226,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final date = await _showCupertinoDatePicker(photo.dateTaken);
     if (date == null || !mounted) return;
 
-    final photosDao = ref.read(photosDaoProvider);
-    await photosDao.updatePhoto(
-      PhotosCompanion(id: Value(photo.id), dateTaken: Value(date)),
-    );
-    await ref.read(syncTriggerProvider).afterPhotoWrite(photo.id);
+    await ref.read(pieceWriterProvider).setPhotoDate(photo.id, date);
   }
 
   Future<DateTime?> _showCupertinoDatePicker(DateTime initial) async {
@@ -358,6 +268,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   Future<void> _addMultiplePhotos() async {
     final l10n = AppLocalizations.of(context)!;
     var dialogOpen = false;
+    final progress = ValueNotifier<int>(0);
     try {
       final imageService = ref.read(imageServiceProvider);
       final picked = await imageService.pickMultipleImages();
@@ -367,21 +278,19 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => _BatchProgressDialog(total: picked.length),
+        builder: (_) =>
+            _BatchProgressDialog(total: picked.length, progress: progress),
       );
       dialogOpen = true;
 
       final photosDao = ref.read(photosDaoProvider);
-      final piecesDao = ref.read(piecesDaoProvider);
+      final writer = ref.read(pieceWriterProvider);
       var sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
       String? lastPhotoId;
       var failures = 0;
 
       for (var i = 0; i < picked.length; i++) {
-        // Update progress
-        if (mounted) {
-          _BatchProgressDialog._updateProgress(i + 1);
-        }
+        progress.value = i + 1;
 
         try {
           final bytes = await picked[i].readAsBytes();
@@ -390,20 +299,11 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             pieceId: widget.pieceId,
           );
 
-          await photosDao.insertPhoto(
-            PhotosCompanion(
-              id: Value(result.photoId),
-              pieceId: Value(widget.pieceId),
-              localPath: Value(result.localPath),
-              thumbnailPath: Value(result.thumbnailPath),
-              dateTaken: Value(result.dateTaken),
-              createdAt: Value(DateTime.now()),
-              sortOrder: Value(sortOrder),
-            ),
+          await writer.addPhoto(
+            pieceId: widget.pieceId,
+            photo: result,
+            sortOrder: sortOrder,
           );
-
-          final trigger = ref.read(syncTriggerProvider);
-          await trigger.afterPhotoWrite(result.photoId, includeFile: true);
 
           lastPhotoId = result.photoId;
           sortOrder++;
@@ -418,13 +318,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
       // Set last photo as cover
       if (lastPhotoId != null) {
-        await piecesDao.updatePiece(
-          PiecesCompanion(
-            id: Value(widget.pieceId),
-            coverPhotoId: Value(lastPhotoId),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
+        await writer.setCoverPhoto(widget.pieceId, lastPhotoId);
       }
 
       HapticFeedback.lightImpact();
@@ -437,7 +331,6 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
               'count': picked.length - failures,
             },
           );
-      await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
       _loadPiece();
 
       if (failures > 0 && mounted) {
@@ -451,6 +344,8 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       if (mounted) {
         AppSnackbar.show(context, message: 'Could not add photos: $e');
       }
+    } finally {
+      progress.dispose();
     }
   }
 
@@ -461,29 +356,20 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     );
     if (result == null) return;
 
-    final photosDao = ref.read(photosDaoProvider);
-    final imageService = ref.read(imageServiceProvider);
-    final trigger = ref.read(syncTriggerProvider);
+    final writer = ref.read(pieceWriterProvider);
 
     // Process deletions
     for (final deletedId in result.deletedIds) {
-      await photosDao.deletePhoto(deletedId);
-      await imageService.deletePhotoFiles(widget.pieceId, deletedId);
-      await trigger.afterPhotoDeletion(deletedId);
+      await writer.deletePhoto(pieceId: widget.pieceId, photoId: deletedId);
     }
 
     // Update cover photo if deleted
     if (result.deletedIds.contains(_piece?.coverPhotoId)) {
       final remaining = result.reordered;
-      final piecesDao = ref.read(piecesDaoProvider);
-      await piecesDao.updatePiece(
-        PiecesCompanion(
-          id: Value(widget.pieceId),
-          coverPhotoId: Value(remaining.isNotEmpty ? remaining.first.id : null),
-          updatedAt: Value(DateTime.now()),
-        ),
+      await writer.setCoverPhoto(
+        widget.pieceId,
+        remaining.isNotEmpty ? remaining.first.id : null,
       );
-      await trigger.afterPieceWrite(widget.pieceId);
       _loadPiece();
     }
 
@@ -495,19 +381,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
             name: 'photo_reorder_saved',
             parameters: {'photo_count': result.reordered.length},
           );
-
-      final updates = <({String id, int sortOrder})>[];
-      for (var i = 0; i < result.reordered.length; i++) {
-        updates.add((
-          id: result.reordered[i].id,
-          sortOrder: result.reordered.length - 1 - i,
-        ));
-      }
-
-      await photosDao.updateSortOrders(updates);
-      for (final update in updates) {
-        await trigger.afterPhotoWrite(update.id);
-      }
+      await writer.reorderPhotos(result.reordered.map((p) => p.id).toList());
     }
   }
 
@@ -734,37 +608,11 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 }
 
-class _BatchProgressDialog extends StatefulWidget {
+class _BatchProgressDialog extends StatelessWidget {
   final int total;
+  final ValueListenable<int> progress;
 
-  const _BatchProgressDialog({required this.total});
-
-  static void Function(int)? _onProgress;
-
-  static void _updateProgress(int current) {
-    _onProgress?.call(current);
-  }
-
-  @override
-  State<_BatchProgressDialog> createState() => _BatchProgressDialogState();
-}
-
-class _BatchProgressDialogState extends State<_BatchProgressDialog> {
-  int _current = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _BatchProgressDialog._onProgress = (current) {
-      if (mounted) setState(() => _current = current);
-    };
-  }
-
-  @override
-  void dispose() {
-    _BatchProgressDialog._onProgress = null;
-    super.dispose();
-  }
+  const _BatchProgressDialog({required this.total, required this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -775,7 +623,11 @@ class _BatchProgressDialogState extends State<_BatchProgressDialog> {
         children: [
           const CupertinoActivityIndicator(),
           const SizedBox(height: 16),
-          Text(l10n.processingPhotos(_current, widget.total)),
+          ValueListenableBuilder<int>(
+            valueListenable: progress,
+            builder: (_, current, _) =>
+                Text(l10n.processingPhotos(current, total)),
+          ),
         ],
       ),
     );

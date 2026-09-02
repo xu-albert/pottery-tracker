@@ -1,5 +1,3 @@
-import 'package:drift/drift.dart' hide Column;
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,11 +13,11 @@ import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
-import '../../../providers/image_service_provider.dart';
-import '../../../providers/sync_provider.dart';
+import '../../../providers/piece_writer_provider.dart';
 import '../../../widgets/app_snackbar.dart';
 import '../../../widgets/stage_badge.dart';
 import '../../../widgets/tag_chip.dart';
+import '../widgets/delete_piece_dialog.dart';
 import '../widgets/photo_gallery.dart';
 
 class ArchivedPieceDetailScreen extends ConsumerStatefulWidget {
@@ -49,17 +47,9 @@ class _ArchivedPieceDetailScreenState
   }
 
   Future<void> _unarchive() async {
-    final dao = ref.read(piecesDaoProvider);
-    await dao.updatePiece(
-      PiecesCompanion(
-        id: Value(widget.pieceId),
-        isArchived: const Value(false),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+    await ref.read(pieceWriterProvider).setArchived(widget.pieceId, false);
     HapticFeedback.lightImpact();
     ref.read(analyticsProvider).logEvent(name: 'piece_unarchived');
-    await ref.read(syncTriggerProvider).afterPieceWrite(widget.pieceId);
     if (mounted) {
       AppSnackbar.show(
         context,
@@ -72,43 +62,11 @@ class _ArchivedPieceDetailScreenState
   }
 
   Future<void> _deletePiece() async {
-    final l10n = AppLocalizations.of(context)!;
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(l10n.deletePieceConfirmTitle),
-        content: Text(l10n.deletePieceConfirmMessage),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.cancel),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
-    );
+    if (!await confirmDeletePiece(context)) return;
 
-    if (confirmed != true) return;
-
-    final piecesDao = ref.read(piecesDaoProvider);
-    final photosDao = ref.read(photosDaoProvider);
-    final imageService = ref.read(imageServiceProvider);
-
-    final photos = await photosDao.getPhotosForPiece(widget.pieceId);
-    final photoIds = photos.map((p) => p.id).toList();
-
-    await photosDao.deletePhotosForPiece(widget.pieceId);
-    await piecesDao.deletePiece(widget.pieceId);
-    await imageService.deletePhotos(widget.pieceId);
+    await ref.read(pieceWriterProvider).deletePiece(widget.pieceId);
     HapticFeedback.mediumImpact();
     ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
-    await ref
-        .read(syncTriggerProvider)
-        .afterPieceDeletion(widget.pieceId, photoIds);
 
     if (mounted) context.go('/');
   }

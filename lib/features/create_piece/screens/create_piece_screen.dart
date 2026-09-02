@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,12 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../../../l10n/app_localizations.dart';
-import '../../../database/database.dart';
-import '../../../models/untitled_title.dart';
-import '../../../providers/database_provider.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/image_service_provider.dart';
-import '../../../providers/sync_provider.dart';
+import '../../../providers/piece_writer_provider.dart';
 import '../../../providers/review_prompt_provider.dart';
 import '../../../services/image_service.dart';
 import '../../../widgets/app_snackbar.dart';
@@ -139,36 +135,9 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
   }
 
   Future<void> _savePiece(String pieceId, List<ImageResult> results) async {
-    final now = DateTime.now();
-    final piecesDao = ref.read(piecesDaoProvider);
-    final photosDao = ref.read(photosDaoProvider);
-
-    final title = nextUntitledTitle(await piecesDao.getUntitledPieceTitles());
-
-    await piecesDao.insertPiece(
-      PiecesCompanion(
-        id: Value(pieceId),
-        title: Value(title),
-        coverPhotoId: Value(results.last.photoId),
-        createdAt: Value(now),
-        updatedAt: Value(now),
-      ),
-    );
-
-    for (var i = 0; i < results.length; i++) {
-      final result = results[i];
-      await photosDao.insertPhoto(
-        PhotosCompanion(
-          id: Value(result.photoId),
-          pieceId: Value(pieceId),
-          localPath: Value(result.localPath),
-          thumbnailPath: Value(result.thumbnailPath),
-          dateTaken: Value(result.dateTaken),
-          createdAt: Value(now),
-          sortOrder: Value(i),
-        ),
-      );
-    }
+    await ref
+        .read(pieceWriterProvider)
+        .createPiece(pieceId: pieceId, photos: results);
 
     HapticFeedback.lightImpact();
     ref
@@ -177,11 +146,6 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
           name: 'piece_created',
           parameters: {'photo_count': results.length},
         );
-    final trigger = ref.read(syncTriggerProvider);
-    await trigger.afterPieceWrite(pieceId);
-    for (final result in results) {
-      await trigger.afterPhotoWrite(result.photoId, includeFile: true);
-    }
     if (mounted) {
       await ref
           .read(reviewPromptServiceProvider)
