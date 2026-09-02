@@ -10,6 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-09-in-app-review-and-feedback-design.md`
 
+**Status:** Shipped — this is the record of how it was built on 2026-05-09, not a description of the
+code today. The snippets below have since moved on (the `feedback` Firestore rule in particular was
+hardened in 2026-08); the files themselves are authoritative, so never paste a block from here over
+current code.
+
 ---
 
 ## File Structure

@@ -391,11 +391,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appleDisconnected => 'Apple account disconnected';
 
   @override
-  String get signOutConfirmTitle => 'Sign out of everything?';
+  String get signOutConfirmTitle => 'Sign out and erase this device?';
 
   @override
   String get signOutConfirmMessage =>
-      'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.';
+      'Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.';
+
+  @override
+  String get signOutAndErase => 'Sign Out & Erase';
+
+  @override
+  String get signingOut => 'Signing out and erasing this device…';
+
+  @override
+  String get signOutWipeFailed =>
+      'Signed out, but some data on this device could not be deleted. This device stays locked until the erase finishes.';
+
+  @override
+  String get lastProviderCannotDisconnect =>
+      'Your only sign-in method — connect another first';
 
   @override
   String get viewModeList => 'List view';
@@ -422,6 +436,88 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncDisabled => 'Sign in to enable cloud backup';
+
+  @override
+  String get deviceLockedWipeTitle => 'This device still has to be erased';
+
+  @override
+  String get deviceLockedWipeMessage =>
+      'An erase was started on this device and did not finish. Nothing is uploaded and nothing can be changed until it completes.';
+
+  @override
+  String get deviceLockedTitle => 'This device is locked';
+
+  @override
+  String get deviceLockedMessage =>
+      'The pottery stored here belongs to an account that is not signed in, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.';
+
+  @override
+  String get deviceLockedAccountStillExists =>
+      'Your account itself was not deleted — Firebase wanted a more recent sign-in. Erase this device first, then sign in again and use Delete Account & Data to remove it.';
+
+  @override
+  String get deviceLockedSwitchAccount => 'Sign In';
+
+  @override
+  String get deviceLockedErase => 'Erase This Device';
+
+  @override
+  String get eraseLocalDataBusy => 'Busy right now — try again in a moment.';
+
+  @override
+  String get eraseLocalDataFailed =>
+      'Could not erase this device. Nothing was deleted.';
+
+  @override
+  String get eraseLocalDataPhotosSurvived =>
+      'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.';
+
+  @override
+  String get deleteAccountTitle => 'Delete Account & Data';
+
+  @override
+  String get deleteAccountSubtitle =>
+      'Permanently deletes your account and all data';
+
+  @override
+  String get deleteAccountConfirmTitle => 'Delete Account & Data?';
+
+  @override
+  String get deleteAccountConfirmMessage =>
+      'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.';
+
+  @override
+  String get deleteAccountBusy => 'Busy right now — try again in a moment.';
+
+  @override
+  String get deleteAccountSurvived =>
+      'Your data was deleted, but your account could not be. Sign in again and retry to remove it.';
+
+  @override
+  String get deleteAccountLocalSurvived =>
+      'Your cloud data and account were deleted, but the copy on this device could not be. Erase this device to finish.';
+
+  @override
+  String get deleteAccountAndLocalSurvived =>
+      'Your cloud data was deleted. Your account and the copy on this device were not — erase this device to finish, then sign in again and retry to remove the account.';
+
+  @override
+  String get deleteAccountStillExists =>
+      'Your last attempt removed your data but not your account. Sign in again first if this does not work.';
+
+  @override
+  String get deleteAccountFailed =>
+      'Could not delete your account. Nothing was deleted.';
+
+  @override
+  String get eraseLocalDataConfirmTitle => 'Erase this device?';
+
+  @override
+  String get eraseLocalDataConfirmMessage =>
+      'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.';
+
+  @override
+  String get eraseLocalDataConfirm => 'Erase';
 
   @override
   String get syncNow => 'Sync Now';

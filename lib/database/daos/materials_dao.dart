@@ -49,13 +49,18 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     return (maxOrder ?? -1) + 1;
   }
 
-  Future<ClayOption> findOrCreateClay(String name) async {
+  /// Returns the row for [name] and whether it had to be created.
+  ///
+  /// An existing row is returned untouched, so a caller that enqueues a
+  /// sync unconditionally would report a write that never happened and queue
+  /// a no-op push. Only enqueue when the row was created.
+  Future<(ClayOption, bool)> findOrCreateClay(String name) async {
     final trimmed = name.trim();
     final existing =
         await (select(clayOptions)
               ..where((c) => c.name.lower().equals(trimmed.toLowerCase())))
             .getSingleOrNull();
-    if (existing != null) return existing;
+    if (existing != null) return (existing, false);
 
     final nextOrder = await getNextSortOrder();
     final id = const Uuid().v4();
@@ -66,7 +71,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
       createdAt: DateTime.now(),
     );
     await into(clayOptions).insert(companion);
-    return (select(clayOptions)..where((c) => c.id.equals(id))).getSingle();
+    final created = await (select(
+      clayOptions,
+    )..where((c) => c.id.equals(id))).getSingle();
+    return (created, true);
   }
 
   Future<void> updateClayName(String id, String newName) async {
@@ -165,13 +173,18 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     return (maxOrder ?? -1) + 1;
   }
 
-  Future<GlazeOption> findOrCreateGlaze(String name) async {
+  /// Returns the row for [name] and whether it had to be created.
+  ///
+  /// An existing row is returned untouched, so a caller that enqueues a
+  /// sync unconditionally would report a write that never happened and queue
+  /// a no-op push. Only enqueue when the row was created.
+  Future<(GlazeOption, bool)> findOrCreateGlaze(String name) async {
     final trimmed = name.trim();
     final existing =
         await (select(glazeOptions)
               ..where((g) => g.name.lower().equals(trimmed.toLowerCase())))
             .getSingleOrNull();
-    if (existing != null) return existing;
+    if (existing != null) return (existing, false);
 
     final nextOrder = await getNextGlazeSortOrder();
     final id = const Uuid().v4();
@@ -182,7 +195,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
       createdAt: DateTime.now(),
     );
     await into(glazeOptions).insert(companion);
-    return (select(glazeOptions)..where((g) => g.id.equals(id))).getSingle();
+    final created = await (select(
+      glazeOptions,
+    )..where((g) => g.id.equals(id))).getSingle();
+    return (created, true);
   }
 
   Future<void> updateGlazeName(String id, String newName) async {
@@ -335,13 +351,18 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     return (maxOrder ?? -1) + 1;
   }
 
-  Future<TagOption> findOrCreateTag(String name) async {
+  /// Returns the row for [name] and whether it had to be created.
+  ///
+  /// An existing row is returned untouched, so a caller that enqueues a
+  /// sync unconditionally would report a write that never happened and queue
+  /// a no-op push. Only enqueue when the row was created.
+  Future<(TagOption, bool)> findOrCreateTag(String name) async {
     final trimmed = name.trim();
     final existing =
         await (select(tagOptions)
               ..where((t) => t.name.lower().equals(trimmed.toLowerCase())))
             .getSingleOrNull();
-    if (existing != null) return existing;
+    if (existing != null) return (existing, false);
 
     final nextOrder = await getNextTagSortOrder();
     final id = const Uuid().v4();
@@ -354,7 +375,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
       createdAt: DateTime.now(),
     );
     await into(tagOptions).insert(companion);
-    return (select(tagOptions)..where((t) => t.id.equals(id))).getSingle();
+    final created = await (select(
+      tagOptions,
+    )..where((t) => t.id.equals(id))).getSingle();
+    return (created, true);
   }
 
   Future<void> updateTagName(String id, String newName) async {

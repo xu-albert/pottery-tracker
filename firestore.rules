@@ -7,12 +7,41 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Anyone (auth or anon) can submit feedback; nobody can read/update/delete
+    // Anyone (auth or anon) can submit feedback; nobody can read/update/delete.
+    // The open door is deliberate — feedback has to work before sign-in and
+    // when sign-in is what is broken — so the *document* is bounded instead of
+    // the caller: a fixed key set so no unknown megabyte-sized field can ride
+    // along, a length cap on every string, a server-set timestamp, and a uid
+    // that must be the caller's own (or absent when there is no token, which
+    // is what stops one user attributing feedback to another).
+    // Volume is App Check's job, not this rule's.
     match /feedback/{docId} {
-      allow create: if request.resource.data.message is string
+      function boundedString(field, max) {
+        let value = request.resource.data.get(field, null);
+        return value == null || (value is string && value.size() <= max);
+      }
+
+      allow create: if request.resource.data.keys().hasOnly([
+                         'uid', 'category', 'message', 'replyEmail',
+                         'appVersion', 'platform', 'osVersion', 'deviceModel',
+                         'locale', 'createdAt'
+                       ])
+                    && request.resource.data.keys().hasAll([
+                         'category', 'message', 'createdAt'
+                       ])
+                    && request.resource.data.message is string
                     && request.resource.data.message.size() > 0
                     && request.resource.data.message.size() <= 2000
-                    && request.resource.data.category in ["bug", "feature", "other", "praise"];
+                    && request.resource.data.category in ["bug", "feature", "other", "praise"]
+                    && request.resource.data.get('uid', null) ==
+                         (request.auth == null ? null : request.auth.uid)
+                    && request.resource.data.createdAt == request.time
+                    && boundedString('replyEmail', 254)
+                    && boundedString('appVersion', 128)
+                    && boundedString('platform', 128)
+                    && boundedString('osVersion', 128)
+                    && boundedString('deviceModel', 128)
+                    && boundedString('locale', 128);
       allow read, update, delete: if false;
     }
 

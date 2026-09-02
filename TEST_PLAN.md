@@ -9,13 +9,43 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ### Sign-In Screen (`/sign-in`)
 - [ ] "Sign in with Google" button launches Google sign-in flow
 - [ ] "Sign in with Apple" button appears only on iOS
-- [ ] "Skip for now" bypasses auth and enters app
+- [ ] "Skip for now" bypasses auth and enters app — offered only while nobody has a stake in this device; it disappears once an account has claimed it, been refused here, or is owed a wipe
 - [ ] Auth state persists across app restarts (SharedPreferences)
 - [ ] After sign-in or skip, user lands on Album screen
 
 ### Edge Cases
 - [ ] Force-quit and relaunch — user stays authenticated
-- [ ] Sign out from Settings → redirected back to sign-in screen
+- [ ] Sign out from Settings → local data erased, redirected back to sign-in screen
+
+### Device Locked (`/device-locked`)
+Reached for two different reasons, which the screen tells apart. **Foreign pottery**: a session ended
+involuntarily (offline launch, revoked token) and a *different* account signed in afterwards, so the
+device still holds the previous account's pottery. **Owed wipe**: an explicit "Sign Out & Erase" set
+the wipe going and it never finished, so the signed-out account's whole library is still here.
+
+Foreign pottery:
+- [ ] Signing in as a different account after an involuntary sign-out lands on the lock screen, not the album
+- [ ] Nothing that can write is reachable while locked — album, create flow, piece editor, Settings and the Manage Clays/Glazes/Tags screens all come straight back to the lock
+- [ ] "Sign In" ends the session and returns to sign-in **without** deleting anything — the label is deliberately not "as another account", since the reader may be the owner signing in as themselves
+- [ ] The owner signing back in releases the lock and hands the app back on its own
+- [ ] Force-quitting the lock screen and relaunching with no network lands back on the lock, not on the owner's album
+- [ ] The owner's own offline launch (no network, nobody refused here) opens the album as usual
+
+Owed wipe:
+- [ ] Force-quit mid-wipe → the lock reads "This device still has to be erased" and says the pottery the user asked to have deleted is still here — never that it belongs to another account, because it is their own
+- [ ] Opening the lock retries the wipe on its own; a failure that was transient clears without the user tapping anything
+- [ ] Sign out while a long sync is running (many queued edits, network off): the lock opens while that sync is still unwinding, and once it ends the wipe is retried on its own — the device does not stay locked until "Erase This Device" is tapped
+- [ ] Its primary action is "Erase This Device" — it never offers "Sign In", which would keep the data the user asked to destroy
+- [ ] A "Delete Account & Data" whose local wipe failed lands here, and its message names erasing this device first — the one step reachable from the lock — before signing in again to retry the account
+- [ ] A "Delete Account & Data" that did remove the account but whose local wipe failed arrives here signed out; once the wipe finishes, the device is unclaimed — never stamped for the deleted account — and signing in with the same provider works
+
+Both:
+- [ ] "Erase This Device" confirms first — "Cancel" is the default action and tapping outside the dialog does not erase
+- [ ] Confirming the erase deletes everything on the device, releases the lock, and lets the signed-in account start fresh
+- [ ] An erase that could not run (a sync or wipe in flight) says so rather than failing silently
+- [ ] An erase that failed says so rather than closing the dialog on silence
+- [ ] An erase that removed the pieces and materials but not every photo file says exactly that — never "Nothing was deleted" — and the lock stays up, still offering the erase that finishes it
+- [ ] The same from "Delete Account & Data" in a session with no account ("Skip for now"): the message says the pieces and materials are gone and some photo files remain — never "Nothing was deleted" — and the lock underneath agrees
 
 ---
 
@@ -218,9 +248,14 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 ## 7. Settings Screen
 
 - [ ] Shows "Signed in as {name}" or "Not signed in"
-- [ ] "Sign Out" button → clears auth, redirects to sign-in
+- [ ] "Sign Out" → confirmation says every piece, photo and material on this device is deleted; "Cancel" is the default action and tapping outside the dialog does not sign out
+- [ ] Confirming "Sign Out & Erase" clears auth, deletes the local library and photo files, and redirects to sign-in
+- [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
+- [ ] Force-quit mid-wipe → the device comes back locked read-only, the lock screen finishes the wipe on its own without being asked, and nothing is uploaded before it does; Settings is not reachable at all while it is owed
+- [ ] A "Sign Out & Erase" whose wipe failed says the device stays locked until the erase finishes — it never promises that the next sign-in will do it, because the lock is what retries it
+- [ ] The only connected sign-in provider cannot be disconnected — its row is disabled and explains why
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
-- [ ] "Cloud sync coming soon" placeholder
+- [ ] "Cloud Backup" section shows the current sync status and a "Sync Now" action
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version row shows the `version` from `pubspec.yaml` (the authoritative source), not a hardcoded string
 
@@ -418,6 +453,7 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 - [ ] Successful submit → toast, pops back, doc lands in Firestore `feedback/`.
 - [ ] Failed submit (airplane mode) → error toast, form stays open.
 - [ ] Anonymous user submit → doc has `uid: null`.
+- [ ] Reply email field stops accepting input at 254 characters (the cap `firestore.rules` enforces).
 
 ### Settings entry
 - [ ] Settings → "Send Feedback" → /feedback opens directly (no soft-ask).
@@ -456,3 +492,5 @@ This document catalogs all testable features, functionality, and edge cases. Upd
 | 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |
 | 2026-05-09 | In-app review prompt + feedback form |
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |
+| 2026-08-18 | Sign-out erases this device's local data behind a "Sign Out & Erase" confirmation, an unfinished wipe pauses backup until it completes, the last remaining sign-in provider cannot be disconnected, and the feedback reply email is capped at 254 characters |
+| 2026-08-19 | A device still holding another account's pottery is locked read-only at `/device-locked`: no route that can write is reachable, and the only ways out are the owner signing back in or a confirmed erase |

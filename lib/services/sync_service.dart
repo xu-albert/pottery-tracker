@@ -9,6 +9,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 
+/// Raised by [SyncService.deleteLocalData] when everything but the photo
+/// files was destroyed.
+///
+/// Its own type rather than a [StateError], because the caller has to tell
+/// this outcome apart from a wipe that deleted nothing: the rows, the queue,
+/// the watermarks and the ownership stamp are all gone, the photographs are
+/// not, and the erase stays owed. Matching on a message would break the first
+/// time the wording changed or another error arrived from the same call.
+class LocalPhotoWipeException implements Exception {
+  /// What stopped the photos directory from being removed.
+  final Object cause;
+
+  LocalPhotoWipeException(this.cause);
+
+  @override
+  String toString() =>
+      'LocalPhotoWipeException: local photo files were not deleted: $cause';
+}
+
 class SyncService {
   final AppDatabase _db;
   final FirebaseFirestore _firestore;
@@ -21,8 +40,61 @@ class SyncService {
   CollectionReference _col(String uid, String name) =>
       _userDoc(uid).collection(name);
 
+  /// Prefix of the per-uid "last successful pull" watermarks written by
+  /// [_saveLastPulledAt]. Shared with [deleteLocalData], which has to clear
+  /// every one of them.
+  static const _lastPulledAtPrefix = 'lastPulledAt_';
+
+  /// The uid whose data this device's local database holds.
+  ///
+  /// Stamped by the first account allowed to sync here and cleared by
+  /// [deleteLocalData]. It is what makes an *involuntary* loss of session
+  /// (a revoked token, or just an offline launch — see
+  /// `AuthNotifier._init`) safe: that path deliberately does not wipe, so the
+  /// stamp is the only thing left that knows whose pieces these are, and
+  /// `SyncNotifier` refuses to push for anyone else until the owner signs
+  /// back in.
+  /// Public so startup can seed the read-only lock from it before `runApp`
+  /// without restating the literal.
+  static const localDataOwnerKey = 'localDataOwnerUid';
+
+  /// Set once this device has refused an account, and cleared only when the
+  /// owner named by [localDataOwnerKey] claims it back or the device is
+  /// erased.
+  ///
+  /// It exists because a session-less launch is ambiguous on its own: the
+  /// owner opening the app offline and a refused account relaunching after
+  /// force-quitting the lock screen both arrive with no uid at all, and
+  /// ruling 2 requires the first to keep working. The stamp cannot tell them
+  /// apart; this can.
+  ///
+  /// One flag about the *device*, deliberately not per-row attribution: it
+  /// records that somebody was refused here, never which rows anybody touched.
+  /// Public for the same reason as [localDataOwnerKey] — startup seeds the
+  /// lock from it before `runApp`.
+  static const deviceContestedKey = 'localDataContested';
+
+  /// The uid of an account a confirmed deletion removed the cloud tree for
+  /// but could not remove itself — almost always because Firebase wants a
+  /// recent sign-in first.
+  ///
+  /// The user is told at the time, but that message is a passing one and two
+  /// of the three partial outcomes redirect away from the screen that showed
+  /// it. This is what makes the fact survive: a half-finished deletion the
+  /// user confirmed has to still be discoverable a minute later, on whichever
+  /// screen they end up on — including after the erase those screens tell
+  /// them to do first.
+  ///
+  /// So [deleteLocalData] deliberately leaves it alone: this is about a cloud
+  /// account, whose existence has nothing to do with whether local data is
+  /// present, and erasing a device deletes no account. It stores the uid
+  /// rather than a flag for the same reason — the next account to sign in
+  /// here must not be told that *their* account survived a deletion they
+  /// never asked for. Cleared when that account is finally deleted.
+  static const accountDeletionOwedKey = 'accountDeletionOwed';
+
   // ════════════════════════════════════════════
-  // Delete all data (for testing)
+  // Delete all data
   // ════════════════════════════════════════════
 
   Future<void> deleteCloudData(String uid) async {
@@ -73,17 +145,68 @@ class SyncService {
     }
   }
 
+  /// Destroys this device's entire local copy of the account's data.
+  ///
+  /// Every local store the app owns must be listed here. Whatever survives is
+  /// what [pushAllLocal] uploads into the *next* account's cloud tree on its
+  /// first sync, so an omission here is a cross-account data leak, not a
+  /// cosmetic bug. That is also why this runs on sign-out — see
+  /// `SyncNotifier.signOutAndWipeLocalData`.
+  ///
+  /// The SQLCipher key in secure storage is deliberately left alone: it stays
+  /// paired with the (now empty) database file. Rotating it would risk leaving
+  /// a key that no longer opens the file, which bricks the app permanently.
   Future<void> deleteLocalData() async {
     debugPrint('SyncService: deleting all local data');
 
-    await _db.delete(_db.pieceTags).go();
-    await _db.delete(_db.pieceGlazes).go();
-    await _db.delete(_db.photos).go();
-    await _db.delete(_db.pieces).go();
-    await _db.delete(_db.clayOptions).go();
-    await _db.delete(_db.glazeOptions).go();
-    await _db.delete(_db.tagOptions).go();
+    await _db.transaction(() async {
+      await _db.delete(_db.pieceTags).go();
+      await _db.delete(_db.pieceGlazes).go();
+      await _db.delete(_db.deletedJunctions).go();
+      await _db.delete(_db.photos).go();
+      await _db.delete(_db.pieces).go();
+      await _db.delete(_db.clayOptions).go();
+      await _db.delete(_db.glazeOptions).go();
+      await _db.delete(_db.tagOptions).go();
+    });
 
+    // Hand the freed pages back to the filesystem rather than leaving deleted
+    // rows sitting in the database file's free list.
+    try {
+      await _db.customStatement('VACUUM');
+    } catch (e) {
+      debugPrint('SyncService: VACUUM after wipe failed: $e');
+    }
+
+    final photoFailure = await _deleteLocalPhotoFiles();
+    await _clearSyncWatermarks();
+
+    // The data is gone, so nobody owns this device any more: the next account
+    // to sign in starts from a clean slate rather than inheriting the claim,
+    // and there is nothing left here for anyone to be refused over.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(localDataOwnerKey);
+    await prefs.remove(deviceContestedKey);
+
+    // Raised last, so everything that could be cleared has been: the wipe is
+    // best-effort, the *reporting* is not. The confirmation the user answered
+    // promises every photo on this device is deleted, and an erase that left
+    // them on disk must not come back as done — the wipe stays owed, and the
+    // lock screen keeps offering the retry that finishes it.
+    if (photoFailure != null) {
+      throw LocalPhotoWipeException(photoFailure);
+    }
+  }
+
+  /// Deletes the photo files, returning what stopped it or null if nothing did.
+  ///
+  /// The two directories are not equivalent. The photos directory holds the
+  /// user's pottery photographs, which the erase promised to destroy, so a
+  /// failure there is returned and becomes the caller's problem. The temp
+  /// directory holds `image_picker`'s copies — worth clearing, but a cache
+  /// entry the platform will not release is not the erase failing.
+  Future<Object?> _deleteLocalPhotoFiles() async {
+    Object? photoFailure;
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${appDir.path}/photos');
@@ -93,12 +216,66 @@ class SyncService {
       }
     } catch (e) {
       debugPrint('SyncService: local file cleanup error: $e');
+      photoFailure = e;
     }
+
+    // image_picker copies every picked photo into the platform temp directory
+    // and those copies outlive the pick, so they are user photos too.
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (tempDir.existsSync()) {
+        for (final entity in tempDir.listSync()) {
+          try {
+            entity.deleteSync(recursive: true);
+          } catch (_) {
+            // A single undeletable cache entry must not abort the wipe.
+          }
+        }
+        debugPrint('SyncService: cleared cached image files');
+      }
+    } catch (e) {
+      debugPrint('SyncService: temp file cleanup error: $e');
+    }
+
+    return photoFailure;
   }
 
-  Future<void> deleteAllData(String uid) async {
-    await deleteCloudData(uid);
-    await deleteLocalData();
+  /// The uid this device's local data belongs to, or null when it belongs to
+  /// nobody yet — a fresh install, a local-only user who has never signed in,
+  /// or a device that has just been wiped.
+  Future<String?> getLocalDataOwner() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(localDataOwnerKey);
+  }
+
+  /// Claims this device's local data for [uid]. Only ever called for an
+  /// account that is allowed to sync here, so it never overwrites another
+  /// account's claim.
+  Future<void> setLocalDataOwner(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(localDataOwnerKey, uid);
+  }
+
+  /// Whether this device has been refused for an account and not reclaimed.
+  Future<bool> getDeviceContested() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(deviceContestedKey) ?? false;
+  }
+
+  /// Clears every per-uid pull watermark.
+  ///
+  /// Leaving one behind is not just untidy: the same account signing back in
+  /// would take the *incremental* pull branch and never re-download the pieces
+  /// this wipe just deleted.
+  Future<void> _clearSyncWatermarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stale = prefs
+        .getKeys()
+        .where((k) => k.startsWith(_lastPulledAtPrefix))
+        .toList();
+    for (final key in stale) {
+      await prefs.remove(key);
+    }
   }
 
   // ════════════════════════════════════════════
@@ -433,7 +610,7 @@ class SyncService {
 
   Future<DateTime?> getLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    final ms = prefs.getInt('lastPulledAt_$uid');
+    final ms = prefs.getInt('$_lastPulledAtPrefix$uid');
     if (ms == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(ms);
   }
@@ -441,7 +618,7 @@ class SyncService {
   Future<void> _saveLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(
-      'lastPulledAt_$uid',
+      '$_lastPulledAtPrefix$uid',
       DateTime.now().millisecondsSinceEpoch,
     );
   }

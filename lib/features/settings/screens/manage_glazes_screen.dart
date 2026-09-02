@@ -203,10 +203,7 @@ class _ManageGlazesScreenState extends ConsumerState<ManageGlazesScreen> {
     );
 
     if (name != null && name.trim().isNotEmpty) {
-      final glaze = await ref
-          .read(materialsDaoProvider)
-          .findOrCreateGlaze(name);
-      await ref.read(syncTriggerProvider).afterGlazeWrite(glaze.id);
+      await ref.read(materialWriterProvider).glaze(name);
     }
   }
 

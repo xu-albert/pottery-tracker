@@ -14,6 +14,14 @@ import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../widgets/app_snackbar.dart';
 
+/// How long a partial-failure message stays up.
+///
+/// These carry an instruction rather than an acknowledgement — two sequential
+/// steps, in one case — so they get longer than the default. It is not the
+/// whole answer for the outcomes that redirect: what survives the message is
+/// [accountDeletionOwedProvider], which the screen they land on reads.
+const _partialOutcomeDuration = Duration(seconds: 8);
+
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -22,8 +30,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  final _authService = AuthService();
+  AuthService get _authService => ref.read(authServiceProvider);
   bool _isLinking = false;
+  bool _isSigningOut = false;
+  bool _isDeletingAccount = false;
 
   Future<void> _linkProvider({
     required Future<void> Function() linkFn,
@@ -120,29 +130,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// Signs out, which also destroys this device's local pottery data.
+  ///
+  /// The wipe is not optional: anything left behind is uploaded into the next
+  /// account's cloud tree on its first sync. Because it is destructive, the
+  /// confirmation says so in full and cannot be dismissed into a sign-out by
+  /// accident — the barrier is inert, Cancel is the default action, and a
+  /// dismissed dialog resolves to "cancel".
   Future<void> _confirmSignOut() async {
+    if (_isSigningOut) return;
     final l10n = AppLocalizations.of(context)!;
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => CupertinoAlertDialog(
         title: Text(l10n.signOutConfirmTitle),
         content: Text(l10n.signOutConfirmMessage),
         actions: [
           CupertinoDialogAction(
+            isDefaultAction: true,
             onPressed: () => Navigator.pop(context, false),
             child: Text(l10n.cancel),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(l10n.signOut),
+            child: Text(l10n.signOutAndErase),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
-    await _authService.signOut();
-    ref.read(authProvider.notifier).signOut();
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isSigningOut = true);
+    try {
+      await ref
+          .read(syncStateProvider.notifier)
+          .signOutAndWipeLocalData(_authService.signOut);
+    } catch (e) {
+      // The session is already gone and the wipe is still flagged pending, so
+      // the lock screen takes over and retries it. Say so rather than implying
+      // the device is clean.
+      debugPrint('SettingsScreen: sign-out wipe failed: $e');
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: l10n.signOutWipeFailed,
+          duration: _partialOutcomeDuration,
+        );
+      }
+    } finally {
+      await ref.read(authProvider.notifier).signOut();
+      if (mounted) setState(() => _isSigningOut = false);
+    }
   }
 
   Widget _providerTile({
@@ -157,8 +197,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     const linkedColor = Color(0xFF2E7D32);
     const notLinkedColor = Color(0xFFE91E63);
 
+    // Unlinking the only remaining provider leaves an account nobody can ever
+    // sign into again — Firebase keeps the data and hands out no way back to
+    // it. Refuse the tap and say why, rather than offering a dead one.
+    final isOnlyProvider = isLinked && providerCount <= 1;
+
     final VoidCallback? onTap;
-    if (_isLinking) {
+    if (_isLinking || isOnlyProvider) {
       onTap = null;
     } else if (!isLinked) {
       onTap = onConnect;
@@ -169,6 +214,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListTile(
       leading: Icon(icon),
       title: Text(name),
+      subtitle: isOnlyProvider ? Text(l10n.lastProviderCannotDisconnect) : null,
       onTap: onTap,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -263,6 +309,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Text(l10n.syncNow),
           ),
         );
+      // Both blocked reasons lock the device read-only at the router, so
+      // Settings is unmounted in exactly the states this would draw and the
+      // recovery lives on the lock screen instead. It is folded in with
+      // "backup off" rather than given words of its own, because words here
+      // could only ever be wrong.
+      case SyncStatus.blocked:
       case SyncStatus.disabled:
         icon = Icons.cloud_off;
         title = l10n.syncDisabled;
@@ -272,7 +324,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       leading: Icon(icon),
       title: Text(title),
       subtitle: subtitle != null
-          ? Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis)
+          ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
           : null,
       trailing: trailing,
     );
@@ -349,8 +401,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (auth.isSignedIn)
             ListTile(
               leading: const Icon(Icons.logout),
-              title: Text(l10n.signOut),
-              onTap: _confirmSignOut,
+              title: Text(_isSigningOut ? l10n.signingOut : l10n.signOut),
+              trailing: _isSigningOut
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+              // Both wipe owners have to exclude each other, or two deletes
+              // run at once and each clears the other's guard.
+              onTap: (_isSigningOut || _isDeletingAccount)
+                  ? null
+                  : _confirmSignOut,
             ),
           const Divider(),
 
@@ -383,22 +446,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
           _SectionHeader(title: 'Account'),
           ListTile(
+            // Excludes itself as well as sign-out: a second tap lands in the
+            // busy early return, and its finally would otherwise re-enable the
+            // sign-out tile while the first delete is still running.
+            enabled: !_isSigningOut && !_isDeletingAccount,
             leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text(
-              'Delete Account & Data',
-              style: TextStyle(color: Colors.red),
+            title: Text(
+              l10n.deleteAccountTitle,
+              style: const TextStyle(color: Colors.red),
             ),
-            subtitle: const Text(
-              'Permanently deletes your account and all data',
+            subtitle: Text(
+              ref.watch(accountDeletionOwedForSessionProvider)
+                  ? l10n.deleteAccountStillExists
+                  : l10n.deleteAccountSubtitle,
             ),
             onTap: () async {
               final confirmed = await showCupertinoDialog<bool>(
                 context: context,
                 builder: (context) => CupertinoAlertDialog(
-                  title: const Text('Delete Account & Data?'),
-                  content: const Text(
-                    'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.',
-                  ),
+                  title: Text(l10n.deleteAccountConfirmTitle),
+                  content: Text(l10n.deleteAccountConfirmMessage),
                   actions: [
                     CupertinoDialogAction(
                       onPressed: () => Navigator.pop(context, false),
@@ -413,7 +480,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               );
               if (confirmed != true || !context.mounted) return;
-              await ref.read(syncStateProvider.notifier).deleteAllData();
+              setState(() => _isDeletingAccount = true);
+              try {
+                final result = await ref
+                    .read(syncStateProvider.notifier)
+                    .deleteAllData();
+                if (!context.mounted) return;
+                switch (result) {
+                  case DeleteAllDataResult.deleted:
+                    break;
+                  case DeleteAllDataResult.busy:
+                    AppSnackbar.show(context, message: l10n.deleteAccountBusy);
+                  case DeleteAllDataResult.failed:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountFailed,
+                    );
+                  // Partial outcomes get their own words: "nothing was
+                  // deleted" would be a lie once the cloud tree is gone.
+                  case DeleteAllDataResult.accountSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountSurvived,
+                      duration: _partialOutcomeDuration,
+                    );
+                  case DeleteAllDataResult.localDataSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountLocalSurvived,
+                      duration: _partialOutcomeDuration,
+                    );
+                  case DeleteAllDataResult.accountAndLocalDataSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountAndLocalSurvived,
+                      duration: _partialOutcomeDuration,
+                    );
+                  // No account was involved, so the erase's own words fit:
+                  // the library is gone, the photo files are not, and the
+                  // lock screen still offers the erase that finishes it.
+                  case DeleteAllDataResult.localPhotosSurvived:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.eraseLocalDataPhotosSurvived,
+                      duration: _partialOutcomeDuration,
+                    );
+                }
+              } finally {
+                if (mounted) setState(() => _isDeletingAccount = false);
+              }
             },
           ),
         ],

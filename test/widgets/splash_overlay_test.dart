@@ -4,22 +4,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/daos/pieces_dao.dart';
+import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/pieces_provider.dart';
 import 'package:pottery_tracker/providers/splash_provider.dart';
 import 'package:pottery_tracker/widgets/splash_overlay.dart';
 import 'package:pottery_tracker/widgets/vase_logo.dart';
 
-/// The overlay waits for the album's data before lifting, so tests must supply
-/// it. Pass a controller to hold the data back and release it mid-test.
+/// An [AuthNotifier] the test drives, standing in for `_init` settling.
+class _TestAuthNotifier extends AuthNotifier {
+  _TestAuthNotifier(super.initial) : super.withState();
+
+  void set(AuthState next) => state = next;
+}
+
+/// The overlay waits for the album's data *and* for auth to resolve before
+/// lifting, so tests must supply both. Pass a stream to hold the data back, or
+/// [authStatus] to hold the sign-in check open, and release it mid-test.
 Future<ProviderContainer> _pump(
   WidgetTester tester, {
   Stream<List<PieceWithCover>>? pieces,
+  AuthStatus authStatus = AuthStatus.unauthenticated,
   Duration animationDuration = const Duration(milliseconds: kVaseDrawMs),
 }) async {
   final container = ProviderContainer(
     overrides: [
       filteredPiecesProvider.overrideWith(
         (ref) => pieces ?? Stream.value(const <PieceWithCover>[]),
+      ),
+      authProvider.overrideWith(
+        (ref) => _TestAuthNotifier(AuthState(status: authStatus)),
       ),
     ],
   );
@@ -44,6 +57,52 @@ Future<ProviderContainer> _pump(
 }
 
 void main() {
+  testWidgets('holds while the sign-in check is still running', (tester) async {
+    // On a device an account already claims the router sits on a holding route
+    // until auth answers, so lifting first would reveal that rather than the
+    // app. A slow or captive-portal network makes this window seconds long.
+    final container = await _pump(tester, authStatus: AuthStatus.unknown);
+
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(
+      container.read(splashCompleteProvider),
+      isFalse,
+      reason: 'the draw and the album data are both done; auth is not',
+    );
+
+    (container.read(authProvider.notifier) as _TestAuthNotifier).set(
+      const AuthState(status: AuthStatus.authenticated),
+    );
+    await tester.pump();
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 150));
+    }
+    expect(
+      container.read(splashCompleteProvider),
+      isTrue,
+      reason:
+          'and it lifts as soon as the answer arrives, without waiting '
+          'for the fallback timer',
+    );
+  });
+
+  testWidgets('lifts on the fallback even if auth never answers', (
+    tester,
+  ) async {
+    final container = await _pump(tester, authStatus: AuthStatus.unknown);
+
+    await tester.pump(SplashOverlay.fallback + const Duration(seconds: 1));
+    expect(
+      container.read(splashCompleteProvider),
+      isTrue,
+      reason:
+          'the fallback is the upper bound on how long the mark may cover the '
+          'app, and a sign-in check that never returns must not beat it',
+    );
+  });
+
   testWidgets('renders the animated vase mark', (tester) async {
     await _pump(tester);
     expect(find.byType(AnimatedVaseLogo), findsOneWidget);

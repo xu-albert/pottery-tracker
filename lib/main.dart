@@ -10,6 +10,7 @@ import 'app.dart';
 import 'database/database.dart';
 import 'firebase_options.dart';
 import 'providers/database_provider.dart';
+import 'providers/sync_provider.dart';
 import 'providers/pieces_provider.dart';
 
 void main() async {
@@ -65,6 +66,10 @@ void main() async {
     ProviderScope(
       overrides: [
         databaseProvider.overrideWithValue(db),
+        // Read before runApp so the read-only lock is correct on the first
+        // frame: a device belonging to another account must never render the
+        // album, not even for the frame before an async read resolves.
+        ...deviceStateOverrides(prefs),
         viewModeProvider.overrideWith((ref) => initialViewMode),
       ],
       child: const PotteryTrackerApp(),

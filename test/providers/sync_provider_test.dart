@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,9 +52,14 @@ _setup({AuthState auth = _signedOut}) {
     () => syncService.pullChangedSince(any(), any()),
   ).thenAnswer((_) async {});
   when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
-  when(() => syncService.deleteAllData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
+  // Unowned by default: the device belongs to whoever signs in first.
+  when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
+  when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
+  // The refusal marker is device-ownership state like the stamp above: the
+  // notifier reads it on every claim, so a mock has to answer for it.
+  when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
 
   // Push / delete stubs
   when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
@@ -94,12 +101,41 @@ _setup({AuthState auth = _signedOut}) {
 }
 
 void main() {
+  group('SyncState.copyWith', () {
+    const failed = SyncState(
+      status: SyncStatus.error,
+      errorMessage: 'stale failure',
+    );
+
+    test('clears the error message, which describes one transition', () {
+      expect(
+        failed.copyWith(pendingCount: 3).errorMessage,
+        isNull,
+        reason:
+            'carrying it forward would caption a healthy state with a failure '
+            'that is already over',
+      );
+      expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
+    });
+
+    test('carries the fields it was not asked to change', () {
+      final next = failed.copyWith(status: SyncStatus.idle);
+      expect(next.status, SyncStatus.idle);
+      expect(next.pendingCount, failed.pendingCount);
+    });
+  });
+
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    SharedPreferences.setMockInitialValues({});
     registerFallbackValue(
       const SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: ''),
     );
+  });
+
+  // A pending-wipe flag now blocks every push, so it must not leak from one
+  // test into the next.
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
   });
 
   group('SyncNotifier auth state transitions', () {
@@ -236,16 +272,21 @@ void main() {
       expect(state.errorMessage, contains('network down'));
     });
 
-    test('does not run concurrently (second call is no-op)', () async {
+    test('a sync that stands down is replayed, not dropped', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
 
       // Track calls AFTER the constructor's auto-sync has completed
       var callCount = 0;
+      var running = 0;
+      var everOverlapped = false;
       when(() => s.syncService.pushAllLocal(any())).thenAnswer((_) async {
         callCount++;
+        running++;
+        if (running > 1) everOverlapped = true;
         await Future.delayed(const Duration(milliseconds: 50));
+        running--;
       });
 
       // Fire two syncs concurrently
@@ -253,8 +294,14 @@ void main() {
       final second = s.notifier.syncNow();
       await Future.wait([first, second]);
 
-      // Only one of the two concurrent calls should have run
-      expect(callCount, 1);
+      expect(everOverlapped, isFalse, reason: 'syncs must not run together');
+      expect(
+        callCount,
+        2,
+        reason:
+            'the second stood down for the first, but the debt is owed and '
+            'replayed afterwards — dropping it silently loses the pull',
+      );
     });
   });
 
@@ -492,6 +539,9 @@ void main() {
         final s = _setup(auth: _signedIn);
         addTearDown(s.container.dispose);
         async.elapse(Duration.zero); // let _onAuthChanged settle
+        // The sign-in sync reads the queue itself now, so only what happens
+        // from here is the debounce under test.
+        clearInteractions(s.queue);
 
         s.notifier.scheduleProcessQueue();
         s.notifier.scheduleProcessQueue();
@@ -552,5 +602,241 @@ void main() {
       expect(state.status, SyncStatus.error);
       expect(state.errorMessage, contains('permission denied'));
     });
+  });
+
+  group('pending wipe blocks pushing', () {
+    test('syncNow refuses to push while a wipe is still owed', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      // The resumed wipe keeps failing, so the flag survives every attempt.
+      when(
+        () => s.syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk error'));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.syncService);
+
+      await s.notifier.syncNow(forceFullSync: true);
+
+      verifyNever(() => s.syncService.pushAllLocal(any()));
+      expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+    });
+
+    test('the debounced queue push refuses while a wipe is owed', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      when(
+        () => s.syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk error'));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.queue);
+
+      s.notifier.scheduleProcessQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      verifyNever(() => s.queue.getAll());
+      expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
+    });
+
+    test('a sync attempt never carries the wipe with it', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.syncService);
+
+      await s.notifier.syncNow(forceFullSync: true);
+
+      // Refused, and nothing was deleted: a wipe on the push path could land
+      // in the middle of a later session, on the current account's own work.
+      verifyNever(() => s.syncService.deleteLocalData());
+      verifyNever(() => s.syncService.pushAllLocal(any()));
+      expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+    });
+
+    test('the debounced queue push never carries the wipe either', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      clearInteractions(s.syncService);
+
+      s.notifier.scheduleProcessQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      verifyNever(() => s.syncService.deleteLocalData());
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+    });
+
+    test(
+      'the explicit erase clears the wipe and lets pushing resume',
+      () async {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        await Future<void>.delayed(Duration.zero);
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+        clearInteractions(s.syncService);
+
+        await s.notifier.eraseLocalDataNow();
+
+        verifyInOrder([
+          () => s.syncService.deleteLocalData(),
+          () => s.syncService.pushAllLocal('user-1'),
+        ]);
+        expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+      },
+    );
+  });
+
+  group('signOutAndWipeLocalData', () {
+    test('flags the wipe before the session is dropped', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      bool? flaggedWhenSessionEnded;
+
+      await s.notifier.signOutAndWipeLocalData(() async {
+        flaggedWhenSessionEnded = prefs.getBool(SyncNotifier.pendingWipeKey);
+      });
+
+      // A process killed while the session is being dropped has to come back
+      // owing the wipe; otherwise the next account pushes what survived.
+      expect(flaggedWhenSessionEnded, isTrue);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+    });
+
+    test('a wipe that gives up on an in-flight sync stays pending', () {
+      fakeAsync((async) {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        SharedPreferences? prefs;
+        unawaited(SharedPreferences.getInstance().then((p) => prefs = p));
+        async.flushMicrotasks();
+
+        // A pull that outlives the wipe's bounded wait, still writing rows
+        // behind the delete.
+        when(
+          () => s.syncService.pullAll(any()),
+        ).thenAnswer((_) => Future<void>.delayed(const Duration(minutes: 5)));
+        unawaited(s.notifier.syncNow(forceFullSync: true));
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        unawaited(s.notifier.signOutAndWipeLocalData(() async {}));
+        async.elapse(const Duration(seconds: 20));
+        async.flushMicrotasks();
+
+        verify(() => s.syncService.deleteLocalData()).called(1);
+        expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
+
+        // SettingsScreen._confirmSignOut drops the auth state immediately
+        // afterwards, which wakes the resumed wipe. It must not clear the flag
+        // while the abandoned pull is still writing rows behind the delete.
+        s.container.read(authProvider.notifier).state = _signedOut;
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
+
+        // So the next account still finds the wipe owed, and pushes nothing.
+        clearInteractions(s.syncService);
+        s.container.read(authProvider.notifier).state = const AuthState(
+          status: AuthStatus.authenticated,
+          uid: 'user-2',
+        );
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+
+        verifyNever(() => s.syncService.pushAllLocal(any()));
+        expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
+      });
+    });
+
+    test('drops the session before touching the data', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final order = <String>[];
+      when(() => s.syncService.deleteLocalData()).thenAnswer((_) async {
+        order.add('wipe');
+      });
+
+      await s.notifier.signOutAndWipeLocalData(() async {
+        order.add('endSession');
+      });
+
+      // The session has to go first: if the process dies between the two, the
+      // device comes back signed out with the wipe still pending, rather than
+      // signed in with the data already gone.
+      expect(order, ['endSession', 'wipe']);
+      expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+    });
+
+    test('completes the wipe even when ending the session fails', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      await s.notifier.signOutAndWipeLocalData(
+        () async => throw Exception('network down'),
+      );
+
+      verify(() => s.syncService.deleteLocalData()).called(1);
+    });
+
+    test(
+      'leaves the wipe pending when it fails, and retries on sign-in',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(SyncNotifier.pendingWipeKey);
+
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        await Future<void>.delayed(Duration.zero);
+
+        when(
+          () => s.syncService.deleteLocalData(),
+        ).thenThrow(Exception('disk error'));
+
+        await expectLater(
+          s.notifier.signOutAndWipeLocalData(() async {}),
+          throwsException,
+        );
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+
+        // Next sign-in: the wipe runs again, and it runs before any push.
+        when(() => s.syncService.deleteLocalData()).thenAnswer((_) async {});
+        s.container.read(authProvider.notifier).state = const AuthState(
+          status: AuthStatus.authenticated,
+          uid: 'user-2',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        verifyInOrder([
+          () => s.syncService.deleteLocalData(),
+          () => s.syncService.pushAllLocal('user-2'),
+        ]);
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
+      },
+    );
   });
 }

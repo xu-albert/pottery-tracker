@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../services/auth_service.dart'
     show AuthService, SignInCancelledException;
 import '../../../core/constants/app_colors.dart';
@@ -145,17 +146,22 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 ),
               ],
               const SizedBox(height: AppSizes.md),
-              TextButton(
-                onPressed: _loading
-                    ? null
-                    : () {
-                        ref
-                            .read(analyticsProvider)
-                            .logEvent(name: 'sign_in_skipped');
-                        ref.read(authProvider.notifier).skip();
-                      },
-                child: Text(l10n.skipForNow),
-              ),
+              // Hidden once this device belongs to an account: continuing
+              // without signing in would open the owner's pottery, writable,
+              // to whoever is holding the phone — the one door into a writable
+              // session that the owner stamp cannot see.
+              if (ref.watch(skipSignInAllowedProvider))
+                TextButton(
+                  onPressed: _loading
+                      ? null
+                      : () {
+                          ref
+                              .read(analyticsProvider)
+                              .logEvent(name: 'sign_in_skipped');
+                          ref.read(authProvider.notifier).skip();
+                        },
+                  child: Text(l10n.skipForNow),
+                ),
               const SizedBox(height: AppSizes.xxl),
             ],
           ),

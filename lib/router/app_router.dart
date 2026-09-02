@@ -3,8 +3,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
+import '../providers/sync_provider.dart';
+import '../features/auth/screens/device_locked_screen.dart';
 import '../features/auth/screens/sign_in_screen.dart';
 import '../features/shell/screens/shell_screen.dart';
+import '../features/shell/screens/starting_screen.dart';
 import '../features/album/screens/album_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/manage_clays_screen.dart';
@@ -66,6 +69,23 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authStatus = ref.watch(authProvider.select((s) => s.status));
+  // A device holding another account's pottery is read-only, and the lock is
+  // enforced here rather than screen by screen: no route that can write is
+  // reachable while it holds.
+  final deviceLocked = ref.watch(deviceLockedProvider);
+  // The lock is decided here, so the refusal it implies is recorded here too:
+  // the shell never mounts on the lock screen, so nothing on the sync path is
+  // guaranteed to run on the very path that refuses somebody.
+  ref.watch(deviceRefusalRecorderProvider);
+  // Whether anyone already has a stake in what is on this device, which is
+  // what decides whether the redirect may pass through while auth resolves.
+  final deviceStamped = ref.watch(deviceStampedProvider);
+  // Which lock the user asked to leave for the sign-in screen, and which one
+  // is actually up. Read here so the answer outlives the rebuild that signing
+  // out causes, and compared so that consent given for one lock cannot answer
+  // for another — only the foreign-pottery lock offers this way out at all.
+  final lockExitRequested = ref.watch(lockExitRequestedProvider);
+  final lockReason = ref.watch(deviceLockReasonProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -76,19 +96,71 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final loc = state.matchedLocation;
 
-      // While auth is resolving the app simply stays where it is. The splash
-      // overlay covers it, so there is nothing to hide behind a holding route —
-      // and the album underneath gets a head start on its query.
-      if (authStatus == AuthStatus.unknown) return null;
+      // While auth is resolving on a device nobody has claimed, the app simply
+      // stays where it is: the splash overlay covers it and the album
+      // underneath gets a head start on its query.
+      //
+      // On a claimed device it holds instead. The lock cannot answer yet — a
+      // session-less state is both the owner offline and a refused account
+      // relaunching — and passing through would mount the owner's album, and
+      // leave it hit-testable under the overlay, on a device that may be
+      // refused. The splash covers the holding route just the same.
+      if (authStatus == AuthStatus.unknown) {
+        if (!deviceStamped) return null;
+        return loc == '/starting' ? null : '/starting';
+      }
+      if (loc == '/starting') return '/';
 
       final isSignedIn = authStatus == AuthStatus.authenticated;
 
-      if (!isSignedIn && loc != '/sign-in') return '/sign-in';
+      // The lock is answered before the session is.
+      //
+      // Both locked states are reachable with no session at all: a refused
+      // account that force-quits the lock screen relaunches signed out, and so
+      // does a sign-out whose wipe never finished. Sending those to '/sign-in'
+      // while the lock sent '/sign-in' straight back left that pair with no
+      // fixed point — go_router answers a cycle by replacing the app with its
+      // error page, which took away both ways out at once.
+      //
+      // So a locked device rests on '/device-locked', which is what keeps the
+      // explanation and the erase reachable with no session, and it steps
+      // aside for the sign-in screen once the user has asked to leave *this*
+      // lock. That request is what carries the way out across the rebuild: the
+      // provider is re-read after signing out mints a new router, whereas the
+      // lock screen's own navigation would be thrown away with the old one.
+      // Named rather than merely matched: finishing the erase is the only way
+      // out of an owed wipe, so that lock does not open this door for any
+      // request at all, and a tap meant for a foreign-pottery lock cannot
+      // reach past the one surface that retries the wipe.
+      if (deviceLocked) {
+        if (lockReason == DeviceLockReason.foreignLocalData &&
+            lockExitRequested == lockReason &&
+            !isSignedIn) {
+          return loc == '/sign-in' ? null : '/sign-in';
+        }
+        if (loc != '/device-locked') return '/device-locked';
+      } else if (loc == '/device-locked') {
+        return '/';
+      }
+
+      if (!isSignedIn && loc != '/sign-in' && loc != '/device-locked') {
+        return '/sign-in';
+      }
       if (isSignedIn && loc == '/sign-in') return '/';
 
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/starting',
+        pageBuilder: (context, state) =>
+            _appEntry(state, const StartingScreen()),
+      ),
+      GoRoute(
+        path: '/device-locked',
+        pageBuilder: (context, state) =>
+            _appEntry(state, const DeviceLockedScreen()),
+      ),
       GoRoute(
         path: '/sign-in',
         pageBuilder: (context, state) => _appEntry(state, const SignInScreen()),

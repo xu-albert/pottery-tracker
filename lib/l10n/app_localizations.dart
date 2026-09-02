@@ -805,14 +805,38 @@ abstract class AppLocalizations {
   /// Sign out confirmation title
   ///
   /// In en, this message translates to:
-  /// **'Sign out of everything?'**
+  /// **'Sign out and erase this device?'**
   String get signOutConfirmTitle;
 
-  /// Sign out confirmation message
+  /// Sign out confirmation message, warning that local data is destroyed
   ///
   /// In en, this message translates to:
-  /// **'Your pieces are stored on this device and won\'t be deleted. You\'ll need to sign in again to enable cloud sync in the future.'**
+  /// **'Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.'**
   String get signOutConfirmMessage;
+
+  /// Destructive confirm button in the sign out dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Sign Out & Erase'**
+  String get signOutAndErase;
+
+  /// Progress message shown while the local wipe runs
+  ///
+  /// In en, this message translates to:
+  /// **'Signing out and erasing this device…'**
+  String get signingOut;
+
+  /// Shown when the local wipe on sign-out did not finish. Names the lock rather than a later sign-in: the owed wipe locks the router, and the lock screen is what retries it
+  ///
+  /// In en, this message translates to:
+  /// **'Signed out, but some data on this device could not be deleted. This device stays locked until the erase finishes.'**
+  String get signOutWipeFailed;
+
+  /// Explains why the last remaining provider cannot be disconnected
+  ///
+  /// In en, this message translates to:
+  /// **'Your only sign-in method — connect another first'**
+  String get lastProviderCannotDisconnect;
 
   /// List view mode label for accessibility
   ///
@@ -861,6 +885,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sign in to enable cloud backup'**
   String get syncDisabled;
+
+  /// Title of the lock screen when a wipe the user confirmed did not finish
+  ///
+  /// In en, this message translates to:
+  /// **'This device still has to be erased'**
+  String get deviceLockedWipeTitle;
+
+  /// Explains the lock screen's owed-wipe reason. States the device's condition rather than attributing the request, because whichever account signs in next reads this and it may not be the one that asked
+  ///
+  /// In en, this message translates to:
+  /// **'An erase was started on this device and did not finish. Nothing is uploaded and nothing can be changed until it completes.'**
+  String get deviceLockedWipeMessage;
+
+  /// Title of the read-only lock screen. Says nothing about who the reader is: a session-less launch on a contested device is either the owner opening the app offline or a refused account relaunching, and the lock deliberately cannot tell them apart
+  ///
+  /// In en, this message translates to:
+  /// **'This device is locked'**
+  String get deviceLockedTitle;
+
+  /// Explains why the device is locked read-only, in terms true for either reader — it never asserts whose pottery it is
+  ///
+  /// In en, this message translates to:
+  /// **'The pottery stored here belongs to an account that is not signed in, so it is kept read-only: nothing can be added or changed, and nothing is uploaded. Sign in as that account to carry on, or erase this device to start fresh.'**
+  String get deviceLockedMessage;
+
+  /// Shown on the lock screen when a confirmed account deletion left the account behind, naming the steps in the order the lock permits
+  ///
+  /// In en, this message translates to:
+  /// **'Your account itself was not deleted — Firebase wanted a more recent sign-in. Erase this device first, then sign in again and use Delete Account & Data to remove it.'**
+  String get deviceLockedAccountStillExists;
+
+  /// Drops to the sign-in screen without deleting anything. Not "as another account": the reader may be the owner offline, signing in as themselves
+  ///
+  /// In en, this message translates to:
+  /// **'Sign In'**
+  String get deviceLockedSwitchAccount;
+
+  /// Destructive action on the lock screen
+  ///
+  /// In en, this message translates to:
+  /// **'Erase This Device'**
+  String get deviceLockedErase;
+
+  /// Shown when an erase was refused because a sync or wipe is running
+  ///
+  /// In en, this message translates to:
+  /// **'Busy right now — try again in a moment.'**
+  String get eraseLocalDataBusy;
+
+  /// Shown only when an erase deleted nothing at all; a wipe that removed the rows but not every photo file uses eraseLocalDataPhotosSurvived instead
+  ///
+  /// In en, this message translates to:
+  /// **'Could not erase this device. Nothing was deleted.'**
+  String get eraseLocalDataFailed;
+
+  /// Shown when an erase removed every row but left photo files behind, including a Delete Account & Data from a session with no account, where the local wipe is the whole action. Says what is true — the library is gone, the photographs are not, the wipe is still owed — and points at the retry the lock screen keeps offering
+  ///
+  /// In en, this message translates to:
+  /// **'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.'**
+  String get eraseLocalDataPhotosSurvived;
+
+  /// Settings tile that deletes the account and everything with it
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Account & Data'**
+  String get deleteAccountTitle;
+
+  /// Delete-account tile subtitle when nothing is outstanding
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently deletes your account and all data'**
+  String get deleteAccountSubtitle;
+
+  /// Title of the confirmation dialog for deleting the account
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Account & Data?'**
+  String get deleteAccountConfirmTitle;
+
+  /// Body of the confirmation dialog for deleting the account — names what is destroyed and that it cannot be undone
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete your account and ALL pieces, photos, and materials from this device and the cloud. This cannot be undone.'**
+  String get deleteAccountConfirmMessage;
+
+  /// Shown when an account deletion was refused because a sync is running
+  ///
+  /// In en, this message translates to:
+  /// **'Busy right now — try again in a moment.'**
+  String get deleteAccountBusy;
+
+  /// Shown when cloud data was deleted but the auth account still exists
+  ///
+  /// In en, this message translates to:
+  /// **'Your data was deleted, but your account could not be. Sign in again and retry to remove it.'**
+  String get deleteAccountSurvived;
+
+  /// Shown when the cloud side was deleted but the local wipe failed
+  ///
+  /// In en, this message translates to:
+  /// **'Your cloud data and account were deleted, but the copy on this device could not be. Erase this device to finish.'**
+  String get deleteAccountLocalSurvived;
+
+  /// Shown when the cloud tree was deleted but both the auth account and the local wipe survived
+  ///
+  /// In en, this message translates to:
+  /// **'Your cloud data was deleted. Your account and the copy on this device were not — erase this device to finish, then sign in again and retry to remove the account.'**
+  String get deleteAccountAndLocalSurvived;
+
+  /// Replaces the delete-account tile's subtitle while an account deletion the user confirmed is still outstanding
+  ///
+  /// In en, this message translates to:
+  /// **'Your last attempt removed your data but not your account. Sign in again first if this does not work.'**
+  String get deleteAccountStillExists;
+
+  /// Shown when an account deletion failed
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete your account. Nothing was deleted.'**
+  String get deleteAccountFailed;
+
+  /// Title of the confirmation shown before erasing local data
+  ///
+  /// In en, this message translates to:
+  /// **'Erase this device?'**
+  String get eraseLocalDataConfirmTitle;
+
+  /// Warning shown before an explicit local data erase
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes every piece, photo and material stored on this device. Anything already backed up stays in the account that owns it — anything not backed up yet is gone for good.'**
+  String get eraseLocalDataConfirmMessage;
+
+  /// Destructive confirm button for erasing local data
+  ///
+  /// In en, this message translates to:
+  /// **'Erase'**
+  String get eraseLocalDataConfirm;
 
   /// Manual sync button
   ///

@@ -18,6 +18,7 @@ class FeedbackScreen extends ConsumerStatefulWidget {
 
 class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
   static const _maxMessageLength = 2000;
+  static const _maxEmailLength = 254;
 
   FeedbackCategory _category = FeedbackCategory.other;
   final _messageController = TextEditingController();
@@ -125,6 +126,10 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
+              // Matches the cap the Firestore rules enforce (RFC 5321's
+              // maximum), so an over-long address is stopped here rather than
+              // failing the write.
+              maxLength: _maxEmailLength,
               decoration: InputDecoration(
                 labelText: l10n.feedbackReplyEmailLabel,
                 hintText: l10n.feedbackReplyEmailHint,

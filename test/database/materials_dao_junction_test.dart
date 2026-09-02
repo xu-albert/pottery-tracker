@@ -52,6 +52,43 @@ void main() {
     return id;
   }
 
+  group('MaterialsDao findOrCreate', () {
+    test('reports a created row so the caller can sync it', () async {
+      final (clay, isNew) = await db.materialsDao.findOrCreateClay('Stoneware');
+
+      expect(isNew, isTrue);
+      expect(clay.name, 'Stoneware');
+    });
+
+    test('reports an existing row as untouched', () async {
+      final (first, _) = await db.materialsDao.findOrCreateClay('Stoneware');
+      final (second, isNew) = await db.materialsDao.findOrCreateClay(
+        'stoneware',
+      );
+
+      // Picking a material that already exists writes nothing, so a caller
+      // that enqueued a sync here would be reporting a write that never
+      // happened, and queueing a no-op push.
+      expect(isNew, isFalse);
+      expect(second.id, first.id);
+      expect(second.name, first.name);
+    });
+
+    test('reports creation for glazes and tags too', () async {
+      final (_, glazeIsNew) = await db.materialsDao.findOrCreateGlaze(
+        'Celadon',
+      );
+      final (_, glazeAgain) = await db.materialsDao.findOrCreateGlaze(
+        'Celadon',
+      );
+      final (_, tagIsNew) = await db.materialsDao.findOrCreateTag('Gift');
+      final (_, tagAgain) = await db.materialsDao.findOrCreateTag('Gift');
+
+      expect([glazeIsNew, tagIsNew], [true, true]);
+      expect([glazeAgain, tagAgain], [false, false]);
+    });
+  });
+
   group('MaterialsDao setGlazesForPiece', () {
     test('records removed glazes in DeletedJunctions', () async {
       final pieceId = await createPiece('p1');

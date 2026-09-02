@@ -2,25 +2,32 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 
+import { safeText } from "./sanitize";
+
 const discordWebhookUrl = defineSecret("DISCORD_WEBHOOK_URL");
 
-const categoryColors: Record<string, number> = {
-  bug: 0xe74c3c,
-  feature: 0x3498db,
-  praise: 0x2ecc71,
-  other: 0x95a5a6,
-};
+// Lookup tables are Maps, not object literals: `category` and `deviceModel`
+// arrive from the client, and a plain-object lookup on a key like
+// "constructor" or "__proto__" returns an inherited value instead of a miss.
+const categoryColors = new Map<string, number>([
+  ["bug", 0xe74c3c],
+  ["feature", 0x3498db],
+  ["praise", 0x2ecc71],
+  ["other", 0x95a5a6],
+]);
 
-const categoryEmoji: Record<string, string> = {
-  bug: "🐛",
-  feature: "✨",
-  praise: "💚",
-  other: "💬",
-};
+const DEFAULT_COLOR = 0x95a5a6;
+
+const categoryEmoji = new Map<string, string>([
+  ["bug", "🐛"],
+  ["feature", "✨"],
+  ["praise", "💚"],
+  ["other", "💬"],
+]);
 
 // Maps Apple device identifiers to friendly model names.
 // Identifier format: see https://gist.github.com/adamawolf/3048717
-const friendlyDeviceNames: Record<string, string> = {
+const friendlyDeviceNames = new Map<string, string>(Object.entries({
   // iPhone 16 family
   "iPhone17,1": "iPhone 16 Pro",
   "iPhone17,2": "iPhone 16 Pro Max",
@@ -64,13 +71,18 @@ const friendlyDeviceNames: Record<string, string> = {
   "iPad14,9": "iPad Air 11\" M2 (cellular)",
   "iPad14,10": "iPad Air 13\" M2",
   "iPad14,11": "iPad Air 13\" M2 (cellular)",
-};
+}));
+
 
 export const notifyDiscordOnFeedback = onDocumentCreated(
   {
     document: "feedback/{docId}",
     secrets: [discordWebhookUrl],
     region: "us-central1",
+    // /feedback accepts unauthenticated writes by design, so a flood is
+    // possible. Cap the fan-out rather than letting it scale into unbounded
+    // compute and an unbounded number of Discord posts.
+    maxInstances: 3,
   },
   async (event) => {
     const data = event.data?.data();
@@ -79,14 +91,21 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
       return;
     }
 
-    const category = String(data.category ?? "other");
-    const message = String(data.message ?? "(no message)");
-    const replyEmail = data.replyEmail ? String(data.replyEmail) : null;
-    const uid = data.uid ? String(data.uid) : null;
-    const appVersion = String(data.appVersion ?? "?");
-    const osVersion = String(data.osVersion ?? "?");
-    const deviceModel = String(data.deviceModel ?? "?");
-    const locale = String(data.locale ?? "?");
+    // Everything below is client-supplied. The Firestore rules bound it, but
+    // this function must not depend on that: it renders into a channel a human
+    // reads, so it sanitises at the point of use.
+    const rawCategory = String(data.category ?? "other");
+    const category = categoryEmoji.has(rawCategory) ? rawCategory : "other";
+    const message = safeText(String(data.message ?? "(no message)"), 3000);
+    const replyEmail = data.replyEmail
+      ? safeText(String(data.replyEmail), 254)
+      : null;
+    const uid = data.uid ? safeText(String(data.uid), 128) : null;
+    const appVersion = safeText(String(data.appVersion ?? "?"), 64);
+    const osVersion = safeText(String(data.osVersion ?? "?"), 64);
+    const rawDeviceModel = String(data.deviceModel ?? "?");
+    const deviceModel = safeText(rawDeviceModel, 64);
+    const locale = safeText(String(data.locale ?? "?"), 64);
 
     const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
 
@@ -105,7 +124,8 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
       value: `v${appVersion} · ${locale}`,
       inline: true,
     });
-    const friendlyName = friendlyDeviceNames[deviceModel];
+    // Only the lookup uses the raw identifier; the label is the escaped one.
+    const friendlyName = friendlyDeviceNames.get(rawDeviceModel);
     const deviceLabel = friendlyName
       ? `${deviceModel} (${friendlyName})`
       : deviceModel;
@@ -117,13 +137,17 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
 
     const payload = {
       username: "Potter Journal Feedback",
+      // Nothing in a feedback report may ping anyone, whatever it contains.
+      allowed_mentions: { parse: [] as string[] },
       embeds: [
         {
-          title: `${categoryEmoji[category] ?? "💬"} ${category.toUpperCase()}`,
-          description: message.length > 4000 ? message.slice(0, 4000) + "…" : message,
-          color: categoryColors[category] ?? categoryColors.other,
+          title: `${categoryEmoji.get(category) ?? "💬"} ${category.toUpperCase()}`,
+          description: message,
+          color: categoryColors.get(category) ?? DEFAULT_COLOR,
           fields,
-          footer: { text: `doc: ${event.params.docId}` },
+          // The document id is client-chosen too — `doc(id).set()` picks it —
+          // so it gets the same treatment as everything else in the embed.
+          footer: { text: `doc: ${safeText(event.params.docId, 64)}` },
           timestamp: new Date().toISOString(),
         },
       ],
