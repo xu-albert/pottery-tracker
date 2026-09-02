@@ -9,7 +9,7 @@ This file provides guidance to coding agents working in this repository. `CLAUDE
 
 ## Project Overview
 
-Pottery Tracker is a photo-first mobile app for hobby potters to log and track their ceramic pieces. The full product requirements are in `pottery_tracker_prd.md`.
+Pottery Tracker is a photo-first mobile app for hobby potters to log and track their ceramic pieces. The full product requirements are in `pottery_tracker_prd.md`. `TEST_PLAN.md` is the project's test plan — strategy, unit/integration inventory, a regression catalog keyed to `fix:` commits, and a prioritized test-gap backlog; add a row there with every `fix:` commit rather than letting regressions go uncatalogued.
 
 ## Current Status
 
