@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/pieces_dao.dart';
+import '../../../models/display_date.dart';
 import '../../../models/piece_stage.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
@@ -80,16 +81,10 @@ class PieceRow extends ConsumerWidget {
                 loading: () => const SizedBox.shrink(),
                 error: (_, _) => const SizedBox.shrink(),
                 data: (photos) {
-                  final displayDate =
-                      piece.piece.displayDate ??
-                      (photos.isNotEmpty
-                          ? photos
-                                .map((p) => p.dateTaken)
-                                .reduce((a, b) => a.isAfter(b) ? a : b)
-                          : null) ??
-                      piece.piece.createdAt;
                   return Text(
-                    DateFormat.yMMMd().format(displayDate),
+                    DateFormat.yMMMd().format(
+                      resolveDisplayDate(piece.piece, photos),
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppColors.charcoal.withValues(alpha: 0.5),
                     ),

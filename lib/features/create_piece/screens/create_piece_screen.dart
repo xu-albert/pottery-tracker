@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
+import '../../../models/untitled_title.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/image_service_provider.dart';
@@ -65,21 +66,6 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
     } else {
       await _createPieceFromGallery();
     }
-  }
-
-  Future<String> _nextUntitledName(dynamic piecesDao) async {
-    final titles = await piecesDao.getUntitledPieceTitles();
-    final usedNumbers = <int>{};
-    final pattern = RegExp(r'^Untitled Piece (\d+)$');
-    for (final t in titles) {
-      final match = pattern.firstMatch(t);
-      if (match != null) usedNumbers.add(int.parse(match.group(1)!));
-    }
-    var n = 1;
-    while (usedNumbers.contains(n)) {
-      n++;
-    }
-    return 'Untitled Piece $n';
   }
 
   Future<void> _createPieceFromCamera() async {
@@ -157,7 +143,7 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
     final piecesDao = ref.read(piecesDaoProvider);
     final photosDao = ref.read(photosDaoProvider);
 
-    final title = await _nextUntitledName(piecesDao);
+    final title = nextUntitledTitle(await piecesDao.getUntitledPieceTitles());
 
     await piecesDao.insertPiece(
       PiecesCompanion(

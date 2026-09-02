@@ -8,7 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../database/database.dart';
+import '../../../models/display_date.dart';
 import '../../../models/piece_stage.dart';
+import '../../../models/untitled_title.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
 import '../../../providers/materials_provider.dart';
@@ -82,7 +84,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     final piece = await dao.getPieceById(widget.pieceId);
     if (mounted) {
       final title = piece?.title ?? '';
-      final isUntitled = RegExp(r'^Untitled Piece \d+$').hasMatch(title);
+      final isUntitled = isUntitledTitle(title);
       setState(() {
         _piece = piece;
         _titleHint = isUntitled ? title : null;
@@ -302,14 +304,8 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
   }
 
   DateTime _resolveDisplayDate() {
-    if (_piece!.displayDate != null) return _piece!.displayDate!;
     final photos = ref.read(photosForPieceProvider(widget.pieceId)).valueOrNull;
-    if (photos != null && photos.isNotEmpty) {
-      return photos
-          .map((p) => p.dateTaken)
-          .reduce((a, b) => a.isAfter(b) ? a : b);
-    }
-    return _piece!.createdAt;
+    return resolveDisplayDate(_piece!, photos ?? const []);
   }
 
   Future<void> _editPhotoDate(Photo photo) async {

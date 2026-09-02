@@ -9,6 +9,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
+import '../../../models/display_date.dart';
 import '../../../models/piece_stage.dart';
 import '../../../providers/analytics_provider.dart';
 import '../../../providers/database_provider.dart';
@@ -303,15 +304,7 @@ class _ArchivedPieceDetailScreenState
   }
 
   String _formatDisplayDate(List<Photo> photos) {
-    final displayDate =
-        _piece!.displayDate ??
-        (photos.isNotEmpty
-            ? photos
-                  .map((p) => p.dateTaken)
-                  .reduce((a, b) => a.isAfter(b) ? a : b)
-            : null) ??
-        _piece!.createdAt;
-    return DateFormat.yMMMd().format(displayDate);
+    return DateFormat.yMMMd().format(resolveDisplayDate(_piece!, photos));
   }
 
   Widget _metadataLine(BuildContext context, String label, String value) {

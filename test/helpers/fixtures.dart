@@ -11,6 +11,7 @@ Piece makePiece({
   String? notes,
   String? coverPhotoId,
   bool isArchived = false,
+  DateTime? displayDate,
   DateTime? createdAt,
   DateTime? updatedAt,
 }) {
@@ -25,6 +26,7 @@ Piece makePiece({
     notes: notes,
     coverPhotoId: coverPhotoId,
     isArchived: isArchived,
+    displayDate: displayDate,
     createdAt: createdAt ?? now,
     updatedAt: updatedAt ?? now,
   );
