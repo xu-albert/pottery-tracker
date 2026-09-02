@@ -1,7 +1,4 @@
 /// Titles the app assigns to new pieces until the potter names them.
-///
-/// The prefix is also what [PiecesDao.getUntitledPieceTitles] filters on, so
-/// the two must stay in step.
 const untitledTitlePrefix = 'Untitled Piece';
 
 final RegExp _untitledPattern = RegExp('^$untitledTitlePrefix (\\d+)\$');
