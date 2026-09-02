@@ -18,6 +18,8 @@ import '../../../providers/photos_provider.dart';
 import '../../../providers/image_service_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../widgets/app_snackbar.dart';
+import '../../../widgets/stage_badge.dart';
+import '../../../widgets/tag_chip.dart';
 import '../widgets/photo_gallery.dart';
 
 class ArchivedPieceDetailScreen extends ConsumerStatefulWidget {
@@ -172,24 +174,7 @@ class _ArchivedPieceDetailScreenState
                         ),
                         if (stage != null) ...[
                           const SizedBox(width: AppSizes.sm),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: stage.color.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              stage.displayName,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: stage.color,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ),
+                          StageBadge(stage: stage),
                         ],
                       ],
                     ),
@@ -279,10 +264,9 @@ class _ArchivedPieceDetailScreenState
                                 spacing: 4,
                                 runSpacing: 4,
                                 children: tags.map((tag) {
-                                  return _buildTagChip(
-                                    context,
-                                    tag.name,
-                                    tagColorMap,
+                                  return TagChip(
+                                    tag: tag.name,
+                                    customColor: tagColorMap[tag.name],
                                   );
                                 }).toList(),
                               ),
@@ -312,66 +296,6 @@ class _ArchivedPieceDetailScreenState
       '$label: $value',
       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
         color: AppColors.charcoal.withValues(alpha: 0.7),
-      ),
-    );
-  }
-
-  // Tag chip — same style as PieceRow
-  static const _defaultTagColors = [
-    (AppColors.teal, AppColors.teal),
-    (AppColors.terracotta, Color(0xFF8B5536)),
-    (AppColors.dustyRose, Color(0xFF8B5D55)),
-    (AppColors.sage, Color(0xFF536B53)),
-    (AppColors.blue, AppColors.blue),
-  ];
-
-  Widget _buildTagChip(
-    BuildContext context,
-    String tag,
-    Map<String, Color> tagColorMap,
-  ) {
-    final textStyle = Theme.of(context).textTheme.bodySmall;
-    final customColor = tagColorMap[tag];
-    final Color bgColor;
-    final Color textColor;
-    if (customColor != null) {
-      final colors = TagColorPresets.colorsFor(customColor);
-      bgColor = colors.$1;
-      textColor = colors.$2;
-    } else {
-      final colorIndex = tag.hashCode.abs() % _defaultTagColors.length;
-      final defaults = _defaultTagColors[colorIndex];
-      bgColor = defaults.$1.withValues(alpha: 0.18);
-      textColor = defaults.$2;
-    }
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 150),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '#',
-              style: textStyle?.copyWith(
-                color: textColor.withValues(alpha: 0.5),
-              ),
-            ),
-            const SizedBox(width: 2),
-            Flexible(
-              child: Text(
-                tag,
-                style: textStyle?.copyWith(color: textColor),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
