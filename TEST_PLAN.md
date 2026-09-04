@@ -80,7 +80,11 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | File | Subject | Approx. cases |
 |---|---|---|
 | `test/database/materials_dao_junction_test.dart` | Clay/Glaze/Tag junction-table DAOs | 15 |
+| `test/database/photos_dao_test.dart` | `PhotosDao` sort ordering, `getNextSortOrder`, batch reorder, per-piece delete scoping | 8 |
+| `test/database/pieces_dao_test.dart` | `PiecesDao` archived filter, search matching, stream re-emission, CRUD, `getUntitledPieceTitles` | 12 |
 | `test/database/sqlcipher_guard_test.dart` | `assertSqlCipherBacksSqlite3` (see §11 gap on its call site) | 18 |
+| `test/models/display_date_test.dart` | `resolveDisplayDate` precedence: explicit date, then newest photo, then `createdAt` | 4 |
+| `test/models/untitled_title_test.dart` | `isUntitledTitle` and `nextUntitledTitle` gap-filling numbering | 5 |
 | `test/providers/account_deletion_record_test.dart` | Local record of a pending account deletion | 3 |
 | `test/providers/account_switch_test.dart` | End-to-end account-switch/lock/wipe state machine, against a real Drift DB (`AGENTS.md`'s "end-to-end guard") | 47 |
 | `test/providers/auth_provider_test.dart` | `AuthState` transitions | 7 |
@@ -90,6 +94,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/services/feedback_service_test.dart` | Feedback Firestore write path | 4 |
 | `test/services/image_service_test.dart` | Compression + raw-bytes fallback | 4 |
 | `test/services/material_writer_test.dart` | Clay/glaze/tag create-and-select | 3 |
+| `test/services/piece_writer_test.dart` | `PieceWriter` piece-row and photo writes against a real Drift DB, each pinned to its `SyncTrigger` enqueue (`AGENTS.md`'s "every write path" rule for screens) | 17 |
 | `test/services/review_prompt_service_test.dart` | In-app-review gating (§6.12 mirrors this manually) | 9 |
 | `test/services/sync_queue_entry_test.dart` | `SyncQueueEntry` (de)serialization | 14 |
 | `test/services/sync_queue_test.dart` | Queue enqueue/drain/backoff | 9 |
@@ -112,14 +117,15 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow |
 | `test/features/settings/settings_screen_test.dart` | Materials section, title |
 | `test/widgets/splash_overlay_test.dart` | Splash animation completion gating |
+| `test/widgets/stage_badge_test.dart` | Per-stage label text, tint and text colour (one case per `PieceStage`) |
+| `test/widgets/tag_chip_test.dart` | Hash prefix, custom colour, stable palette pick for uncoloured tags, width cap |
 
 ### 2.3 What's missing
 
-See §11 for the full prioritized list. Highlights: no unit test for `PiecesDao`/`PhotosDao`
-directly (only exercised indirectly through `account_switch_test.dart` and the junction
-DAO test); no test for `configureSqlCipher`'s call site in `AppDatabase.open()` (§11-P0);
-no widget tests for the piece-detail screen, manage-clays/glazes/tags screens, or the
-photo-reorder screen — all pure-checklist manual coverage today (§6.5, §6.7).
+See §11 for the full prioritized list. Highlights: no test for `configureSqlCipher`'s call
+site in `AppDatabase.open()` (§11-P0); no widget tests for the piece-detail screen,
+manage-clays/glazes/tags screens, or the photo-reorder screen — all pure-checklist manual
+coverage today (§6.5, §6.7).
 
 ### 2.4 How to run
 
@@ -187,7 +193,7 @@ alongside it below where they're still live risks).
 | `73c0f43` | Apple Sign-In spinner shown on the Google button | **UNGUARDED** — no widget test asserts per-button loading-state isolation |
 | `7ef7bc5` | Camera crash from missing `NSCameraUsageDescription` | **UNGUARDED** by nature — Info.plist entries aren't unit-testable; covered only by the manual release checklist (§6, §9) |
 | `59ef150` | "Delete all data" required sign-in first | `account_switch_test.dart` (no-account deletion cases) |
-| `9a26c3b` | Date handling: time picker removed, display date shown in list view | Covered indirectly by `album_grid_test.dart`; no direct date-formatting unit test |
+| `9a26c3b` | Date handling: time picker removed, display date shown in list view | `display_date_test.dart` (which date a piece shows); list rendering via `album_grid_test.dart` |
 | `0029f6c`/`5dac32c` | Title field lost its value when another field was tapped | **UNGUARDED** — no piece-detail widget test exists at all (§2.3, §11) |
 
 **Rule:** every future `fix:` commit adds a row to this table in the same PR, naming the
@@ -760,7 +766,6 @@ brief — this is the backlog the plan promised instead).
 |---|---|---|
 | `firestore.rules` (feedback allowlist, per-user scoping) and `storage.rules` have zero automated coverage — only the Cloud Function side is tested. | Medium — a rules regression ships straight to production with nothing catching it pre-deploy | Medium — Firebase Emulator Suite + `@firebase/rules-unit-testing`; new toolchain for this repo |
 | Swipe-to-archive has no non-gesture alternative and no accessibility test — a screen-reader user may not be able to archive a piece at all. | Medium — accessibility regression, silent | Small–medium — add a long-press or menu fallback action, then a widget test asserting it's reachable via semantics |
-| No `PiecesDao`/`PhotosDao` unit tests directly — only exercised indirectly through `account_switch_test.dart`. | Medium — CRUD regressions in the most-used tables surface only through an unrelated, expensive test file | Small — mirror `materials_dao_junction_test.dart`'s pattern |
 | No `integration_test/` smoke suite (auth-skip → create piece → edit → archive) runnable on iOS Simulator in CI. | Medium — the only thing standing between "all unit tests pass" and "the app actually opens" is a human | Medium — new dependency, new CI job, but scoped narrowly (§5) |
 
 ### P2 — worth doing, lower urgency
