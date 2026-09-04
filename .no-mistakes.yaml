@@ -1,0 +1,3 @@
+# Without this, no-mistakes has no test command and dispatches an exploratory agent instead.
+commands:
+  test: flutter test
