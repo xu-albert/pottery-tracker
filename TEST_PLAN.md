@@ -1,23 +1,254 @@
 # Pottery Tracker — Test Plan
 
-This document catalogs all testable features, functionality, and edge cases. Update this file whenever features are added or changed.
+This document is the project's single test plan. It combines a comprehensive testing
+strategy (§1–5, §7–12) with the manual feature/regression catalog that predates it (§6,
+carried forward unchanged in substance). Update it whenever features are added or
+changed, and whenever a bug fix lands (see §4's rule).
+
+Related docs this plan links to rather than duplicates: `AGENTS.md` (offline-first sync
+architecture, account-switch/lock design, Android release risk), `docs/android-release.md`
+(manual Play/Firebase console steps), `testing/searchable-pickers.md` (a standalone manual
++ agent script for the material pickers, still current), `firestore.rules` / `storage.rules`
+(the authoritative access-control source).
+
+**Audit note (2026-09-02):** the previous version of this file was a manual/feature QA
+checklist only (its old §1–12, now folded into §6 below) plus one automated-tests list
+(old §10, now folded into §2). It had no test-pyramid statement, no integration/contract
+section, no regression catalog, no performance/load section, no security/privacy section
+beyond a two-line accessibility stub, no release checklist, and no single "run everything"
+section — those are new here (§1, §3, §4, §5, §7, §8, §9, §10, §12). §11 (Gaps) is new and
+supersedes the old inline `**TODO:**` markers in §6, which are intentionally left in place
+since they're feature backlog, not test backlog.
 
 ---
 
-## 1. Authentication & Onboarding
+## 1. Test Strategy & the Test Pyramid
 
-### Sign-In Screen (`/sign-in`)
+Pottery Tracker is a single-developer, offline-first Flutter app with a thin Cloud
+Functions backend. The pyramid is deliberately bottom-heavy: Drift/Riverpod logic is cheap
+to unit-test in Dart's VM test runner (no simulator needed), so most of the 323 current
+tests (`flutter test`, 2026-09-02) sit there; widget tests cover the handful of screens
+with real branching logic; there are zero automated end-to-end tests (§5) because the two
+things that would require — Camera and PHPicker multi-select — do not work in the iOS
+Simulator at all (`AGENTS.md`, `TEST_PLAN.md` §6.4), so E2E coverage of the photo pipeline
+is manual-only by necessity, not by neglect.
+
+```
+        ▲  Manual/Exploratory (§6) — full app, real device, pre-release
+       ╱ ╲    ~40 scripted scenarios, iOS Simulator + physical device
+      ╱   ╲
+     ╱  E2E ╲  (§5) — none automated; camera/multi-picker require a real device
+    ╱───────╲
+   ╱  Widget  ╲ (§2.2) — 8 files, screens/components with branching UI logic
+  ╱─────────────╲
+ ╱   Unit / DAO   ╲ (§2.1) — 21 files: providers, services, DAOs, pure helpers
+╱───────────────────╲
+```
+
+Cloud Functions (`functions/`) has its own small pyramid: `sanitize.test.js` unit-tests the
+feedback sanitiser in isolation, `notify_discord.test.js` contract-tests the Discord webhook
+shape against a mocked `fetch` (§3.1) — no emulator, no live Firestore trigger test exists
+(§11).
+
+**What "test" means here, precisely:**
+- *Unit*: pure functions and single classes (a DAO, a provider's reducer, `sanitize.ts`)
+  against an in-memory or mocked dependency, no widget tree.
+- *Widget*: `flutter_test`'s `testWidgets` pumping a real widget subtree, mocked
+  providers/services underneath.
+- *Integration/contract* (§3): a real Drift/SQLCipher database, a real (temp-dir) file
+  system, or a fake-but-schema-faithful Firebase SDK (`firebase_storage_mocks`, hand-rolled
+  fakes in `test/helpers/firebase_mocks.dart`) — never a live Firebase project.
+- *Manual* (§6): a human, an app build, and this document's checklists.
+
+**Rule for new code:** a new DAO method, provider, or service function gets a unit test in
+the same PR. A new screen or stateful widget gets at least a smoke widget test. A bug fix
+gets a regression case (§4). Nothing here requires 100% coverage — there is no coverage gate
+in CI (§10) — but every write path must be reachable from a test the way `AGENTS.md`
+requires every write path to reach `SyncTrigger`.
+
+---
+
+## 2. Unit Tests
+
+### 2.1 What exists
+
+Convention: `test/<mirror-of-lib-path>/<subject>_test.dart`, one `test_test.dart` per
+`lib/` file it exercises (not strictly 1:1 — a few files test a provider plus its
+dependent notifier together). Run with `flutter test` or `flutter test path/to/file.dart`
+for one file; `flutter test --plain-name "some test name"` for one case.
+
+| File | Subject | Approx. cases |
+|---|---|---|
+| `test/database/materials_dao_junction_test.dart` | Clay/Glaze/Tag junction-table DAOs | 15 |
+| `test/database/sqlcipher_guard_test.dart` | `assertSqlCipherBacksSqlite3` (see §11 gap on its call site) | 18 |
+| `test/providers/account_deletion_record_test.dart` | Local record of a pending account deletion | 3 |
+| `test/providers/account_switch_test.dart` | End-to-end account-switch/lock/wipe state machine, against a real Drift DB (`AGENTS.md`'s "end-to-end guard") | 47 |
+| `test/providers/auth_provider_test.dart` | `AuthState` transitions | 7 |
+| `test/providers/sync_provider_test.dart` | `SyncState.copyWith` and notifier plumbing | 41 |
+| `test/router/app_router_test.dart` | GoRouter redirect logic (device-lock gate, auth gate) | 2 |
+| `test/services/encryption_key_service_test.dart` | SQLCipher key generation/storage | 3 |
+| `test/services/feedback_service_test.dart` | Feedback Firestore write path | 4 |
+| `test/services/image_service_test.dart` | Compression + raw-bytes fallback | 4 |
+| `test/services/material_writer_test.dart` | Clay/glaze/tag create-and-select | 3 |
+| `test/services/review_prompt_service_test.dart` | In-app-review gating (§6.12 mirrors this manually) | 9 |
+| `test/services/sync_queue_entry_test.dart` | `SyncQueueEntry` (de)serialization | 14 |
+| `test/services/sync_queue_test.dart` | Queue enqueue/drain/backoff | 9 |
+| `test/services/sync_service_test.dart` | Push/pull, `pushAllLocal`, `deleteLocalData` (§11 gap: new local stores must be added here) | 33 |
+| `test/services/sync_trigger_test.dart` | DAO-write → queue-enqueue wiring (`AGENTS.md`'s "every write path" rule) | 13 |
+| `test/widgets/vase_logo_test.dart` | `buildVasePath` pure path geometry | 5 |
+
+### 2.2 Widget tests
+
+| File | Subject |
+|---|---|
+| `test/features/album/album_screen_test.dart` | Loading/empty/error/data states |
+| `test/features/album/widgets/album_grid_test.dart` | Active list + swipe-archive + undo; archive grid |
+| `test/features/album/widgets/archive_thumbnail_test.dart` | Title overlay rendering |
+| `test/features/album/widgets/empty_state_test.dart` | Illustration + message |
+| `test/features/album/widgets/filter_chips_test.dart` | Active/Archive chip selection |
+| `test/features/auth/device_locked_screen_test.dart` | Foreign-pottery vs. owed-wipe copy and actions (mirrors §6.1's "Device Locked" checklist) |
+| `test/features/feedback/enjoyment_dialog_test.dart` | Soft-ask dialog paths |
+| `test/features/feedback/feedback_screen_test.dart` | Form validation, submit states |
+| `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow |
+| `test/features/settings/settings_screen_test.dart` | Materials section, title |
+| `test/widgets/splash_overlay_test.dart` | Splash animation completion gating |
+
+### 2.3 What's missing
+
+See §11 for the full prioritized list. Highlights: no unit test for `PiecesDao`/`PhotosDao`
+directly (only exercised indirectly through `account_switch_test.dart` and the junction
+DAO test); no test for `configureSqlCipher`'s call site in `AppDatabase.open()` (§11-P0);
+no widget tests for the piece-detail screen, manage-clays/glazes/tags screens, or the
+photo-reorder screen — all pure-checklist manual coverage today (§6.5, §6.7).
+
+### 2.4 How to run
+
+```bash
+flutter test                                    # whole Dart/Flutter suite (~40s)
+flutter test test/services/sync_service_test.dart   # one file
+flutter test --plain-name "pushAllLocal"        # one case by name, any file
+flutter test --coverage                         # writes coverage/lcov.info (not gated in CI, see §10)
+```
+
+---
+
+## 3. Integration & Contract Tests
+
+Pottery Tracker has no live network calls in its own test run — everything below is
+mocked or faked in-process. There is no Firebase emulator suite wired up (§11).
+
+| Boundary | Real in tests? | How | Where |
+|---|---|---|---|
+| SQLCipher/Drift database | Yes — real Drift + `sqlite3` against a temp file, keyed with a real (test) passphrase | `NativeDatabase` in a temp dir, torn down per test | `account_switch_test.dart`, `materials_dao_junction_test.dart`, `sqlcipher_guard_test.dart` |
+| Local filesystem (photos, cache) | Yes — real files under a temp `docsDir` | `Directory`/`File` against `path_provider` overridden to a temp path | `account_switch_test.dart` (writes real photo bytes so the wipe has real files to orphan) |
+| Firebase Auth | Faked | Hand-rolled fake in `test/helpers/firebase_mocks.dart` implementing the subset of the SDK surface the app calls | `auth_provider_test.dart`, `account_switch_test.dart` |
+| Cloud Firestore (sync push/pull) | Faked | In-memory fake store, not `fake_cloud_firestore` or an emulator | `sync_service_test.dart`, `sync_provider_test.dart` |
+| Cloud Storage (photo upload) | Faked | `firebase_storage_mocks` package | `sync_service_test.dart` |
+| `firestore.rules` (feedback doc shape, per-user isolation) | Not tested at all | — | **Gap, §11-P1**: the field-allowlist, length caps, and `uid` binding in `firestore.rules` have no automated test; only the Cloud Function side (`sanitize.ts`) is unit-tested |
+| `storage.rules` | Not tested at all | — | **Gap, §11-P2** |
+| Cloud Function → Discord webhook | Contract-tested | `notify_discord.test.js` asserts the outgoing payload shape against a mocked `fetch`, not a live webhook | `functions/test/notify_discord.test.js` |
+| App Check | Not exercised in tests (by design — it gates production traffic, not local logic) | — | — |
+
+**Why fakes over an emulator:** the Firebase Local Emulator Suite would let `firestore.rules`
+and `storage.rules` be tested for real (closing the two gaps above), at the cost of a Java
+runtime dependency and slower CI. That trade-off is exactly the kind of call that belongs in
+§11's backlog, not something to decide inside a docs PR.
+
+---
+
+## 4. Regression Catalog
+
+Every `fix:`-prefixed commit becomes a row. "Guarding test" is the automated test that fails
+if the bug comes back; **UNGUARDED** means none exists today. Built from `git log --oneline
+--all --grep=^fix -i` (functions/CI history only goes back to PR #13; earlier `Fix ...`
+commits, capitalized without a colon, predate the `fix:` convention and are catalogued
+alongside it below where they're still live risks).
+
+| Commit | Bug fixed | Guarding test |
+|---|---|---|
+| `cb0eadf` (#13) | Sign-out didn't erase local data; a refused account could write; feedback intake was unbounded | `account_switch_test.dart` (47 cases), `feedback_screen_test.dart`, `firestore.rules` allowlist (rules themselves **UNGUARDED**, §3) |
+| `e75373c`/`3d4bc49` | Owed wipe never retried once the sync blocking it ended | `account_switch_test.dart`: `"a sync that outlives a confirmed wipe is published while it runs, and withdrawn when it ends"` |
+| `75008bb` | Lock-exit request wasn't scoped; wipes were reported that hadn't happened | `account_switch_test.dart` (`eraseLocalDataNow`/`deleteAllData` result-reporting cases) |
+| `52929e3` | Redirect had no fixed point when session + lock both vanished | `app_router_test.dart` |
+| `40b38d6` | Read-only lock was derived from transient `SyncStatus` instead of persisted owner stamp — each transition that touched it reopened the hole | `account_switch_test.dart` (persisted-flag cases) |
+| `823af77` | Per-row foreign-write attribution design (queue uid stamps, reconciliation) replaced by device-level lock — the old design produced two paths that destroyed the owner's pottery permanently | `account_switch_test.dart`; `AGENTS.md` explicitly forbids reintroducing the old design |
+| `58f7b2c` | Two wipe owners (sign-out wipe vs. owed-wipe retry) could clear each other's in-flight guards | `account_switch_test.dart` |
+| `f937736` | Owed wipe was retried from paths the user didn't expect (`syncNow`, the debounced push) | `account_switch_test.dart`: `"a debounced push never resumes the wipe under the current account"` |
+| `b876115` | Next account's first sync could push onto a device still holding the previous account's data | `account_switch_test.dart` |
+| `c7ef44c` | Feedback could reach the maintainer's Discord channel un-sanitised | `functions/test/sanitize.test.js`, `functions/test/notify_discord.test.js` |
+| `eccfeb0` | Unauthenticated `/feedback` writes were unbound (no field allowlist, no length caps) | `firestore.rules` rule itself **UNGUARDED** (§3); `feedback_service_test.dart` covers the client side only |
+| `eda447f`/`e60f0ec` | Local data survived sign-out; last remaining sign-in provider could be disconnected (locking the user out) | `account_switch_test.dart`, `settings_account_test.dart` |
+| `4f2ed70`/`9a3bc7c` (#14) | Android release build broken by `sqlcipher_flutter_libs` < 0.6.8 (`android:attr/lStar`, 4KB page alignment) | **UNGUARDED** — no CI job builds the Android release APK/AAB (§9, §11-P0); the pin itself is enforced only by `AGENTS.md` + human review of `pubspec.yaml` |
+| `ceb5d3d` (#12) | Orientation could rotate on iPad despite portrait-only intent (multitasking exemption) | **UNGUARDED** — no automated test asserts `Info.plist`/`AndroidManifest.xml` orientation declarations stay in sync (§11-P2); currently a manual release check only (§6) |
+| `3cd97cc` | Splash animation replayed on router rebuild | `splash_overlay_test.dart` |
+| `be43539`/`bae2a7f` | Vase mark scaled per-axis instead of uniformly (aspect distortion) | `vase_logo_test.dart` |
+| `d3fb87b` | Search results flickered on input | **UNGUARDED** — no widget test debounces/asserts search stability |
+| `97d16ba` | Login screen flashed on launch; sign-out didn't persist | Superseded by the full sign-out/erase rewrite in `cb0eadf`; covered by `account_switch_test.dart` |
+| `73c0f43` | Apple Sign-In spinner shown on the Google button | **UNGUARDED** — no widget test asserts per-button loading-state isolation |
+| `7ef7bc5` | Camera crash from missing `NSCameraUsageDescription` | **UNGUARDED** by nature — Info.plist entries aren't unit-testable; covered only by the manual release checklist (§6, §9) |
+| `59ef150` | "Delete all data" required sign-in first | `account_switch_test.dart` (no-account deletion cases) |
+| `9a26c3b` | Date handling: time picker removed, display date shown in list view | Covered indirectly by `album_grid_test.dart`; no direct date-formatting unit test |
+| `0029f6c`/`5dac32c` | Title field lost its value when another field was tapped | **UNGUARDED** — no piece-detail widget test exists at all (§2.3, §11) |
+
+**Rule:** every future `fix:` commit adds a row to this table in the same PR, naming the
+guarding test it added — or, if none was added, marking the row **UNGUARDED** and filing it
+into §11 rather than leaving it silent. A `fix:` PR that touches this file only to add its
+row, with no test, is a signal the review should push back on unless the fix is genuinely
+untestable (an `Info.plist` entry, a build config pin).
+
+---
+
+## 5. End-to-End & UI Tests
+
+There is no `integration_test/` directory and no automated E2E suite — `pubspec.yaml` has
+no `integration_test` dependency. This is a deliberate consequence of the platform, not an
+oversight: the two riskiest flows (Camera capture, PHPicker multi-select photo library) do
+not function in the iOS Simulator at all (`AGENTS.md`; `TEST_PLAN.md` §6.4), so a `patrol` or
+`flutter_driver` suite driving the simulator could not exercise them either — it would only
+cover what the widget tests (§2.2) already cover, on a slower runner. `docs/design/splash-logo/`
+round 26 (`round-26-handoff-*.png`) and the two `.mp4` captures under that directory are the
+closest thing to recorded device evidence today, and they're a one-off design-approval
+artifact, not a repeatable test.
+
+**What would need to run where, if this changes:**
+- **iOS Simulator** (any recent iPhone runtime) — everything except Camera and the
+  PHPicker multi-select photo flow; sufficient for router/navigation/CRUD E2E.
+- **Physical iOS device** — required for Camera and multi-select photo E2E (§6.4's NOTE),
+  and for the App Store-distributed build's SQLCipher/App Check path.
+- **Android** — no E2E has ever run, on emulator or device (`AGENTS.md`: "Android builds
+  ... but has never run on a device" — the highest release risk in the project, tracked as
+  a manual/release item in §6.9 and §9, not a testing gap this doc can close).
+- No browser target — this is not a Flutter web-shipped app (the `web/` directory exists
+  from `flutter create` scaffolding but is not part of the product).
+
+§11-P1 proposes a minimal `integration_test/` smoke suite (auth skip → create piece from
+Photo Library → edit metadata → archive) runnable headlessly on the iOS Simulator in CI,
+explicitly scoped to avoid Camera/multi-select.
+
+---
+
+## 6. Manual & Exploratory Test Plan
+
+This section is the project's pre-existing feature checklist, carried forward with its
+structure and content intact. Each checkbox is a scripted scenario a human runs against a
+build (iOS Simulator for everything except where noted; a physical device where the
+Simulator can't exercise the path) and its expected result is the checkbox text itself.
+Un-checked boxes are scenarios not yet re-verified since being written, not known failures.
+
+### 6.1 Authentication & Onboarding
+
+#### Sign-In Screen (`/sign-in`)
 - [ ] "Sign in with Google" button launches Google sign-in flow
 - [ ] "Sign in with Apple" button appears only on iOS
 - [ ] "Skip for now" bypasses auth and enters app — offered only while nobody has a stake in this device; it disappears once an account has claimed it, been refused here, or is owed a wipe
 - [ ] Auth state persists across app restarts (SharedPreferences)
 - [ ] After sign-in or skip, user lands on Album screen
 
-### Edge Cases
+#### Edge Cases
 - [ ] Force-quit and relaunch — user stays authenticated
 - [ ] Sign out from Settings → local data erased, redirected back to sign-in screen
 
-### Device Locked (`/device-locked`)
+#### Device Locked (`/device-locked`)
 Reached for two different reasons, which the screen tells apart. **Foreign pottery**: a session ended
 involuntarily (offline launch, revoked token) and a *different* account signed in afterwards, so the
 device still holds the previous account's pottery. **Owed wipe**: an explicit "Sign Out & Erase" set
@@ -47,9 +278,12 @@ Both:
 - [ ] An erase that removed the pieces and materials but not every photo file says exactly that — never "Nothing was deleted" — and the lock stays up, still offering the erase that finishes it
 - [ ] The same from "Delete Account & Data" in a session with no account ("Skip for now"): the message says the pieces and materials are gone and some photo files remain — never "Nothing was deleted" — and the lock underneath agrees
 
----
+**Regression note:** this whole area is the highest-churn part of the app (14 of the 25
+`fix:` commits in §4). `account_switch_test.dart` automates the state-machine version of
+every scenario above; this manual pass exists to catch what only shows up in real UI —
+timing, copy, dialog defaults.
 
-### Splash Screen (`/splash`)
+#### Splash Screen (`/splash`)
 - [ ] Vase mark draws itself on over ~900ms at launch
 - [ ] No flash or colour change between the native launch screen and the Flutter splash
 - [ ] Animation always completes — never cut off mid-stroke, even when auth resolves fast
@@ -59,21 +293,17 @@ Both:
 - [ ] Home-screen app icon matches the drawn mark
 - [ ] Icon reads clearly at small sizes (Spotlight, Settings, notifications)
 
----
+### 6.2 Bottom Navigation
 
-## 2. Bottom Navigation
-
-### Shell Screen
+#### Shell Screen
 - [ ] Home tab (left) → Album screen
 - [ ] "+" button (center) → Create piece flow
 - [ ] Settings tab (right) → Settings screen
 - [ ] Tapping active tab preserves scroll position / state
 
----
+### 6.3 Album Screen (Home)
 
-## 3. Album Screen (Home)
-
-### Active View (default)
+#### Active View (default)
 - [ ] Pieces shown as rows with title, updatedAt date, + horizontally scrollable photo thumbnails
 - [ ] Newest-updated pieces appear first
 - [ ] Tapping a row opens piece detail
@@ -84,7 +314,7 @@ Both:
 - [ ] Tapping "Undo" restores piece to active list
 - [ ] Light haptic feedback on swipe-archive
 
-### Archive View
+#### Archive View
 - [ ] Tap "Archive" chip → shows 3-column grid of archived pieces
 - [ ] Archive thumbnails are 1:1 square with title text overlay at bottom-right
 - [ ] Title overlay has gradient fade from transparent to semi-black
@@ -93,51 +323,47 @@ Both:
 - [ ] Placeholder thumbnails (no cover photo) also show gradient + title
 - [ ] Tapping thumbnail opens piece detail
 
-### Search
+#### Search
 - [ ] Typing in search bar filters pieces in real-time
 - [ ] Searches across: title, clay type, glazes, tags, notes
 - [ ] Clearing search shows all pieces again
 - [ ] Search field has no autocorrect
 
-### Empty States
+#### Empty States
 - [ ] No active pieces → "No pieces yet" message with icon
 - [ ] No archived pieces → empty state shown in archive view
 
-### Metadata in Home View
+#### Metadata in Home View
 - [ ] **TODO:** Display tags, clay, glazes, and other metadata below each piece row in the home view
 
-### Edge Cases
+#### Edge Cases
 - [ ] Piece with no photos → placeholder icon in row and archive grid
 - [ ] Very long title → ellipsis truncation
 - [ ] Single photo piece in row → no gradients shown
 
----
+### 6.4 Piece Creation
 
-## 4. Piece Creation
-
-### Flow
+#### Flow
 - [ ] Tap "+" → bottom sheet with Camera / Photo Library
 - [ ] Select source → pick image → processing spinner → navigates to detail
 - [ ] New piece gets auto-title "Untitled Piece N" (lowest available number)
 - [ ] First photo set as cover automatically
 
-### Untitled Piece Numbering
+#### Untitled Piece Numbering
 - [ ] First piece → "Untitled Piece 1"
 - [ ] With "Untitled Piece 1" existing → new piece is "Untitled Piece 2"
 - [ ] With "Untitled Piece 1" and "Untitled Piece 3" existing → new piece is "Untitled Piece 2" (fills gap)
 - [ ] Renaming "Untitled Piece 1" to something else → next piece reuses number 1
 
-### Edge Cases
+#### Edge Cases
 - [ ] Cancel source picker → returns to previous screen
 - [ ] Cancel image picker → returns to previous screen
 - [ ] Image compression fails → raw bytes saved as fallback
 - [ ] Camera on iOS simulator → crashes (use Photo Library for testing)
 
----
+### 6.5 Piece Detail Screen
 
-## 5. Piece Detail Screen
-
-### Photo Gallery
+#### Photo Gallery
 - [ ] Photos displayed as 1:1 squares at 72% screen width
 - [ ] Horizontal free-scrolling (no page snapping) with bounce physics
 - [ ] Newest photo appears leftmost
@@ -148,14 +374,14 @@ Both:
 - [ ] Tap photo → fullscreen viewer with pinch-zoom (0.5x–4x)
 - [ ] Long-press photo → bottom sheet with "Delete photo" option
 
-### Photo Management
+#### Photo Management
 - [ ] Add photo via camera icon in app bar → Camera / Photo Library picker
 - [ ] New photo becomes cover automatically
 - [ ] Delete photo → confirmation dialog → photo removed
 - [ ] Deleting cover photo → next newest photo becomes cover
 - [ ] Deleting all photos → no gallery shown, just metadata form
 
-### Batch Photo Upload (Photo Library multi-select)
+#### Batch Photo Upload (Photo Library multi-select)
 - [ ] Photo Library option uses multi-select picker (select 1 or many)
 - [ ] Progress dialog shows "Processing X of Y..." for multiple photos
 - [ ] All selected photos added to piece gallery
@@ -164,7 +390,7 @@ Both:
 - [ ] Cancelling multi-picker returns with no changes
 - **NOTE: Multi-select (PHPicker) does NOT work on iOS simulator. Camera also crashes on simulator. Both require a real device to test.**
 
-### Photo Reordering
+#### Photo Reordering
 - [ ] "Reorder" button appears below gallery when 2+ photos exist
 - [ ] "Reorder" button hidden when 0-1 photos
 - [ ] Tapping "Reorder" opens full-screen list with thumbnails and drag handles
@@ -173,7 +399,7 @@ Both:
 - [ ] Tapping back (without Done) discards changes
 - [ ] **TODO:** Allow deleting photos from the reorder screen
 
-### Metadata Form
+#### Metadata Form
 - [ ] Edit title → saves on keyboard "done"
 - [ ] Title field defaults to uppercase first letter (TextCapitalization.sentences)
 - [ ] Title field has no autocorrect suggestions
@@ -204,12 +430,16 @@ Both:
 - [ ] Notes field has no autocorrect
 - [ ] Empty string fields saved as NULL in database
 
-### Actions (Icon Buttons in App Bar)
+Also see `testing/searchable-pickers.md` for the searchable-picker variant of this form
+(search-within-picker, recent-item pills) — a standalone script with both a human and an
+agent/computer-use variant, current as of writing.
+
+#### Actions (Icon Buttons in App Bar)
 - [ ] Archive icon button → piece archived, navigates back to home
 - [ ] Unarchive icon (on archived piece) → piece unarchived, stays on detail
 - [ ] Trash icon (red tint) → confirmation dialog → piece + all photos deleted, navigates home
 
-### Title (Above Gallery)
+#### Title (Above Gallery)
 - [ ] Title displayed above photo gallery with titleLarge styling
 - [ ] Title is editable, saves on keyboard "done"
 - [ ] Untitled pieces: title field is empty, hint shows "Untitled Piece N" with correct number
@@ -217,17 +447,17 @@ Both:
 - [ ] Typing a name replaces the untitled name
 - [ ] Pieces with custom titles show the title prefilled normally
 
-### Haptic Feedback (manual — requires physical device)
+#### Haptic Feedback (manual — requires physical device)
 - [ ] Adding a photo → light haptic
 - [ ] Deleting a photo (after confirm) → light haptic
 - [ ] Archiving/unarchiving → light haptic
 - [ ] Deleting a piece (after confirm) → medium haptic
 - [ ] Creating a new piece → light haptic
 
-### Done Button
+#### Done Button
 - [ ] Tapping "Done" saves pending form changes and navigates to home
 
-### Last Updated (Editable)
+#### Last Updated (Editable)
 - [ ] Shows "Last updated {date} {time}" below metadata with edit icon
 - [ ] Timestamp updates after any edit
 - [ ] Tapping opens date picker then time picker
@@ -235,17 +465,13 @@ Both:
 - [ ] Cancelling date picker leaves date unchanged
 - [ ] Cancelling time picker uses existing time with new date
 
----
-
-## 6. Fullscreen Photo Viewer
+### 6.6 Fullscreen Photo Viewer
 
 - [ ] Black background with close button
 - [ ] Pinch-to-zoom (0.5x min, 4x max)
 - [ ] Tap back / close to return to detail
 
----
-
-## 7. Settings Screen
+### 6.7 Settings Screen
 
 - [ ] Shows "Signed in as {name}" or "Not signed in"
 - [ ] "Sign Out" → confirmation says every piece, photo and material on this device is deleted; "Cancel" is the default action and tapping outside the dialog does not sign out
@@ -259,7 +485,7 @@ Both:
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version row shows the `version` from `pubspec.yaml` (the authoritative source), not a hardcoded string
 
-### Manage Clays Screen (`/settings/clays`)
+#### Manage Clays Screen (`/settings/clays`)
 - [ ] Shows list of saved clay names in custom sort order
 - [ ] Empty state: "No clays saved yet" when no clays exist
 - [ ] "+" button in app bar → add dialog → creates new clay (appears at bottom)
@@ -269,7 +495,7 @@ Both:
 - [ ] Adding duplicate clay name (case-insensitive) → reuses existing
 - [ ] Changes reflected immediately in piece detail clay dropdown
 
-### Clay Reordering
+#### Clay Reordering
 - [ ] Drag handles visible on left side of each clay row
 - [ ] Dragging a clay to a new position reorders the list immediately
 - [ ] Reorder persists after leaving and returning to Manage Clays
@@ -277,11 +503,11 @@ Both:
 - [ ] Newly added clays appear at the bottom of the list
 - [ ] Scale + elevation animation on dragged item
 
-### Clay Rename Propagation
+#### Clay Rename Propagation
 - [ ] Renaming a clay in Manage Clays → all pieces using that clay show the new name
 - [ ] Renaming updates the piece detail clay display immediately
 
-### Manage Glazes Screen (`/settings/glazes`)
+#### Manage Glazes Screen (`/settings/glazes`)
 - [ ] Shows list of saved glaze names in custom sort order
 - [ ] Empty state: "No glazes saved yet" when no glazes exist
 - [ ] "+" button in app bar → add dialog → creates new glaze (appears at bottom)
@@ -293,11 +519,11 @@ Both:
 - [ ] Dragging a glaze to a new position reorders the list immediately
 - [ ] Scale + elevation animation on dragged item
 
-### Glaze Rename Propagation
+#### Glaze Rename Propagation
 - [ ] Renaming a glaze in Manage Glazes → all pieces using that glaze show updated name
 - [ ] Denormalized glazes text column updated (for search)
 
-### Manage Tags Screen (`/settings/tags`)
+#### Manage Tags Screen (`/settings/tags`)
 - [ ] Shows list of saved tag names in custom sort order
 - [ ] Empty state: "No tags saved yet" when no tags exist
 - [ ] "+" button in app bar → add dialog → creates new tag (appears at bottom)
@@ -309,7 +535,7 @@ Both:
 - [ ] Dragging a tag to a new position reorders the list immediately
 - [ ] Scale + elevation animation on dragged item
 
-### Tag Colors
+#### Tag Colors
 - [ ] New tags auto-assigned a default color from 7 presets (cycling)
 - [ ] Colored circle shown next to each tag in Manage Tags list
 - [ ] Tapping circle opens color picker bottom sheet with 7 preset swatches
@@ -319,21 +545,19 @@ Both:
 - [ ] Tags without a custom color fall back to hash-based palette
 - [ ] Color dot shown next to each tag in piece detail tag picker bottom sheet
 
-### Tag Rename Propagation
+#### Tag Rename Propagation
 - [ ] Renaming a tag in Manage Tags → all pieces using that tag show updated name
 - [ ] Denormalized tags text column updated (for search)
 
----
+### 6.8 Data & Image Pipeline
 
-## 8. Data & Image Pipeline
-
-### Image Processing
+#### Image Processing
 - [ ] Main image: JPEG q75, max 1500px
 - [ ] Thumbnail: JPEG q60, max 300px
 - [ ] EXIF date extracted when available; falls back to current time
 - [ ] Compression failure → raw bytes fallback
 
-### Database
+#### Database
 - [ ] Pieces table: id, title, stage, clayType, glazes (denormalized), tags (denormalized), notes, isArchived, coverPhotoId, createdAt, updatedAt
 - [ ] Photos table: id, pieceId, localPath, thumbnailPath, cloudUrl, dateTaken, createdAt, sortOrder
 - [ ] ClayOptions table: id, name (unique), sortOrder, createdAt
@@ -342,71 +566,38 @@ Both:
 - [ ] TagOptions table: id, name (unique), color (nullable), sortOrder, createdAt
 - [ ] PieceTags junction table: id, pieceId, tagOptionId
 - [ ] Photos sorted by sortOrder DESC (newest first) everywhere
-- [ ] Migration v4→v5: creates GlazeOptions + PieceGlazes, parses free-text glazes into library
-- [ ] Migration v5→v6: creates TagOptions + PieceTags + adds tags column to pieces
-- [ ] Migration v6→v7: adds color column to TagOptions
+- [ ] Migration chain (v2 through the current `schemaVersion` in `lib/database/database.dart`, 9 as of writing — this checklist covers only v4→v7; **see §11-P2**, the newer migrations have no manual checklist entries yet) exercises cleanly on an old on-disk database
 
-### Photo Ordering (Newest First)
-- [ ] Detail gallery: newest photo leftmost
-- [ ] Album row: newest photo leftmost
-- [ ] Cover photo: set to newest on add; on delete, falls back to newest remaining
+### 6.9 Cross-Cutting Concerns
 
----
-
-## 9. Cross-Cutting Concerns
-
-### Offline-First
+#### Offline-First
 - [ ] All features work without network connectivity
 - [ ] No Firebase calls in Phase 1
 
-### Localization
+#### Localization
 - [ ] All UI strings from `app_en.arb` (no hardcoded user-facing strings except error messages)
 
-### Accessibility
+#### Accessibility
+See §9 for the full accessibility test plan; this is the original three-line manual check,
+kept for continuity with `flutter gen-l10n`/build habits:
 - [ ] Semantics labels on interactive elements
 - [ ] Minimum 48dp touch targets (Android) / 44pt (iOS)
 - [ ] System font scaling respected
 
-### Error Handling
+#### Error Handling
 - [ ] Broken image files → placeholder icon shown
 - [ ] Photo capture failure → SnackBar error message
 - [ ] Database errors → "Error: {e}" displayed
 
----
+#### Android (manual/release-only — see AGENTS.md, docs/android-release.md, §9)
+- [ ] `flutter build apk --release -PrequireReleaseSigning=true` succeeds with a real `android/key.properties`
+- [ ] The built AAB installs and launches on a physical Android device — **never yet done**; this is the single highest-risk unverified item in the project (`AGENTS.md`)
+- [ ] The encrypted-DB path (`configureSqlCipher` → `AppDatabase.open()`) does not fall back to plaintext on-device
+- [ ] Portrait lock holds on an Android large-screen/tablet device (the `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out, load-bearing only at targetSdk 37+)
 
-## 10. Widget Tests (Automated)
+### 6.10 Firebase Analytics & Crashlytics
 
-### Album Screen (`test/features/album/album_screen_test.dart`)
-- [x] Shows loading indicator while data loads
-- [x] Shows empty state when no pieces
-- [x] Renders pieces when data available
-- [x] Shows error message on error
-
-### Filter Chips (`test/features/album/widgets/filter_chips_test.dart`)
-- [x] Active chip is selected by default
-- [x] Tapping Archive updates provider to true
-- [x] Tapping Active after Archive sets back to false
-
-### Album Grid (`test/features/album/widgets/album_grid_test.dart`)
-- [x] Active view renders list items (PieceRow)
-- [x] Swipe-to-archive calls dao.updatePiece and shows snackbar
-- [x] Undo button reverses the archive
-- [x] Archive view renders grid of ArchiveThumbnails
-
-### Archive Thumbnail (`test/features/album/widgets/archive_thumbnail_test.dart`)
-- [x] Renders with title overlay
-
-### Empty State (`test/features/album/widgets/empty_state_test.dart`)
-- [x] Shows illustration and message
-
-### Settings Screen (`test/features/settings/settings_screen_test.dart`)
-- [x] Shows Settings title and materials section
-
----
-
-## 11. Firebase Analytics & Crashlytics
-
-### Analytics Events
+#### Analytics Events
 - [ ] `sign_in_attempted` — fires when user taps Google or Apple sign-in button (with `method` parameter)
 - [ ] `sign_in_skipped` — fires when user taps "Skip for now"
 - [ ] `filter_changed` — fires when user switches between Active/Archive filter chips (with `filter` parameter)
@@ -419,44 +610,207 @@ Both:
 - [ ] `piece_unarchived` — fires when a piece is unarchived
 - [ ] `photo_added` — fires when a photo is added to a piece
 
-### Screen Tracking
+#### Screen Tracking
 - [ ] Auto screen tracking logs screen changes via `FirebaseAnalyticsObserver` on GoRouter
 
-### Crashlytics
+#### Crashlytics
 - [ ] Test crash button visible in Settings under "Debug" section
 - [ ] Tapping "Test Crash" triggers a `FirebaseCrashlytics.instance.crash()`
 - [ ] Uncaught Flutter errors reported via `FlutterError.onError`
 - [ ] Uncaught platform errors reported via `PlatformDispatcher.instance.onError`
 
-### Verification
+#### Verification
 - [ ] All analytics events fire without errors (no crashes or exceptions)
 - [ ] Events visible in Firebase Console (DebugView) after ~24h or via debug mode
 - [ ] Crashlytics test crash appears in Firebase Console
 
----
+### 6.11 In-App Review Prompt + Feedback Form
 
-## 12. In-App Review Prompt + Feedback Form
-
-### Gating
+#### Gating
 - [ ] Fresh install creates 1, 2 pieces → no prompt fires.
 - [ ] After 3rd piece, before 3 days since install → no prompt fires.
 - [ ] After 3rd piece + 3 days + 2 sessions → soft-ask appears on next save.
 - [ ] After any prompt fires → 90-day cooldown enforced.
 
-### Soft-ask paths
+#### Soft-ask paths
 - [ ] "Yes, I love it!" → native review sheet (or silently no-op if iOS cap hit).
 - [ ] "Could be better" → /feedback opens with form.
 - [ ] Outside-tap dismiss → cooldown starts, no further action.
 
-### Feedback form
+#### Feedback form
 - [ ] Send disabled until message non-empty.
 - [ ] Successful submit → toast, pops back, doc lands in Firestore `feedback/`.
 - [ ] Failed submit (airplane mode) → error toast, form stays open.
 - [ ] Anonymous user submit → doc has `uid: null`.
 - [ ] Reply email field stops accepting input at 254 characters (the cap `firestore.rules` enforces).
 
-### Settings entry
+#### Settings entry
 - [ ] Settings → "Send Feedback" → /feedback opens directly (no soft-ask).
+
+---
+
+## 7. Performance & Load
+
+There is no automated performance testing or budget enforcement today (§11-P3). What
+exists is informal, and the informal targets are recorded here so they stop being tribal
+knowledge:
+
+| Budget | Target | How it would be measured |
+|---|---|---|
+| Cold launch → interactive album | Splash completes in ~900ms (fixed animation), app usable within ~1.5s of that on a mid-tier device | `flutter drive` with `--profile`, or Xcode Instruments' App Launch template — manual today |
+| Image compression (per photo) | Sub-second for a typical phone-camera JPEG down to q75/1500px | `image_service_test.dart` asserts correctness, not wall-clock time |
+| Batch photo upload (multi-select) | "Processing X of Y" dialog should not visibly stall between photos | Manual only (§6.5); simulator can't exercise the picker at all |
+| Sync debounce | Drains within the short debounce window `AGENTS.md` describes; no numeric SLO documented | `sync_provider_test.dart`/`sync_queue_test.dart` assert ordering and retry, not timing |
+| Local DB size / query time | No documented ceiling — Firestore's own budget (1GB, 50K reads/day, 20K writes/day on Spark) is the real constraint, not local SQLite | Not measured |
+| App size | Not tracked | `flutter build ... --analyze-size` would produce this; not run today |
+
+**Load** in the traditional sense (concurrent users hitting a server) doesn't apply — the
+only shared backend surface is the `feedback` Cloud Function and Firestore/Storage under
+each user's own `users/{uid}` tree, both bounded by Firebase Spark's daily quotas, not by
+this app's request volume. §11-P3 proposes the smallest concrete step: recording actual
+`flutter build --analyze-size` output and cold-launch timing once per release as a release
+checklist line, before reaching for a dedicated perf-test rig this app doesn't need yet.
+
+---
+
+## 8. Security & Privacy
+
+| Area | Control | Verified by |
+|---|---|---|
+| Local data at rest | SQLCipher-encrypted SQLite (`sqlcipher_flutter_libs` ≥ 0.6.8); `assertSqlCipherBacksSqlite3` refuses to hand back a connection that isn't actually encrypted | `sqlcipher_guard_test.dart` (the guard function only — **not** its call site, §11-P0) |
+| Encryption key | Generated and stored via `encryption_key_service.dart` | `encryption_key_service_test.dart` |
+| Cloud data isolation | Firestore/Storage rules scope every path to `users/{uid}/...`, `request.auth.uid == userId` | `firestore.rules`/`storage.rules` themselves are **not** test-covered (§3, §11-P1/P2); only the app-side write path is |
+| Cross-account data leakage | Device-level `localDataOwnerUid`/`localDataContested` lock (`AGENTS.md`) prevents one account's data from being pushed under another's identity or left readable to a refused account | `account_switch_test.dart` (47 cases) — the project's most heavily regression-tested area |
+| Feedback endpoint abuse | Field allowlist, per-field length caps, server-set `createdAt`, `uid` bound to the caller's own token or absent — App Check is the volume/bot control, not the rule | `firestore.rules` inline comments explain the design; rule itself untested (§3); `sanitize.test.js`/`notify_discord.test.js` cover the Cloud Function side |
+| Secrets | `android/key.properties` gitignored, never committed (`AGENTS.md`); no API keys are hardcoded — Firebase config files (`google-services.json`, `GoogleService-Info.plist`) are the standard client-safe config, not secrets | Manual: `git log -p -- android/key.properties` should return nothing; not automated |
+| Auth provider disconnect | The last remaining sign-in provider cannot be disconnected (would strand the account) | `settings_account_test.dart` |
+| App Check | Gates production Firestore/Storage/Functions traffic from non-app callers | Not exercised in tests by design — it's a production network control, not app logic |
+| Third-party data flow | No analytics/crash SDKs beyond Firebase Analytics/Crashlytics/Performance; no ad SDKs; donation link (if any) is out-of-app | Manual audit of `pubspec.yaml` dependencies |
+
+No secrets scanning or dependency-vulnerability scanning runs in CI today (§11-P3 lists
+`dart pub outdated --mode=null-safety` / `npm audit` as a cheap addition for `functions/`).
+
+---
+
+## 9. Accessibility
+
+Scope: Dynamic Type / system font scaling, VoiceOver (iOS) / TalkBack (Android), color
+contrast, and touch-target sizing, per the Design Constraints in `AGENTS.md`.
+
+| Check | Expected | Status |
+|---|---|---|
+| System font scaling | UI reflows without clipping or overlap up to at least the largest standard Dynamic Type / Android font-scale setting | Manual only — no `MediaQuery(textScaler:)` golden tests exist (§11-P2) |
+| VoiceOver / TalkBack | Every interactive element (buttons, form fields, swipe-to-archive, drag handles) has a meaningful semantics label; swipe-to-archive in particular needs a non-gesture alternative for screen-reader users | Manual only; **not currently scripted anywhere** (§11-P1 — swipe-only actions are the classic a11y gap) |
+| Touch targets | ≥48dp (Android) / ≥44pt (iOS) on every tappable element, including icon-only buttons (app bar icons, drag handles, color swatches) | Manual (§6.9); no automated `tester.getSize()` assertions in widget tests today |
+| Color contrast | Tag chips (custom color + hash-fallback palette), archive-thumbnail title overlay gradient, and the sepia/cream splash background all meet WCAG AA against their backgrounds | Never measured; §11-P2 proposes a one-time manual contrast-checker pass per palette, not per-release |
+| Reduced motion | Splash draw-on and drag-reorder animations respect `MediaQuery.disableAnimations` / iOS Reduce Motion | Not implemented or tested — **gap**, §11-P3 |
+| Localization readiness | All user-facing strings route through `app_en.arb` (English-only for V1, but no hardcoded strings) | §6.9 manual check; no automated "no hardcoded string" lint exists (§11-P3) |
+
+Accessibility here is manual-only end to end — there is no CI job that would catch a
+regression before release. That gap is real (§11) but proportionate: this is a one-developer
+app pre-scale, and the cheapest next step (§11-P1) is adding semantics-label assertions to
+the widget tests that already exist, not standing up a new tool.
+
+---
+
+## 10. Release Checklist
+
+What CI actually runs today (`.github/workflows/ci.yml`, two jobs) vs. what a human must do
+before shipping.
+
+### 10.1 CI-enforced (blocks merge to `main` via required checks)
+- [ ] `dart analyze` — zero issues
+- [ ] `dart format --set-exit-if-changed .` — no formatting diffs
+- [ ] `flutter test` — full Dart/Flutter suite green (323 tests as of 2026-09-02)
+- [ ] `npm test` in `functions/` — TypeScript compiles, `sanitize`/`notify_discord` tests green
+
+### 10.2 Manual, required before every release
+- [ ] Full pass of §6 relevant to what changed (not necessarily every checkbox every time — see §11 for a proposed smoke subset)
+- [ ] iOS: build and run on the Simulator; Camera and multi-select photo flows verified on a **physical device** (§6.4, §6.5 NOTE)
+- [ ] Android: `flutter build apk --release -PrequireReleaseSigning=true` succeeds locally with a real `key.properties` — release signing is not exercised in CI (`AGENTS.md`)
+- [ ] Android: **install and launch on a physical device** — never done for this project (`AGENTS.md`); this is the top release risk and belongs on every release's checklist until it's finally verified once
+- [ ] Firebase Console: confirm no unexpected quota pressure against Spark's 1GB Firestore / 5GB Storage / 50K reads / 20K writes-per-day ceilings
+- [ ] `pubspec.yaml` `version` bumped (Settings screen reads it directly, §6.7)
+- [ ] `docs/android-release.md` steps followed for anything Play-console-side (this doc doesn't duplicate them)
+- [ ] Portrait-lock declarations still agree between `ios/Runner/Info.plist` and `android/.../AndroidManifest.xml` (`AGENTS.md` — two sites, must move together)
+- [ ] Frozen dependencies (Firebase, `go_router`, `google_sign_in`, `sign_in_with_apple`, `flutter_secure_storage`, Riverpod, `sqlite3`) still untouched, or the freeze was deliberately lifted with Android verified first (`AGENTS.md`)
+
+### 10.3 Not currently checked anywhere (candidates for §11)
+- [ ] Automated Android build-and-boot in CI
+- [ ] `firestore.rules`/`storage.rules` test coverage
+- [ ] Coverage percentage tracked or gated
+
+---
+
+## 11. Gaps & Prioritized Backlog
+
+Priority is risk × how cheap the fix is, not just severity. Each item names the file(s) it
+touches so it's pickup-ready; none of this is implemented in this PR (docs-only, per the
+brief — this is the backlog the plan promised instead).
+
+### P0 — highest risk, should be next
+| Gap | Risk | Effort |
+|---|---|---|
+| `configureSqlCipher`'s call site in `AppDatabase.open()` (`lib/database/database.dart`) has no test — only `assertSqlCipherBacksSqlite3` itself is unit-tested (`sqlcipher_guard_test.dart`). A regression here means the app silently writes plaintext. `AGENTS.md` already flags this as needing "a real SQLCipher-backed database" to cover. | High — this is the exact failure mode the whole guard exists to prevent, on the one path that isn't covered | Medium — needs an integration-style test that opens a real `AppDatabase` (not just the pragma probe) and asserts the on-disk file is unreadable without the key |
+| Android has never run on a physical device or emulator; nothing in CI builds or boots the AAB (`AGENTS.md`). | High — release-blocking; unknown-unknown risk in the encrypted-DB path specifically | Large — needs actual device/emulator access, likely a manual one-time verification before it can even become a repeatable check |
+| `account_switch_test.dart`'s `settle()` helper (lines 50–54) polls a **real** wall clock (`Future<void>.delayed(1ms)` × 50) rather than `fakeAsync`, to let the debounced sync chain finish. Under CI load or a slow machine this is a plausible source of flake in the project's single largest and most safety-critical test file (47 cases). | Medium-high — a flaky test in the account-switch guard erodes trust in exactly the suite `AGENTS.md` calls the "end-to-end guard" | Medium — migrating to `fakeAsync`/`FakeAsync.run` would need every `await` in the chain to be compatible with synchronous time control, which the debounce-heavy sync path may not tolerate cleanly; needs a spike first |
+
+### P1 — real gap, moderate effort
+| Gap | Risk | Effort |
+|---|---|---|
+| `firestore.rules` (feedback allowlist, per-user scoping) and `storage.rules` have zero automated coverage — only the Cloud Function side is tested. | Medium — a rules regression ships straight to production with nothing catching it pre-deploy | Medium — Firebase Emulator Suite + `@firebase/rules-unit-testing`; new toolchain for this repo |
+| Swipe-to-archive has no non-gesture alternative and no accessibility test — a screen-reader user may not be able to archive a piece at all. | Medium — accessibility regression, silent | Small–medium — add a long-press or menu fallback action, then a widget test asserting it's reachable via semantics |
+| No `PiecesDao`/`PhotosDao` unit tests directly — only exercised indirectly through `account_switch_test.dart`. | Medium — CRUD regressions in the most-used tables surface only through an unrelated, expensive test file | Small — mirror `materials_dao_junction_test.dart`'s pattern |
+| No `integration_test/` smoke suite (auth-skip → create piece → edit → archive) runnable on iOS Simulator in CI. | Medium — the only thing standing between "all unit tests pass" and "the app actually opens" is a human | Medium — new dependency, new CI job, but scoped narrowly (§5) |
+
+### P2 — worth doing, lower urgency
+| Gap | Risk | Effort |
+|---|---|---|
+| `TEST_PLAN.md` §6.8's DB migration checklist stops at v4→v7; `schemaVersion` is now 9 (`lib/database/database.dart`) with no manual checklist entries for the newer migrations. | Low-medium — stale docs, not a missing test | Small — read the two newer `onUpgrade` branches and add checklist lines |
+| No portrait-lock consistency check between `Info.plist` and `AndroidManifest.xml` — `AGENTS.md` documents the two sites must move together, but nothing enforces it. | Low-medium — regression already happened once (`ceb5d3d`) | Small — a script asserting both files' orientation keys, run in CI or as a pre-commit check |
+| No dynamic-type / font-scale golden tests. | Low-medium | Small–medium |
+| No color-contrast verification, even one-time, for tag chip palette or splash sepia background. | Low | Small |
+| No widget tests for piece-detail screen, Manage Clays/Glazes/Tags screens, or the photo-reorder screen — pure manual coverage today. | Medium (piece-detail is the highest-traffic screen) | Medium — largest of the "add tests" items, worth splitting per screen |
+
+### P3 — nice to have
+| Gap | Risk | Effort |
+|---|---|---|
+| No coverage percentage tracked (`flutter test --coverage` exists but nothing reads `coverage/lcov.info`). | Low | Small |
+| No dependency-vulnerability scan (`dart pub outdated`, `npm audit` for `functions/`). | Low | Small |
+| No recorded `flutter build --analyze-size` or cold-launch timing per release. | Low | Small |
+| Reduced-motion support for splash/drag animations. | Low | Small–medium |
+| No lint against hardcoded user-facing strings bypassing `app_en.arb`. | Low | Medium (custom lint rule) |
+
+---
+
+## 12. Running Everything Headlessly
+
+Everything below runs without a simulator, emulator, or browser — the full set CI runs
+today, plus the pieces useful for local iteration.
+
+```bash
+# Flutter/Dart app
+flutter pub get
+dart analyze
+dart format --set-exit-if-changed .
+flutter test                      # 323 tests as of 2026-09-02
+flutter test --coverage           # coverage/lcov.info (not currently read by anything)
+
+# Cloud Functions (feedback sanitiser + Discord webhook contract test)
+cd functions && npm ci && npm test
+cd ..
+
+# Code generation (not tests, but required before analyze/test after a schema
+# or l10n change — run first if either fails with stale-generated-code errors)
+dart run build_runner build --delete-conflicting-outputs
+flutter gen-l10n
+```
+
+This is exactly the two CI jobs in `.github/workflows/ci.yml` (`analyze-and-test`,
+`functions`) plus the codegen steps CI assumes are already committed. There is no headless
+path for §5/§6/§9's manual and device-only checks, or for §11-P1's proposed
+`integration_test/` suite — those, by nature, need a Simulator, an emulator, or a physical
+device, which is exactly why they're catalogued separately rather than folded in here.
 
 ---
 
@@ -494,3 +848,4 @@ Both:
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |
 | 2026-08-18 | Sign-out erases this device's local data behind a "Sign Out & Erase" confirmation, an unfinished wipe pauses backup until it completes, the last remaining sign-in provider cannot be disconnected, and the feedback reply email is capped at 254 characters |
 | 2026-08-19 | A device still holding another account's pottery is locked read-only at `/device-locked`: no route that can write is reachable, and the only ways out are the owner signing back in or a confirmed erase |
+| 2026-09-02 | Restructured around the 12-section testing-plan framework (strategy/pyramid, unit, integration/contract, regression catalog, E2E, manual — folded in unchanged, performance, security, accessibility, release checklist, gaps backlog, headless run guide); no test behavior changed, docs only |
