@@ -55,14 +55,6 @@ void main() {
     );
   });
 
-  testWidgets('colorsFor matches what the widget paints', (tester) async {
-    await pumpApp(tester, const TagChip(tag: 'wheel'));
-
-    final (bg, text) = TagChip.colorsFor('wheel', null);
-    expect((chipContainer(tester).decoration as BoxDecoration).color, bg);
-    expect(textColor(tester, 'wheel'), text);
-  });
-
   testWidgets('a long tag is capped in width and ellipsised', (tester) async {
     await pumpApp(
       tester,

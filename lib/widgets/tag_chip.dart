@@ -22,9 +22,9 @@ class TagChip extends StatelessWidget {
     (AppColors.blue, AppColors.blue), // #4A7FB5 — dark enough
   ];
 
-  /// The (background, text) colours for [tag], mirroring the widget's own
-  /// choice so callers and tests can reason about it without building.
-  static (Color bg, Color text) colorsFor(String tag, Color? customColor) {
+  /// The (background, text) colours for [tag], keeping the colour rule in one
+  /// place for both halves of the chip.
+  static (Color bg, Color text) _colorsFor(String tag, Color? customColor) {
     if (customColor != null) return TagColorPresets.colorsFor(customColor);
     final defaults = defaultColors[tag.hashCode.abs() % defaultColors.length];
     return (defaults.$1.withValues(alpha: 0.18), defaults.$2);
@@ -33,7 +33,7 @@ class TagChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textStyle = Theme.of(context).textTheme.bodySmall;
-    final (bgColor, textColor) = colorsFor(tag, customColor);
+    final (bgColor, textColor) = _colorsFor(tag, customColor);
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 150),
       child: Container(
