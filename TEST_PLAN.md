@@ -93,7 +93,6 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/providers/sync_provider_test.dart` | `SyncState.copyWith` and notifier plumbing | 41 |
 | `test/router/app_router_test.dart` | GoRouter redirect logic (device-lock gate, auth gate) | 2 |
 | `test/services/encryption_key_service_test.dart` | Pinned secure-storage options (iOS `first_unlock_this_device`, Android OAEP/GCM) at the plugin call boundary; key generation; legacy→hardened migration with read-back, legacy fallback and `KeyStorageException`; fake platform in `test/helpers/fake_secure_storage.dart` | 24 |
-| `test/services/transfer_notice_service_test.dart` | One-time "moving to a new phone" notice gating | 4 |
 | `test/services/feedback_service_test.dart` | Feedback Firestore write path | 4 |
 | `test/services/image_service_test.dart` | Compression + raw-bytes fallback | 4 |
 | `test/services/material_writer_test.dart` | Clay/glaze/tag create-and-select | 3 |
@@ -118,7 +117,6 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/features/feedback/enjoyment_dialog_test.dart` | Soft-ask dialog paths |
 | `test/features/recovery/database_recovery_screen_test.dart` | Pre-app recovery screen: copy per cause and user class, passphrase unlock (right/wrong/mismatched key), confirmed re-download and start-fresh, failure reported |
 | `test/features/settings/transfer_passphrase_sheet_test.dart` | Set/change/remove transfer passphrase: validation, file written with this device's key, flag and toasts |
-| `test/features/shell/transfer_notice_gate_test.dart` | One-time transfer notice: shown once to a local-only user with pottery, after splash and auth settle; never to a signed-in user |
 | `test/features/feedback/feedback_screen_test.dart` | Form validation, submit states |
 | `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow |
 | `test/features/settings/settings_screen_test.dart` | Materials section, title |
@@ -862,5 +860,5 @@ device, which is exactly why they're catalogued separately rather than folded in
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |
 | 2026-08-18 | Sign-out erases this device's local data behind a "Sign Out & Erase" confirmation, an unfinished wipe pauses backup until it completes, the last remaining sign-in provider cannot be disconnected, and the feedback reply email is capped at 254 characters |
 | 2026-08-19 | A device still holding another account's pottery is locked read-only at `/device-locked`: no route that can write is reachable, and the only ways out are the owner signing back in or a confirmed erase |
-| 2026-09-04 | Database key hardened to `first_unlock_this_device` / Android OAEP+GCM with a marker-verified migration; a restored database with no key gets a pre-app recovery screen (passphrase unlock, cloud re-download keeping photos, or confirmed start-fresh); transfer passphrase in Settings and a one-time notice for local-only users. 94 tests added (321 → 415) |
+| 2026-09-04 | Database key hardened to `first_unlock_this_device` / Android OAEP+GCM with a marker-verified migration; a restored database with no key gets a pre-app recovery screen (passphrase unlock, cloud re-download keeping photos, or confirmed start-fresh); transfer passphrase in Settings on iOS (Android, which opts out of backups, says plainly that local-only pottery does not move); start-fresh settles an owed wipe restored with the preferences. 82 tests added (321 → 403) |
 | 2026-09-02 | Restructured around the 12-section testing-plan framework (strategy/pyramid, unit, integration/contract, regression catalog, E2E, manual — folded in unchanged, performance, security, accessibility, release checklist, gaps backlog, headless run guide); no test behavior changed, docs only |

@@ -6,7 +6,6 @@ import '../../../core/constants/app_colors.dart';
 import '../../../providers/pieces_provider.dart';
 import '../../../widgets/app_snackbar.dart';
 import '../../../providers/sync_provider.dart';
-import '../widgets/transfer_notice_gate.dart';
 
 class ShellScreen extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
@@ -20,11 +19,7 @@ class ShellScreen extends ConsumerWidget {
     ref.watch(syncStateProvider);
 
     return Scaffold(
-      body: TransferNoticeGate(
-        // The settings branch, where the transfer passphrase lives.
-        onOpenSettings: () => navigationShell.goBranch(1),
-        child: navigationShell,
-      ),
+      body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: navigationShell.currentIndex >= 1
             ? navigationShell.currentIndex + 1

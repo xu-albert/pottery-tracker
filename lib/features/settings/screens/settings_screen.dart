@@ -435,23 +435,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               AppSizes.sm,
             ),
             child: Text(
-              auth.isSignedIn
+              !Platform.isIOS
+                  ? l10n.transferExplanationAndroid
+                  : auth.isSignedIn
                   ? l10n.transferExplanationSignedIn
                   : l10n.transferExplanationLocalOnly,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.phonelink_lock_outlined),
-            title: Text(l10n.transferPassphrase),
-            subtitle: Text(
-              ref.watch(transferPassphraseSetProvider)
-                  ? l10n.transferPassphraseSet
-                  : l10n.transferPassphraseNotSet,
+          if (Platform.isIOS)
+            ListTile(
+              leading: const Icon(Icons.phonelink_lock_outlined),
+              title: Text(l10n.transferPassphrase),
+              subtitle: Text(
+                ref.watch(transferPassphraseSetProvider)
+                    ? l10n.transferPassphraseSet
+                    : l10n.transferPassphraseNotSet,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showTransferPassphraseSheet(context),
             ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => showTransferPassphraseSheet(context),
-          ),
           const Divider(),
 
           // Support

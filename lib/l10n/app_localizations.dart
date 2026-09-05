@@ -1144,10 +1144,10 @@ abstract class AppLocalizations {
   /// **'The journal on this phone was encrypted with a key this phone no longer has, so it can\'t be read on its own.'**
   String get recoveryMessageKeyMismatch;
 
-  /// Recovery hint when the restored preferences name a synced account, so re-downloading loses nothing
+  /// Recovery hint when the restored preferences name a synced account: the pieces can be downloaded again, but edits the old phone never pushed are not in the cloud
   ///
   /// In en, this message translates to:
-  /// **'This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept.'**
+  /// **'This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept. Changes the old phone never finished backing up are lost.'**
   String get recoveryCloudHint;
 
   /// Recovery hint when no synced account is recorded: the data existed on the old phone only
@@ -1198,10 +1198,10 @@ abstract class AppLocalizations {
   /// **'Download your pieces again?'**
   String get recoveryRedownloadConfirmTitle;
 
-  /// Confirmation body before discarding an unreadable database that has a cloud copy; states that photo files are kept
+  /// Confirmation body before discarding an unreadable database that has a cloud copy; states that photo files are kept and that unsynced changes from the old phone are not
   ///
   /// In en, this message translates to:
-  /// **'The unreadable copy on this phone is removed. Your photos stay, and your pieces are downloaded again once you sign in.'**
+  /// **'The unreadable copy on this phone is removed. Your photos stay, and your pieces are downloaded again once you sign in. Any changes the old phone never finished backing up are lost.'**
   String get recoveryRedownloadConfirmMessage;
 
   /// Confirming button of the re-download dialog
@@ -1294,6 +1294,12 @@ abstract class AppLocalizations {
   /// **'Your pieces are backed up to your account and come back by signing in on a new phone. A transfer passphrase is only needed for pottery kept on this phone alone.'**
   String get transferExplanationSignedIn;
 
+  /// Settings statement on Android, where the app opts out of backups so there is no transfer passphrase; says plainly that local-only pottery does not move
+  ///
+  /// In en, this message translates to:
+  /// **'Pottery kept only on this phone stays on this phone: it is never included in an Android backup, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.'**
+  String get transferExplanationAndroid;
+
   /// Sheet title / action when no passphrase is set
   ///
   /// In en, this message translates to:
@@ -1377,30 +1383,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remove'**
   String get remove;
-
-  /// Title of the one-time notice shown to a user whose pottery exists on this phone only
-  ///
-  /// In en, this message translates to:
-  /// **'Moving to a new phone someday?'**
-  String get transferNoticeTitle;
-
-  /// Body of the one-time notice; states the consequence of the key staying on this device and both ways to prepare
-  ///
-  /// In en, this message translates to:
-  /// **'Your pottery is kept on this phone only. For your protection it can\'t be read from a backup by another phone — so before you switch phones, set a transfer passphrase in Settings, or sign in to back it up.'**
-  String get transferNoticeMessage;
-
-  /// Notice action that opens the settings tab
-  ///
-  /// In en, this message translates to:
-  /// **'Open Settings'**
-  String get transferNoticeOpenSettings;
-
-  /// Dismisses the one-time notice
-  ///
-  /// In en, this message translates to:
-  /// **'Not now'**
-  String get notNow;
 }
 
 class _AppLocalizationsDelegate

@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart' show AuthNotifier;
+import '../providers/sync_provider.dart' show SyncNotifier;
 import '../services/encryption_key_service.dart';
 import '../services/sync_queue.dart';
 import '../services/sync_service.dart';
@@ -70,7 +71,8 @@ abstract class LocalDatabaseRecovery {
 
   /// The account this device's pottery was last synced for, if any — read
   /// from the restored preferences. Non-null means the pieces exist in the
-  /// cloud and re-downloading loses nothing.
+  /// cloud and can be downloaded again; whatever the old phone never pushed
+  /// is not there.
   String? get stampedOwnerUid;
 
   /// Unwraps the key with [passphrase], confirms it opens the database, and
@@ -218,6 +220,7 @@ class LocalDatabaseBootstrap {
           }
         }
       }
+      await _prefs.remove(SyncNotifier.pendingWipeKey);
     }
 
     // Nobody owns an empty device, nothing on it can be refused over, and a

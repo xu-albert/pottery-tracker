@@ -10,6 +10,7 @@ import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/database/local_database_bootstrap.dart';
 import 'package:pottery_tracker/database/transfer_key_backup.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
+import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/services/encryption_key_service.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
@@ -268,13 +269,14 @@ void main() {
 
     setUp(() async {
       await restoreOldPhoneDatabase();
-      // Restored preferences: the old phone had synced this account and had
-      // a pull watermark and a queued edit.
+      // Restored preferences: the old phone had synced this account, had a
+      // pull watermark and a queued edit, and was backed up mid-erase.
       await prefs.setString(SyncService.localDataOwnerKey, 'uid-old');
       await prefs.setBool(SyncService.deviceContestedKey, true);
       await prefs.setString('${SyncService.lastPulledAtPrefix}uid-old', 'x');
       await prefs.setStringList(SyncQueue.storageKey, ['{}']);
       await prefs.setBool(AuthNotifier.onboardingKey, true);
+      await prefs.setBool(SyncNotifier.pendingWipeKey, true);
       final launch = await bootstrap().launch();
       recovery = (launch as LocalDatabaseUnreadable).recovery;
     });
@@ -310,6 +312,7 @@ void main() {
           // Ownership and the sign-in flag are untouched: nothing was lost.
           expect(prefs.getString(SyncService.localDataOwnerKey), 'uid-old');
           expect(prefs.getBool(AuthNotifier.onboardingKey), isTrue);
+          expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
         },
       );
 
@@ -350,7 +353,8 @@ void main() {
 
     test(
       'redownloadFromCloud discards the database but keeps the photo files, '
-      'clears ownership and watermarks, and sends the user to sign-in',
+      'clears ownership and watermarks, leaves an owed wipe owed, and sends '
+      'the user to sign-in',
       () async {
         await backup.write(
           databaseKey: _oldPhoneKey,
@@ -373,12 +377,14 @@ void main() {
         );
         expect(prefs.getStringList(SyncQueue.storageKey), isNull);
         expect(prefs.getBool(AuthNotifier.onboardingKey), isFalse);
+        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
         expect(platform.values[_keyName], isNotNull);
         expect(platform.values[_markerName], '2');
       },
     );
 
-    test('startFresh discards the photo files as well', () async {
+    test('startFresh discards the photo files as well, which settles an '
+        'owed wipe', () async {
       File('${temp.path}/image_picker_abc.jpg').writeAsStringSync('tmp');
 
       final db = await recovery.startFresh();
@@ -388,6 +394,7 @@ void main() {
       expect(Directory('${docs.path}/photos').existsSync(), isFalse);
       expect(temp.listSync(), isEmpty);
       expect(prefs.getBool(AuthNotifier.onboardingKey), isFalse);
+      expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
     });
 
     test('after a discard the next launch is an ordinary one', () async {

@@ -63,9 +63,12 @@ enters a phone backup. Consequences, all documented in `docs/local-database-key.
 - **Every launch goes through `LocalDatabaseBootstrap`**, which never creates a key while a database
   file exists — that would open an empty database over the user's pottery. A file with no key is a
   backup restore and gets `DatabaseRecoveryScreen` *before* the app runs.
-- **Local-only users move phones with a transfer passphrase** (`TransferKeyBackup`, a second SQLCipher
-  file in `Documents/` wrapping the key). It is a local store: `deleteLocalData` and both recovery
-  discard paths delete it. Cloud users re-pull; their photo files are kept for the pull to reuse.
+- **Local-only users move phones with a transfer passphrase, on iOS only** (`TransferKeyBackup`, a
+  second SQLCipher file in `Documents/` wrapping the key). Android opts out of backups
+  (`allowBackup="false"`), so the Settings section there says plainly that local-only pottery does
+  not move; never show the passphrase on Android. It is a local store: `deleteLocalData` and both
+  recovery discard paths delete it. Cloud users re-pull; their photo files are kept for the pull to
+  reuse.
 
 ## Common Commands
 

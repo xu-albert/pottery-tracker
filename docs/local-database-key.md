@@ -62,8 +62,9 @@ untouched.
 
 ## New phone: the three restore scenarios
 
-A backup restore brings `Documents/` — database, photos, and (if set) the transfer backup — and
-`NSUserDefaults` (the owner stamp, watermarks, the sign-in flag). It does **not** bring the key.
+An iOS backup restore brings `Documents/` — database, photos, and (if set) the transfer backup —
+and `NSUserDefaults` (the owner stamp, watermarks, the sign-in flag). It does **not** bring the key.
+(Android restores nothing of the app's: see *Android* below.)
 `launch()` finds a database file and no key and returns `LocalDatabaseUnreadable`; `main` runs
 `DatabaseRecoveryScreen` *before* the app, outside its providers and router, and only hands over a
 database once one can actually be opened. Nothing is ever created over the user's file.
@@ -71,25 +72,26 @@ database once one can actually be opened. Nothing is ever created over the user'
 | Restored device has… | User class | What the user sees | What happens |
 |---|---|---|---|
 | database + **transfer backup** | either | "This phone can't open your pottery journal" with the backup explanation, a passphrase field and **Unlock** (primary). Wrong passphrase → inline "That passphrase doesn't match." | `TransferKeyBackup.read(passphrase)` unwraps the key; the database is opened and probed with it *first*, then the key is stored under the pinned options. Everything is in place — stamp, sign-in flag, photos. Next launch is ordinary. |
-| database + **owner stamp**, no backup | cloud-sync | Same title; "This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept." **Sign in and download again** (primary) behind a non-destructive confirmation. | `redownloadFromCloud()`: delete the database and its `-wal/-shm/-journal`, the transfer backup, the owner stamp, the contested flag, every `lastPulledAt_*` watermark (else the next pull is incremental and skips everything) and the sync queue; set `hasCompletedOnboarding=false` so the router lands on sign-in; create a key, open empty. **Photo files are kept**: `pullAll` downloads only photos whose `localPath` is missing, so the restored files are reused. |
-| database only, **no stamp, no backup** | local-only | Same title; "This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can't be recovered here." Only **Start fresh without them**, red, behind a destructive confirmation that names the one remaining way out (set a passphrase on the old phone, back up again). | `startFresh()`: as above, plus the `photos/` directory and the image-picker temp files. Reported if it fails; never silent. |
+| database + **owner stamp**, no backup | cloud-sync | Same title; "This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept. Changes the old phone never finished backing up are lost." **Sign in and download again** (primary) behind a non-destructive confirmation that repeats the unsynced-change loss. | `redownloadFromCloud()`: delete the database and its `-wal/-shm/-journal`, the transfer backup, the owner stamp, the contested flag, every `lastPulledAt_*` watermark (else the next pull is incremental and skips everything) and the sync queue; set `hasCompletedOnboarding=false` so the router lands on sign-in; create a key, open empty. **Photo files are kept**: `pullAll` downloads only photos whose `localPath` is missing, so the restored files are reused. |
+| database only, **no stamp, no backup** | local-only | Same title; "This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can't be recovered here." Only **Start fresh without them**, red, behind a destructive confirmation that names the one remaining way out (set a passphrase on the old phone, back up again). | `startFresh()`: as above, plus the `photos/` directory and the image-picker temp files, and an owed `pendingLocalDataWipe` is cleared. Reported if it fails; never silent. |
 
 A key that is present but does not decrypt the file (`keyMismatch`, rare) reaches the same screen
 with a different first paragraph and the same options. Ownership state is never touched by the
-passphrase path, and the persisted lock inputs (`localDataOwnerUid`, `localDataContested`,
-`pendingLocalDataWipe`) are cleared only by the two discard paths, consistent with
-`SyncService.deleteLocalData`.
+passphrase path. Both discard paths clear `localDataOwnerUid` and `localDataContested`, consistent
+with `SyncService.deleteLocalData`. `pendingLocalDataWipe` — an erase the old phone's owner
+confirmed and never got, restored with the preferences — is cleared only by **Start fresh**, which
+deletes everything that erase owed. **Sign in and download again** keeps the photo files the erase
+promised to delete, so it leaves the flag set and the app opens locked at `/device-locked` until the
+erase is finished there.
 
 ## The migration path for local-only users: a transfer passphrase
 
 Of the three options considered — (a) an export/import flow, (b) a backup-restorable wrapped copy of
-the key protected by something the user knows, (c) a one-time warning only — this ships **(b), with
-(c) as its on-ramp**.
+the key protected by something the user knows, (c) a one-time warning only — this ships **(b)**.
 
-- (c) alone does not meet the ruling: a warned user still loses the database. It is kept as the
-  way users learn the passphrase exists: a one-time dialog ("Moving to a new phone someday?") the
-  first time a local-only user opens the app with at least one piece, pointing at Settings, plus a
-  permanent explanation in Settings › *Moving to a new phone*.
+- (c) alone does not meet the ruling: a warned user still loses the database. The explanation
+  lives permanently in Settings › *Moving to a new phone*, next to where the passphrase is set;
+  there is no one-time dialog.
 - (a) is the largest surface (a portable format including photos, share-sheet export, import
   parsing) and solves a different problem; it can be added later without touching this design.
 - (b) is the smallest change that keeps the ruling's promise and adds **no dependency**: the wrap
@@ -108,9 +110,19 @@ and only for their own local-only data. Sign-out (`deleteLocalData`) and both di
 the file, so the next account on the device does not inherit a backup a passphrase they do not know
 can open.
 
-Settings › *Moving to a new phone* › **Transfer passphrase**: set / change / remove, with the
-threat model in the sheet text. State is `transferPassphraseSetProvider`, seeded from the file
+Settings › *Moving to a new phone* › **Transfer passphrase** (iOS): set / change / remove, with
+the threat model in the sheet text. State is `transferPassphraseSetProvider`, seeded from the file
 before `runApp`.
+
+### Android
+
+There is no transfer passphrase on Android. `android:allowBackup="false"` keeps every file of the
+app out of Android backups, so neither the database nor a wrapped key ever reaches a new phone and
+a passphrase would unlock nothing. The passphrase tile is behind `Platform.isIOS`; on Android the
+*Moving to a new phone* section states plainly that pottery kept only on this phone does not move,
+and that signing in is what carries it. Opting the two files into Android backup was considered
+and declined: it would reopen the vector `allowBackup="false"` closes, for a path Android users
+have never had.
 
 ## Deliberately not changed
 

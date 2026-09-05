@@ -585,7 +585,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recoveryCloudHint =>
-      'This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept.';
+      'This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept. Changes the old phone never finished backing up are lost.';
 
   @override
   String get recoveryLocalOnlyHint =>
@@ -616,7 +616,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recoveryRedownloadConfirmMessage =>
-      'The unreadable copy on this phone is removed. Your photos stay, and your pieces are downloaded again once you sign in.';
+      'The unreadable copy on this phone is removed. Your photos stay, and your pieces are downloaded again once you sign in. Any changes the old phone never finished backing up are lost.';
 
   @override
   String get recoveryRedownloadConfirm => 'Remove and sign in';
@@ -672,6 +672,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your pieces are backed up to your account and come back by signing in on a new phone. A transfer passphrase is only needed for pottery kept on this phone alone.';
 
   @override
+  String get transferExplanationAndroid =>
+      'Pottery kept only on this phone stays on this phone: it is never included in an Android backup, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.';
+
+  @override
   String get setTransferPassphrase => 'Set transfer passphrase';
 
   @override
@@ -720,17 +724,4 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get remove => 'Remove';
-
-  @override
-  String get transferNoticeTitle => 'Moving to a new phone someday?';
-
-  @override
-  String get transferNoticeMessage =>
-      'Your pottery is kept on this phone only. For your protection it can\'t be read from a backup by another phone — so before you switch phones, set a transfer passphrase in Settings, or sign in to back it up.';
-
-  @override
-  String get transferNoticeOpenSettings => 'Open Settings';
-
-  @override
-  String get notNow => 'Not now';
 }
