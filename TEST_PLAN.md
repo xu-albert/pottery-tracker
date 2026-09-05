@@ -116,6 +116,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/features/feedback/feedback_screen_test.dart` | Form validation, submit states |
 | `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow |
 | `test/features/settings/settings_screen_test.dart` | Materials section, title |
+| `test/features/settings/settings_support_section_test.dart` | Support section offers feedback only: no donation link, tip jar, or outside page (Ko-fi removed app-wide, 2026-08-18 ruling) |
 | `test/widgets/splash_overlay_test.dart` | Splash animation completion gating |
 | `test/widgets/stage_badge_test.dart` | Per-stage label text, tint and text colour (one case per `PieceStage`) |
 | `test/widgets/tag_chip_test.dart` | Hash prefix, custom colour, stable palette pick for uncoloured tags, width cap |
@@ -691,7 +692,7 @@ checklist line, before reaching for a dedicated perf-test rig this app doesn't n
 | Secrets | `android/key.properties` gitignored, never committed (`AGENTS.md`); no API keys are hardcoded — Firebase config files (`google-services.json`, `GoogleService-Info.plist`) are the standard client-safe config, not secrets | Manual: `git log -p -- android/key.properties` should return nothing; not automated |
 | Auth provider disconnect | The last remaining sign-in provider cannot be disconnected (would strand the account) | `settings_account_test.dart` |
 | App Check | Gates production Firestore/Storage/Functions traffic from non-app callers | Not exercised in tests by design — it's a production network control, not app logic |
-| Third-party data flow | No analytics/crash SDKs beyond Firebase Analytics/Crashlytics/Performance; no ad SDKs; donation link (if any) is out-of-app | Manual audit of `pubspec.yaml` dependencies |
+| Third-party data flow | No analytics/crash SDKs beyond Firebase Analytics/Crashlytics/Performance; no ad SDKs; no donation link or other outside payment page (`AGENTS.md` Design Constraints) | Manual audit of `pubspec.yaml` dependencies; `settings_support_section_test.dart` pins the Settings support section to feedback only |
 
 No secrets scanning or dependency-vulnerability scanning runs in CI today (§11-P3 lists
 `dart pub outdated --mode=null-safety` / `npm audit` as a cheap addition for `functions/`).
