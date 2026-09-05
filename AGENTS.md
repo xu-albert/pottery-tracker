@@ -127,7 +127,7 @@ whatever is on the device gets uploaded into whichever cloud tree is signed in. 
 
 - All features must work fully offline; sync is additive
 - English only for V1 but use Flutter intl (no hardcoded strings)
-- V1 is free with optional donation — no paywalls
+- V1 is free — no paywalls, and no donation link or tip jar (the Ko-fi link was removed in 2026-08 by captain ruling; do not reintroduce one)
 - Firebase Spark (free) plan: 1GB Firestore, 5GB Cloud Storage, 50K reads/day, 20K writes/day
 - Accessibility: screen reader support, system font scaling, minimum touch targets (48dp Android / 44pt iOS)
 - Portrait only, iPhone and iPad — landscape is never allowed anywhere. There is deliberately no `SystemChrome.setPreferredOrientations` call: it would be a no-op against the declarations below, so do not add one, and do not build landscape layouts. Two declaration sites must stay in agreement:

@@ -221,7 +221,7 @@ Album View          New Piece          Settings
 
 - Home: Album grid (main view)
 - "+": Prominent center button, opens camera/library picker directly
-- Settings: Account, sync, storage, donation link
+- Settings: Account, sync, storage
 
 #### 4.4.2 Visual Design Direction
 
@@ -279,7 +279,6 @@ Album View          New Piece          Settings
 - Account section (sign in/out, current account info)
 - Sync status and last sync time
 - Storage usage (local and cloud)
-- "Support the Developer" donation link
 - About / version info
 
 ---
@@ -320,12 +319,10 @@ For a hobby app with modest usage, the free tier should be sufficient for hundre
 
 ### 5.4 Monetization (V1)
 
-**Strategy:** Free app with optional donation
+**Strategy:** Free app, no monetization
 
 - All features free, no paywalls
-- "Support the Developer" option in settings
-- Links to Ko-fi, Buy Me a Coffee, or similar
-- Alternatively: in-app tip jar (small IAPs like $1.99, $4.99, $9.99)
+- No donation link or tip jar. A "Support the Developer" Ko-fi link shipped in early iOS builds and was removed on 2026-08-18 ("it's not needed anymore, and I don't expect to receive any money"), alongside the ruling to keep it out of the Android release.
 
 **Future consideration:** Premium features may be added later (unlimited collections, widgets, export options, etc.) but are out of scope for V1.
 
@@ -374,7 +371,7 @@ These features are explicitly out of scope for V1 but should be considered in th
 
 1. **App name:** "Pottery Tracker" is a working title. Final name TBD.
 2. **Onboarding:** How much onboarding is needed for first-time users?
-3. **Tip jar implementation:** External link (Ko-fi) vs. native in-app purchases?
+3. **Tip jar implementation:** Resolved 2026-08-18 — no tip jar. The Ko-fi link was removed from the app on all platforms (see 5.4).
 4. **Auth flow:** Require sign-in for sync, or allow anonymous usage with optional sign-in later?
 
 ---

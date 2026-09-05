@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -423,14 +422,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
 
           // Support
-          ListTile(
-            leading: const Icon(Icons.favorite_outline),
-            title: Text(l10n.supportDeveloper),
-            onTap: () => launchUrl(
-              Uri.parse('https://ko-fi.com/albertxu451'),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
           ListTile(
             leading: const Icon(Icons.mail_outline),
             title: Text(l10n.sendFeedback),
