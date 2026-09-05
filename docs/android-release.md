@@ -16,6 +16,7 @@ and what it unblocks.
 | `applicationId` | `com.potterytracker.pottery_tracker` — **permanent once published** | `android/app/build.gradle.kts` |
 | `minSdk` / `targetSdk` | 24 / 36, inherited from the Flutter SDK | `android/app/build.gradle.kts` |
 | Manifest hardening | `allowBackup="false"`, `usesCleartextTraffic="false"`, network security config | `android/app/src/main/AndroidManifest.xml` |
+| Advertising-ID permissions | the three `firebase_analytics` merges in are stripped with `tools:node="remove"`, and runtime collection is off — see "Data Safety" in section 6 | `android/app/src/main/AndroidManifest.xml` |
 | Portrait lock | `userPortrait` + restricted-resizability opt-out | see "Design Constraints" in `AGENTS.md` |
 | Release signing | reads `android/key.properties` if present, falls back to the debug key with a warning | `android/app/build.gradle.kts` |
 | Firebase Gradle plugins | `google-services`, `crashlytics`, `firebase-perf` all applied | `android/app/build.gradle.kts` |
