@@ -6,12 +6,18 @@ import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_secure_storage.dart';
+
 const _uid = 'test-user';
+const _keyName = 'db_encryption_key';
+const _markerName = 'db_encryption_key_storage_version';
+const _oldKey = 'oldDeviceKey0123456789abcdefghij';
 
 void main() {
   late AppDatabase db;
@@ -42,6 +48,7 @@ void main() {
     storage = MockFirebaseStorage();
     syncService = SyncService(db, firestore, storage);
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStoragePlatform.instance = FakeSecureStoragePlatform();
   });
 
   tearDown(() async {
@@ -691,6 +698,89 @@ void main() {
 
   // ── getLastPulledAt ────────────────────────────
 
+  group('deleteLocalData rotates the database key', () {
+    late FakeSecureStoragePlatform platform;
+    late _RekeyLog rekeys;
+    late AppDatabase keyed;
+    late SyncService service;
+
+    setUp(() async {
+      platform = FakeSecureStoragePlatform();
+      FlutterSecureStoragePlatform.instance = platform;
+      platform.values[_keyName] = _oldKey;
+      platform.values[_markerName] = '2';
+      rekeys = _RekeyLog();
+      keyed = AppDatabase.forTesting(
+        NativeDatabase.memory().interceptWith(rekeys),
+      );
+      service = SyncService(keyed, firestore, storage);
+      await keyed.piecesDao.insertPiece(
+        PiecesCompanion.insert(
+          id: 'p1',
+          title: const Value('Bowl'),
+          stage: const Value('greenware'),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+    });
+
+    tearDown(() => keyed.close());
+
+    test('rekeys the open database to a fresh key and stores that key', () async {
+      await service.deleteLocalData();
+
+      final stored = platform.values[_keyName];
+      expect(stored, isNot(_oldKey));
+      expect(stored, matches(RegExp(r'^[A-Za-z0-9]{32}$')));
+      expect(platform.values[_markerName], '2');
+      expect(rekeys.keys, [stored]);
+      expect(await keyed.piecesDao.countPieces(), 0);
+    });
+
+    test(
+      'when the fresh key cannot be stored, the file is keyed back to the '
+      'old key and the erase still completes',
+      () async {
+        platform.rejectWrite = (key, value) =>
+            key == _keyName && value != _oldKey;
+
+        await service.deleteLocalData();
+
+        expect(platform.values[_keyName], _oldKey);
+        expect(rekeys.keys, hasLength(2));
+        expect(rekeys.keys.first, isNot(_oldKey));
+        expect(rekeys.keys.last, _oldKey);
+        expect(await keyed.piecesDao.countPieces(), 0);
+      },
+    );
+
+    test(
+      'when no key can be stored at all, the file is keyed back and the '
+      'erase is reported as failed rather than left with the keys disagreeing',
+      () async {
+        platform.writeFailure = PlatformException(code: 'full');
+
+        await expectLater(
+          service.deleteLocalData(),
+          throwsA(isA<PlatformException>()),
+        );
+
+        expect(platform.values[_keyName], _oldKey);
+        expect(rekeys.keys.last, _oldKey);
+      },
+    );
+
+    test('with no stored key there is nothing to rotate', () async {
+      platform.values.clear();
+
+      await service.deleteLocalData();
+
+      expect(rekeys.keys, isEmpty);
+      expect(platform.values, isEmpty);
+    });
+  });
+
   group('getLastPulledAt', () {
     test('returns null when no timestamp stored', () async {
       final result = await syncService.getLastPulledAt(_uid);
@@ -865,4 +955,21 @@ void main() {
       },
     );
   });
+}
+
+/// Records every `PRAGMA rekey` the database receives, in order — the seam
+/// where SQLCipher would re-encrypt the file; plain sqlite3 ignores it.
+class _RekeyLog extends QueryInterceptor {
+  final List<String> keys = [];
+
+  @override
+  Future<void> runCustom(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    final match = RegExp(r"^PRAGMA rekey = '(.*)'$").firstMatch(statement);
+    if (match != null) keys.add(match.group(1)!);
+    return super.runCustom(executor, statement, args);
+  }
 }

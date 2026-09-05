@@ -673,7 +673,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get transferExplanationAndroid =>
-      'Pottery kept only on this phone stays on this phone: it is never included in an Android backup, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.';
+      'Pottery kept only on this phone stays on this phone: the app keeps its data out of Android backups and phone-to-phone transfers, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.';
 
   @override
   String get setTransferPassphrase => 'Set transfer passphrase';

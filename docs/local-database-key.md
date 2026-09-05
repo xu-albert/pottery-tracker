@@ -43,17 +43,22 @@ under `unlocked` is found), then `hardenStoredKey`:
 
 1. A marker (`db_encryption_key_storage_version` = `2`, itself in secure storage) says whether the
    key was last written under the pinned options. Present → nothing to do.
-2. Otherwise rewrite the key under the pinned options: an explicit delete with **no**
-   accessibility in the query (so it matches the item whatever it was stored under), then an add.
-   `kSecAttrAccessible` cannot be changed in place, and the plugin's own write only deletes after a
-   `SecItemUpdate` naming the *new* accessibility fails to match — deleting first removes the
-   dependence on that query semantics. On Android the plugin re-encrypts on a cipher change. Both
-   are idempotent.
-3. Read back. Matches → write the marker (best effort). Does not match, or the write threw →
-   write the key back under the **legacy** options (`unlocked`) so the device is no worse off,
-   leave the marker unset so the next launch retries. If even that does not read back →
-   `KeyStorageException` and the launch stops: proceeding with the in-memory key would let the
-   user add pottery no later launch can read.
+2. Otherwise write a **migrating copy** of the key first (`db_encryption_key_migrating`, under
+   the pinned options) and read it back. Only then rewrite the key itself: an explicit delete
+   with **no** accessibility in the query (so it matches the item whatever it was stored under),
+   then an add. `kSecAttrAccessible` cannot be changed in place, and the plugin's own write only
+   deletes after a `SecItemUpdate` naming the *new* accessibility fails to match — deleting first
+   removes the dependence on that query semantics. The copy is why the instant between the delete
+   and the add is survivable: a process that dies there (crash, jetsam, force-quit) leaves the
+   copy, `readKey` falls back to it, and the next launch finishes the rewrite. A copy that does
+   not read back leaves the key where it was — without it the rewrite would have no safety net.
+   On Android the plugin re-encrypts on a cipher change. All of it is idempotent.
+3. Read back. Matches → delete the copy, then write the marker (best effort, and never before the
+   copy is gone, or a launch that trusts the marker would leave it behind). Does not match, or
+   the write threw → write the key back under the **legacy** options (`unlocked`) so the device
+   is no worse off, leave the marker unset so the next launch retries. `KeyStorageException`
+   stops the launch only if neither the item nor the copy reads back: proceeding with the
+   in-memory key would let the user add pottery no later launch can read.
 
 Then the database is opened and probed with one statement (`SELECT count(*) FROM sqlite_master`), so
 a key that does not decrypt the file fails *here*, distinguishable, rather than on the album's
@@ -110,19 +115,43 @@ and only for their own local-only data. Sign-out (`deleteLocalData`) and both di
 the file, so the next account on the device does not inherit a backup a passphrase they do not know
 can open.
 
+**Rotation at erase.** The transfer file wraps whatever key the database had when it was written,
+and a backup taken while the file existed keeps a copy of it after `deleteLocalData` has deleted
+the original. Were the key never rotated, the next person on this device would be writing pottery
+under a key the previous owner's passphrase still unwraps. So `deleteLocalData` rekeys the emptied
+database in place (`AppDatabase.rekey`, `PRAGMA rekey`) and then stores the fresh key, in that
+order. If the store fails, the file is keyed back and the old key stored again, so the stored key
+and the file never disagree — the one combination that strands a launch. A rekey that fails is
+logged and skipped (the erase's promise is the data, and it is gone); a key-back that fails
+propagates, so the erase stays owed and its retry rotates again. Neither key ever enters a backup.
+
 Settings › *Moving to a new phone* › **Transfer passphrase** (iOS): set / change / remove, with
 the threat model in the sheet text. State is `transferPassphraseSetProvider`, seeded from the file
 before `runApp`.
 
 ### Android
 
-There is no transfer passphrase on Android. `android:allowBackup="false"` keeps every file of the
-app out of Android backups, so neither the database nor a wrapped key ever reaches a new phone and
-a passphrase would unlock nothing. The passphrase tile is behind `Platform.isIOS`; on Android the
-*Moving to a new phone* section states plainly that pottery kept only on this phone does not move,
-and that signing in is what carries it. Opting the two files into Android backup was considered
-and declined: it would reopen the vector `allowBackup="false"` closes, for a path Android users
-have never had.
+There is no transfer passphrase on Android, because nothing of the app's leaves the phone in a
+backup or a transfer. `android:allowBackup="false"` keeps it out of Google Drive backups. That
+alone is not enough on Android 12+: on some manufacturers' devices `allowBackup="false"` does
+**not** disable device-to-device transfer, which would carry the whole data directory —
+`app_flutter/pottery_tracker.db` *and* `shared_prefs/FlutterSecureStorage.xml` — to the new phone.
+So `android:dataExtractionRules` (`res/xml/data_extraction_rules.xml`) excludes every domain the
+backup agent walks from both `<device-transfer>` and `<cloud-backup>`, and
+`test/android/data_extraction_rules_test.dart` pins that no domain is ever dropped from either.
+
+Should a data directory reach another device anyway (a manufacturer's cloning tool that bypasses
+the backup framework), the plugin cannot decrypt the stored key: its storage key is wrapped by a
+KeyStore key that never leaves the device, and reading the value throws. On Android,
+`EncryptionKeyService` reports such a value as *no key*, so the launch lands on the recovery screen
+— where a restored iOS database goes — rather than on a launch failure whose retry fails the same
+way forever; the next write replaces the value and reads back. On iOS a read error is a keychain
+state, not a verdict on the item, and propagates as before.
+
+The passphrase tile is behind `Platform.isIOS`; on Android the *Moving to a new phone* section
+states plainly that pottery kept only on this phone does not move, and that signing in is what
+carries it. Opting the files into Android backup was considered and declined: it would reopen
+the vector the manifest closes, for a path Android users have never had.
 
 ## Deliberately not changed
 
@@ -132,13 +161,14 @@ have never had.
   platform; the lockfile changed only their dependency kind.
 - The `setup: configureSqlCipher` call site in `AppDatabase.open` — only its signature gained
   `(file, key)`; the call is the same statement.
-- `sync_provider.dart`: untouched. `sync_service.dart` gained one line (delete the transfer backup
-  in `deleteLocalData`) and a public constant for the watermark prefix. `sync_queue.dart` and
-  `auth_provider.dart` each made one private constant public so the bootstrap can clear them.
+- `sync_provider.dart` changed only in what it hands `SyncService` (the key service).
+  `sync_service.dart` deletes the transfer backup and rotates the key in `deleteLocalData`, and
+  exposes the watermark prefix. `sync_queue.dart` and `auth_provider.dart` each made one private
+  constant public so the bootstrap can clear them.
 - The duplicate-column migration step (separate task), photo encryption at rest (L3, separate
   decision), `NSURLIsExcludedFromBackupKey` on the database (the design *relies* on the database
   being backed up).
-- The database key is not rotated anywhere — not on wipe, not on recovery.
+- The database key is rotated only at erase (above) — never on recovery, never on a launch.
 
 ## What headless verification cannot cover
 
@@ -150,4 +180,5 @@ the service verifies by read-back with a legacy fallback, but the first release 
 should be checked once on a real iPhone: update from 1.2.x, confirm the marker is set and the
 database opens; then an encrypted backup restore onto a second device, confirming the recovery
 screen appears and the passphrase path opens the pottery. The Android path has never run on a
-device at all (see `AGENTS.md`).
+device at all (see `AGENTS.md`); whether a given manufacturer's device-to-device transfer honours
+`dataExtractionRules` is likewise only observable on two real devices.

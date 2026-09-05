@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 import '../database/transfer_key_backup.dart';
+import 'encryption_key_service.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -33,8 +34,14 @@ class SyncService {
   final AppDatabase _db;
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
+  final EncryptionKeyService _keys;
 
-  SyncService(this._db, this._firestore, this._storage);
+  SyncService(
+    this._db,
+    this._firestore,
+    this._storage, {
+    EncryptionKeyService? keys,
+  }) : _keys = keys ?? EncryptionKeyService();
 
   DocumentReference _userDoc(String uid) => _firestore.doc('users/$uid');
 
@@ -155,9 +162,9 @@ class SyncService {
   /// cosmetic bug. That is also why this runs on sign-out — see
   /// `SyncNotifier.signOutAndWipeLocalData`.
   ///
-  /// The SQLCipher key in secure storage is deliberately left alone: it stays
-  /// paired with the (now empty) database file. Rotating it would risk leaving
-  /// a key that no longer opens the file, which bricks the app permanently.
+  /// The SQLCipher key is rotated here too — see [_rotateDatabaseKey] — so
+  /// the leaving user's transfer passphrase, whose backup file a phone backup
+  /// may have kept, unwraps nothing the next person on this device makes.
   Future<void> deleteLocalData() async {
     debugPrint('SyncService: deleting all local data');
 
@@ -180,11 +187,13 @@ class SyncService {
       debugPrint('SyncService: VACUUM after wipe failed: $e');
     }
 
+    await _rotateDatabaseKey();
+
     final photoFailure = await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
-    // The transfer passphrase was the leaving user's. The key it wraps stays
-    // (see above), but the next person on this device must not inherit a
-    // backup that a passphrase they do not know can open.
+    // The transfer passphrase was the leaving user's: the next person on this
+    // device must not inherit a backup that a passphrase they do not know can
+    // open.
     await TransferKeyBackup.deleteIn(await getApplicationDocumentsDirectory());
 
     // The data is gone, so nobody owns this device any more: the next account
@@ -201,6 +210,35 @@ class SyncService {
     // lock screen keeps offering the retry that finishes it.
     if (photoFailure != null) {
       throw LocalPhotoWipeException(photoFailure);
+    }
+  }
+
+  /// Re-encrypts the emptied database under a fresh key and stores it.
+  ///
+  /// The database is rekeyed first and the new key stored second. If storing
+  /// fails, the file is keyed back and the old key stored again, so the stored
+  /// key and the file never disagree — the one combination that strands a
+  /// launch. A rekey that fails is logged and skipped: the erase's promise is
+  /// the data, and it is already gone. A key-back that fails propagates, so
+  /// the erase stays owed and its retry rotates again.
+  Future<void> _rotateDatabaseKey() async {
+    final oldKey = await _keys.readKey();
+    if (oldKey == null) return;
+    final newKey = EncryptionKeyService.generateKey();
+    try {
+      await _db.rekey(newKey);
+    } catch (e) {
+      debugPrint('SyncService: database key rotation skipped: $e');
+      return;
+    }
+    try {
+      await _keys.storeKey(newKey);
+    } catch (e) {
+      debugPrint(
+        'SyncService: rotated key not stored, keying the database back: $e',
+      );
+      await _db.rekey(oldKey);
+      await _keys.storeKey(oldKey);
     }
   }
 

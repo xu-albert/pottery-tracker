@@ -1294,10 +1294,10 @@ abstract class AppLocalizations {
   /// **'Your pieces are backed up to your account and come back by signing in on a new phone. A transfer passphrase is only needed for pottery kept on this phone alone.'**
   String get transferExplanationSignedIn;
 
-  /// Settings statement on Android, where the app opts out of backups so there is no transfer passphrase; says plainly that local-only pottery does not move
+  /// Settings statement on Android, where the app opts out of backups and device transfers so there is no transfer passphrase; says plainly that local-only pottery does not move
   ///
   /// In en, this message translates to:
-  /// **'Pottery kept only on this phone stays on this phone: it is never included in an Android backup, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.'**
+  /// **'Pottery kept only on this phone stays on this phone: the app keeps its data out of Android backups and phone-to-phone transfers, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.'**
   String get transferExplanationAndroid;
 
   /// Sheet title / action when no passphrase is set

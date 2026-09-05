@@ -15,13 +15,19 @@
     <uses-permission
         android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
         tools:node="remove" />
+    <!-- Nothing of the app's leaves the phone in a backup or a transfer: allowBackup
+         covers Google Drive backups, and dataExtractionRules covers Android 12+
+         device-to-device transfer, which allowBackup="false" alone does not stop on
+         every manufacturer's devices. See docs/local-database-key.md, "Android". -->
     <application
         android:label="Potter Journal"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="31">
         <!-- Part of the portrait-only lock: without this, Android 16 large screens
              override the activity's screenOrientation/resizeableActivity below and the
              app rotates. See "Design Constraints" in AGENTS.md before changing either. -->

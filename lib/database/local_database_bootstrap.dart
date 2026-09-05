@@ -103,7 +103,7 @@ abstract class LocalDatabaseRecovery {
 /// | no  | no  | first launch: create a key, open a fresh database |
 /// | yes | no  | reinstall on the same device (iOS keeps the keychain): open a fresh database with the existing key |
 /// | yes | yes | normal launch: harden the key's storage if not yet done, open |
-/// | no  | yes | **restore onto another device**: [LocalDatabaseUnreadable] |
+/// | no  | yes | **restore onto another device** (on Android, also a copied data directory whose key this device cannot decrypt): [LocalDatabaseUnreadable] |
 /// | yes | yes, does not decrypt | [LocalDatabaseUnreadable], `keyMismatch` |
 ///
 /// The one thing this never does is create a key while a database file is
@@ -197,7 +197,7 @@ class LocalDatabaseBootstrap {
     }
     // Stored only once the key is known to open the file: a key that did not
     // would have replaced whatever this device held for nothing.
-    await _keys.storeRecoveredKey(key);
+    await _keys.storeKey(key);
     return db;
   }
 

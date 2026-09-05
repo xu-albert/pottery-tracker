@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -10,6 +11,7 @@ import '../helpers/fake_secure_storage.dart';
 
 const _keyName = 'db_encryption_key';
 const _markerName = 'db_encryption_key_storage_version';
+const _migratingName = 'db_encryption_key_migrating';
 const _legacyKey = 'existingKey12345678901234567890ab';
 
 /// What the native side must receive for the key to be left out of backups
@@ -243,6 +245,16 @@ void main() {
           aOptions: any(named: 'aOptions', that: hardenedAndroid),
         ),
       ).called(1);
+      // The copy that guards the delete-then-add is itself hardened: it must
+      // never enter a backup either.
+      verify(
+        () => storage.write(
+          key: _migratingName,
+          value: _legacyKey,
+          iOptions: any(named: 'iOptions', that: hardenedIos),
+          aOptions: any(named: 'aOptions', that: hardenedAndroid),
+        ),
+      ).called(1);
       verifyNever(
         () => storage.write(
           key: any(named: 'key'),
@@ -265,13 +277,13 @@ void main() {
           aOptions: any(named: 'aOptions'),
         ),
       ).thenAnswer((i) async {
+        final key = i.namedArguments[#key] as String;
         // The hardened write deletes and fails to re-add.
-        if (writes++ == 0) {
+        if (key == _keyName && writes++ == 0) {
           stored.remove(_keyName);
           return;
         }
-        stored[i.namedArguments[#key] as String] =
-            i.namedArguments[#value] as String;
+        stored[key] = i.namedArguments[#value] as String;
       });
       when(
         () => storage.read(
@@ -311,10 +323,31 @@ void main() {
       expect(await service.readKey(), _legacyKey);
     });
 
-    test('a store failure propagates rather than reading as "no key"', () {
+    test('iOS: a store failure propagates rather than reading as "no key"', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       platform.values[_keyName] = _legacyKey;
       platform.readFailure = PlatformException(code: 'locked');
       expect(service.readKey(), throwsA(isA<PlatformException>()));
+    });
+
+    test('Android: a value this device cannot decrypt reads as no key', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      platform.values[_keyName] = _legacyKey;
+      platform.unreadableKeys.add(_keyName);
+      expect(await service.readKey(), isNull);
+    });
+
+    test('falls back to the migrating copy when the item itself is gone', () async {
+      platform.values[_migratingName] = _legacyKey;
+      expect(await service.readKey(), _legacyKey);
+    });
+
+    test('prefers the item over a copy left behind', () async {
+      platform.values[_keyName] = _legacyKey;
+      platform.values[_migratingName] = 'staleCopy0123456789abcdefghijklm';
+      expect(await service.readKey(), _legacyKey);
     });
   });
 
@@ -357,6 +390,52 @@ void main() {
         expect(platform.values[_keyName], _legacyKey);
         expect(platform.values[_markerName], '2');
         expect(platform.writes.where((w) => w.key == _keyName), hasLength(1));
+        expect(platform.values.containsKey(_migratingName), isFalse);
+      },
+    );
+
+    test('keeps a copy on disk for the whole of the delete-then-add', () async {
+      platform.values[_keyName] = _legacyKey;
+      final original = platform;
+      final copyAtDelete = <String?>[];
+      FlutterSecureStoragePlatform.instance = _ScriptedPlatform(
+        original,
+        onWrite: (key, value, options) => original.values[key] = value,
+        onDelete: (key) {
+          if (key == _keyName) copyAtDelete.add(original.values[_migratingName]);
+          original.values.remove(key);
+        },
+      );
+
+      await service.hardenStoredKey(_legacyKey);
+
+      expect(copyAtDelete, [_legacyKey]);
+    });
+
+    test(
+      'a process that dies between the delete and the add leaves the copy, '
+      'and the next launch finishes the rewrite from it',
+      () async {
+        platform.values[_keyName] = _legacyKey;
+        FlutterSecureStoragePlatform.instance = DiesAfterDelete(
+          platform,
+          key: _keyName,
+        );
+
+        await expectLater(
+          service.hardenStoredKey(_legacyKey),
+          throwsA(isA<ProcessDied>()),
+        );
+        expect(platform.values.containsKey(_keyName), isFalse);
+        expect(platform.values[_migratingName], _legacyKey);
+
+        FlutterSecureStoragePlatform.instance = platform;
+        expect(await service.readKey(), _legacyKey);
+        await service.hardenStoredKey(_legacyKey);
+
+        expect(platform.values[_keyName], _legacyKey);
+        expect(platform.values[_markerName], '2');
+        expect(platform.values.containsKey(_migratingName), isFalse);
       },
     );
 
@@ -384,17 +463,13 @@ void main() {
     test('when the hardened write does not stick, the key is put back under '
         'the legacy options and the marker is left unset', () async {
       platform.values[_keyName] = _legacyKey;
-      var attempts = 0;
-      // The first write (hardened) vanishes; the fallback lands.
-      platform.writesVanish = true;
-      platform.values.remove(_keyName);
-      // Simulate: hardened write deletes-and-fails-to-add, fallback works.
+      var mainWrites = 0;
       final original = platform;
       FlutterSecureStoragePlatform.instance = _ScriptedPlatform(
         original,
         onWrite: (key, value, options) {
-          attempts++;
-          if (attempts == 1) return; // vanish
+          // The hardened add of the item vanishes; the fallback lands.
+          if (key == _keyName && mainWrites++ == 0) return;
           original.values[key] = value;
         },
       );
@@ -403,6 +478,7 @@ void main() {
 
       expect(original.values[_keyName], _legacyKey);
       expect(original.values.containsKey(_markerName), isFalse);
+      expect(original.values.containsKey(_migratingName), isFalse);
       final fallback = original.writes.last;
       expect(fallback.key, _keyName);
       if (fallback.options.containsKey('accessibility')) {
@@ -412,13 +488,14 @@ void main() {
 
     test('a failing hardened write falls back the same way', () async {
       platform.values[_keyName] = _legacyKey;
-      var attempts = 0;
+      var mainWrites = 0;
       final original = platform;
       FlutterSecureStoragePlatform.instance = _ScriptedPlatform(
         original,
         onWrite: (key, value, options) {
-          attempts++;
-          if (attempts == 1) throw PlatformException(code: 'denied');
+          if (key == _keyName && mainWrites++ == 0) {
+            throw PlatformException(code: 'denied');
+          }
           original.values[key] = value;
         },
       );
@@ -427,22 +504,41 @@ void main() {
 
       expect(original.values[_keyName], _legacyKey);
       expect(original.values.containsKey(_markerName), isFalse);
+      expect(original.values.containsKey(_migratingName), isFalse);
     });
 
     test(
-      'throws when neither the hardened nor the legacy write sticks',
+      'when nothing can be written, the key is left where it was and the '
+      'marker unset',
       () async {
         platform.values[_keyName] = _legacyKey;
         platform.writesVanish = true;
-        platform.values.remove(_keyName);
 
-        await expectLater(
-          service.hardenStoredKey(_legacyKey),
-          throwsA(isA<KeyStorageException>()),
-        );
+        await service.hardenStoredKey(_legacyKey);
+
+        expect(platform.values[_keyName], _legacyKey);
         expect(platform.values.containsKey(_markerName), isFalse);
+        expect(platform.values.containsKey(_migratingName), isFalse);
       },
     );
+
+    test('throws when the rewrite loses both the item and its copy', () async {
+      platform.values[_keyName] = _legacyKey;
+      final original = platform;
+      FlutterSecureStoragePlatform.instance = _ScriptedPlatform(
+        original,
+        onWrite: (key, value, options) {
+          if (key == _migratingName) original.values[key] = value;
+        },
+        onDelete: (key) => original.values.clear(),
+      );
+
+      await expectLater(
+        service.hardenStoredKey(_legacyKey),
+        throwsA(isA<KeyStorageException>()),
+      );
+      expect(original.values.containsKey(_markerName), isFalse);
+    });
 
     test(
       'a marker that fails to save does not undo a successful hardening',
@@ -467,20 +563,27 @@ void main() {
     );
   });
 
-  group('storeRecoveredKey', () {
+  group('storeKey', () {
     test(
       'stores the given key under the pinned options and marks it',
       () async {
-        await service.storeRecoveredKey(_legacyKey);
+        await service.storeKey(_legacyKey);
         expect(platform.values[_keyName], _legacyKey);
         expect(platform.values[_markerName], '2');
+        expect(platform.values.containsKey(_migratingName), isFalse);
       },
     );
 
     test('replaces a key already stored', () async {
       platform.values[_keyName] = 'stale';
-      await service.storeRecoveredKey(_legacyKey);
+      await service.storeKey(_legacyKey);
       expect(platform.values[_keyName], _legacyKey);
+    });
+
+    test('refuses to report a key that did not read back', () {
+      platform.values[_keyName] = 'stale';
+      platform.writesVanish = true;
+      expect(service.storeKey(_legacyKey), throwsA(isA<KeyStorageException>()));
     });
   });
 }
@@ -491,11 +594,12 @@ class _MockStorage extends Mock implements FlutterSecureStorage {}
 /// effect while the fake keeps recording them.
 class _ScriptedPlatform extends FlutterSecureStoragePlatform
     with MockPlatformInterfaceMixin {
-  _ScriptedPlatform(this._inner, {required this.onWrite});
+  _ScriptedPlatform(this._inner, {required this.onWrite, this.onDelete});
 
   final FakeSecureStoragePlatform _inner;
   final void Function(String key, String value, Map<String, String> options)
   onWrite;
+  final void Function(String key)? onDelete;
 
   @override
   Future<void> write({
@@ -523,7 +627,10 @@ class _ScriptedPlatform extends FlutterSecureStoragePlatform
   Future<void> delete({
     required String key,
     required Map<String, String> options,
-  }) => _inner.delete(key: key, options: options);
+  }) async {
+    if (onDelete != null) return onDelete!(key);
+    await _inner.delete(key: key, options: options);
+  }
 
   @override
   Future<Map<String, String>> readAll({required Map<String, String> options}) =>

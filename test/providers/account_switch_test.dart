@@ -7,6 +7,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
@@ -14,6 +15,8 @@ import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../helpers/fake_secure_storage.dart';
 
 /// End-to-end cover for the cross-account leak: sign-out has to destroy this
 /// device's local data, because the *next* account's first sync pushes
@@ -91,6 +94,10 @@ void main() {
   setUp(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
+    // A stored key, so every wipe here also rotates it as the real one does.
+    FlutterSecureStoragePlatform.instance = FakeSecureStoragePlatform()
+      ..values['db_encryption_key'] = 'accountSwitchKey0123456789abcdef'
+      ..values['db_encryption_key_storage_version'] = '2';
     docsDir = Directory.systemTemp.createTempSync('account_switch_docs_');
     cacheDir = Directory.systemTemp.createTempSync('account_switch_cache_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

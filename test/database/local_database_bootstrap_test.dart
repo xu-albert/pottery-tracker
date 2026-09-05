@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -219,8 +220,10 @@ void main() {
     });
 
     test(
-      'a key store that cannot be read fails the launch, never recovery',
+      'iOS: a key store that cannot be read fails the launch, never recovery',
       () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
         await restoreOldPhoneDatabase();
         platform.readFailure = PlatformException(
           code: 'interaction-not-allowed',
@@ -231,6 +234,63 @@ void main() {
           throwsA(isA<PlatformException>()),
         );
         expect(dbFile().existsSync(), isTrue);
+      },
+    );
+
+    test(
+      'Android: a stored key this device cannot decrypt is a restore — '
+      'recovery, and a readable fresh key once the copy is discarded',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        await restoreOldPhoneDatabase();
+        platform.values[_keyName] = _oldPhoneKey;
+        platform.values[_markerName] = '2';
+        platform.unreadableKeys.addAll([_keyName, _markerName]);
+
+        final launch = await bootstrap().launch();
+
+        expect(launch, isA<LocalDatabaseUnreadable>());
+        final recovery = (launch as LocalDatabaseUnreadable).recovery;
+        expect(recovery.cause, UnreadableDatabaseCause.keyMissing);
+        expect(dbFile().existsSync(), isTrue);
+
+        final db = await recovery.startFresh();
+        opened.add(db);
+
+        expect(await db.piecesDao.countPieces(), 0);
+        expect(platform.unreadableKeys, isEmpty);
+        expect(platform.values[_keyName], isNot(_oldPhoneKey));
+        expect(platform.values[_markerName], '2');
+      },
+    );
+
+    test(
+      'a process killed between the delete and the add of the hardening '
+      'rewrite leaves a key the next launch opens the database with',
+      () async {
+        await restoreOldPhoneDatabase();
+        platform.values[_keyName] = _oldPhoneKey;
+        FlutterSecureStoragePlatform.instance = DiesAfterDelete(
+          platform,
+          key: _keyName,
+        );
+
+        await expectLater(bootstrap().launch(), throwsA(isA<ProcessDied>()));
+        expect(platform.values.containsKey(_keyName), isFalse);
+
+        FlutterSecureStoragePlatform.instance = platform;
+        final launch = await bootstrap().launch();
+
+        expect(launch, isA<LocalDatabaseReady>());
+        final db = (launch as LocalDatabaseReady).database;
+        expect(await db.piecesDao.countPieces(), 1);
+        expect(platform.values[_keyName], _oldPhoneKey);
+        expect(platform.values[_markerName], '2');
+        expect(
+          platform.values.containsKey('db_encryption_key_migrating'),
+          isFalse,
+        );
       },
     );
 

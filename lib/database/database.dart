@@ -81,6 +81,13 @@ class AppDatabase extends _$AppDatabase {
     return AppDatabase(executor);
   }
 
+  /// Re-encrypts the open database under [key], in place.
+  ///
+  /// Quoted the way `configureSqlCipher` quotes `PRAGMA key`: sqlite3 cannot
+  /// bind a pragma value, so the key is a literal.
+  Future<void> rekey(String key) =>
+      customStatement("PRAGMA rekey = '${key.replaceAll("'", "''")}'");
+
   @override
   int get schemaVersion => 9;
 

@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Thrown when the database key could not be persisted where the next launch
@@ -64,6 +65,11 @@ class EncryptionKeyService {
   static const _storageVersionKey = 'db_encryption_key_storage_version';
   static const _currentStorageVersion = '2';
 
+  /// A second copy of the key, present only while [_storageKey] is being
+  /// deleted and added again (see [_addMain]) — and afterwards, if the
+  /// process died in between, which is what it is for.
+  static const _migratingStorageKey = 'db_encryption_key_migrating';
+
   static const _keyLength = 32;
   static const _chars =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -120,18 +126,16 @@ class EncryptionKeyService {
   ///
   /// Reads deliberately pass no accessibility: the iOS plugin ignores it on
   /// reads anyway, so a key stored under the legacy protections is found just
-  /// the same, which is what lets [hardenStoredKey] see it. A storage failure
-  /// propagates rather than reading as "no key" — treating an unreadable key
-  /// as a missing one is exactly the mistake that would send a user with a
-  /// perfectly good database into recovery.
-  Future<String?> readKey() async {
-    final existing = await _storage.read(
-      key: _storageKey,
-      iOptions: iosOptions,
-      aOptions: androidOptions,
-    );
-    return (existing == null || existing.isEmpty) ? null : existing;
-  }
+  /// the same, which is what lets [hardenStoredKey] see it. A launch that
+  /// died halfway through a rewrite finds the key in the migrating copy
+  /// instead (see [_writeMigratingCopy]).
+  ///
+  /// On iOS a storage failure propagates rather than reading as "no key":
+  /// a keychain that refuses says nothing about the item, and treating an
+  /// unreadable key as a missing one would send a user with a perfectly good
+  /// database into recovery. Android is the exception — see [_read].
+  Future<String?> readKey() async =>
+      await _read(_storageKey) ?? await _read(_migratingStorageKey);
 
   /// Generates a key, stores it under the pinned options and returns it.
   ///
@@ -145,50 +149,70 @@ class EncryptionKeyService {
     return key;
   }
 
-  /// Persists a key recovered from a transfer backup as this device's key.
-  Future<void> storeRecoveredKey(String key) => _storeHardened(key);
+  /// Persists [key] as this device's key under the pinned options: one
+  /// recovered from a transfer backup, or a fresh one the database was just
+  /// rekeyed to.
+  Future<void> storeKey(String key) => _storeHardened(key);
 
   /// Moves a key stored by an earlier release under the pinned options, and
   /// records that it has been.
   ///
   /// The rewrite is what does the moving. `kSecAttrAccessible` cannot be
   /// changed in place, so the item is deleted (under any accessibility) and
-  /// added again under the pinned one — see [_writeKey]; the Android plugin
-  /// re-encrypts every value when the cipher options differ from the ones it
-  /// recorded. Both are idempotent, so the marker is an optimisation that
-  /// also spares the key a delete-and-add on every launch.
+  /// added again under the pinned one — see [_addMain], with a copy on disk
+  /// throughout ([_writeMigratingCopy]) so that a process dying between the
+  /// two leaves a key the next launch can read; the Android plugin re-encrypts every
+  /// value when the cipher options differ from the ones it recorded. Both
+  /// are idempotent, so the marker is an optimisation that also spares the
+  /// key a delete-and-add on every launch.
   ///
-  /// Verified by reading back, because between the delete and the add there
-  /// is a moment with no key on disk. If the hardened write does not stick,
-  /// the key is written back under [legacyIosOptions] so the device is no
-  /// worse off than before this launch, and the marker is left unset so the
-  /// next launch tries again. If even that does not stick, a
-  /// [KeyStorageException] stops the launch: proceeding with the in-memory
-  /// key would let this session add pottery that no later launch can read.
+  /// Verified by reading back. If the hardened write does not stick, the key
+  /// is written back under [legacyIosOptions] so the device is no worse off
+  /// than before this launch, and the marker is left unset so the next launch
+  /// tries again. A [KeyStorageException] stops the launch only if neither
+  /// the item nor the copy reads back: proceeding with the in-memory key
+  /// would let this session add pottery that no later launch can read.
   Future<void> hardenStoredKey(String key) async {
-    final version = await _storage.read(
-      key: _storageVersionKey,
-      iOptions: iosOptions,
-      aOptions: androidOptions,
-    );
-    if (version == _currentStorageVersion) return;
+    if (await _read(_storageVersionKey) == _currentStorageVersion) return;
 
     try {
-      await _writeKey(key, iosOptions);
-      if (await readKey() == key) {
-        await _writeMarker();
+      if (!await _writeMigratingCopy(key)) {
+        debugPrint(
+          'EncryptionKeyService: the migrating copy did not read back; '
+          'leaving the key where it is until the next launch',
+        );
         return;
       }
+    } catch (e) {
       debugPrint(
-        'EncryptionKeyService: the hardened key did not read back; '
-        'restoring the previous protections',
+        'EncryptionKeyService: the migrating copy could not be written; '
+        'leaving the key where it is until the next launch: $e',
       );
+      return;
+    }
+
+    var hardened = false;
+    try {
+      hardened = await _addMain(key, iosOptions);
+      if (!hardened) {
+        debugPrint(
+          'EncryptionKeyService: the hardened key did not read back; '
+          'restoring the previous protections',
+        );
+      }
     } catch (e) {
       debugPrint('EncryptionKeyService: hardening rewrite failed: $e');
     }
+    if (hardened) {
+      await _finishHardened();
+      return;
+    }
 
-    await _writeKey(key, legacyIosOptions);
-    if (await readKey() != key) {
+    if (await _addMain(key, legacyIosOptions)) {
+      await _tryDeleteMigratingCopy();
+      return;
+    }
+    if (await _read(_migratingStorageKey) != key) {
       throw const KeyStorageException(
         'the database key could not be stored under either the current or '
         'the previous protections; refusing to open the database with a key '
@@ -198,13 +222,56 @@ class EncryptionKeyService {
   }
 
   Future<void> _storeHardened(String key) async {
-    await _writeKey(key, iosOptions);
-    if (await readKey() != key) {
+    if (!await _writeMigratingCopy(key) || !await _addMain(key, iosOptions)) {
       throw const KeyStorageException(
         'the database key did not read back after being written',
       );
     }
-    await _writeMarker();
+    await _finishHardened();
+  }
+
+  /// Writes the migrating copy of [key] and reports whether it read back.
+  ///
+  /// Always before [_addMain], so that at no instant of the delete-then-add
+  /// is there no key on disk: a process that dies in between leaves the
+  /// copy, [readKey] falls back to it, and the next launch finishes the job.
+  /// Under the pinned options — the copy must never enter a backup either.
+  /// If it does not read back nothing else is touched, because without it
+  /// the rewrite would have no safety net.
+  Future<bool> _writeMigratingCopy(String key) async {
+    await _write(_migratingStorageKey, key, iosOptions);
+    return await _read(_migratingStorageKey) == key;
+  }
+
+  /// Replaces the stored key with [key] under [iOptions], and reports whether
+  /// it read back.
+  ///
+  /// The plugin's own write would delete-and-add for a changed accessibility,
+  /// but only after a `SecItemUpdate` whose query names the *new*
+  /// accessibility fails to match. Deleting first, under any accessibility,
+  /// removes the dependence on that query semantics: the add always creates
+  /// the item afresh under [iOptions].
+  Future<bool> _addMain(String key, IOSOptions iOptions) async {
+    await _delete(_storageKey);
+    await _write(_storageKey, key, iOptions);
+    return await _read(_storageKey) == key;
+  }
+
+  /// Once the hardened item has read back: drop the copy, then record the
+  /// version — never the marker while a copy could still be found, or a
+  /// launch that trusts the marker would leave the copy behind for good.
+  Future<void> _finishHardened() async {
+    if (await _tryDeleteMigratingCopy()) await _writeMarker();
+  }
+
+  Future<bool> _tryDeleteMigratingCopy() async {
+    try {
+      await _delete(_migratingStorageKey);
+      return true;
+    } catch (e) {
+      debugPrint('EncryptionKeyService: migrating copy not removed: $e');
+      return false;
+    }
   }
 
   /// Options whose iOS map carries no `accessibility` at all, so the plugin's
@@ -214,39 +281,54 @@ class EncryptionKeyService {
     synchronizable: false,
   );
 
-  /// Replaces the stored key: delete under any accessibility, then add.
+  /// One stored value, or null when absent or empty.
   ///
-  /// The plugin's own write would do this for a changed accessibility — but
-  /// only after a `SecItemUpdate` whose query names the *new* accessibility
-  /// fails to match. Deleting first removes the dependence on that query
-  /// semantics: the add below always creates the item afresh under
-  /// [iOptions]. The read-back that follows every call is what catches the
-  /// moment in between going wrong.
-  Future<void> _writeKey(String key, IOSOptions iOptions) async {
-    await _storage.delete(
-      key: _storageKey,
-      iOptions: _anyAccessibility,
-      aOptions: androidOptions,
-    );
-    await _storage.write(
-      key: _storageKey,
-      value: key,
-      iOptions: iOptions,
-      aOptions: androidOptions,
-    );
+  /// On Android, a value the plugin cannot decrypt reads as absent. The plugin
+  /// wraps its storage key with a KeyStore key that never leaves the device,
+  /// so a value it cannot decrypt is one that came from another device — an
+  /// app data directory copied by a device-to-device transfer — and to the
+  /// launch that is the same situation as a restored database with no key:
+  /// the recovery screen, not a launch failure whose retry fails the same
+  /// way forever. The next write replaces the value and reads back fine.
+  Future<String?> _read(String name) async {
+    final String? value;
+    try {
+      value = await _storage.read(
+        key: name,
+        iOptions: iosOptions,
+        aOptions: androidOptions,
+      );
+    } on PlatformException catch (e) {
+      if (defaultTargetPlatform != TargetPlatform.android) rethrow;
+      debugPrint(
+        'EncryptionKeyService: $name is stored but cannot be read on this '
+        'device: $e',
+      );
+      return null;
+    }
+    return (value == null || value.isEmpty) ? null : value;
   }
+
+  Future<void> _write(String name, String value, IOSOptions iOptions) =>
+      _storage.write(
+        key: name,
+        value: value,
+        iOptions: iOptions,
+        aOptions: androidOptions,
+      );
+
+  Future<void> _delete(String name) => _storage.delete(
+    key: name,
+    iOptions: _anyAccessibility,
+    aOptions: androidOptions,
+  );
 
   /// Best effort: the key is already safely stored by the time this runs, and
   /// a marker that fails to land only means the next launch repeats an
   /// idempotent rewrite.
   Future<void> _writeMarker() async {
     try {
-      await _storage.write(
-        key: _storageVersionKey,
-        value: _currentStorageVersion,
-        iOptions: iosOptions,
-        aOptions: androidOptions,
-      );
+      await _write(_storageVersionKey, _currentStorageVersion, iosOptions);
     } catch (e) {
       debugPrint('EncryptionKeyService: storage-version marker not saved: $e');
     }

@@ -11,6 +11,7 @@ import '../services/sync_service.dart';
 import '../services/sync_trigger.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
+import 'transfer_provider.dart';
 
 /// [SyncStatus.blocked] is a refusal, not a failure: this device is not
 /// allowed to push yet. Which refusal it is, and what the user does about it,
@@ -868,7 +869,12 @@ final syncQueueProvider = Provider<SyncQueue>((ref) {
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
-  return SyncService(db, FirebaseFirestore.instance, FirebaseStorage.instance);
+  return SyncService(
+    db,
+    FirebaseFirestore.instance,
+    FirebaseStorage.instance,
+    keys: ref.watch(encryptionKeyServiceProvider),
+  );
 });
 
 final syncTriggerProvider = Provider<SyncTrigger>((ref) {
