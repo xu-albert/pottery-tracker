@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import '../../models/untitled_title.dart';
 import '../database.dart';
 import '../tables/pieces_table.dart';
 import '../tables/photos_table.dart';
@@ -19,7 +20,7 @@ class PiecesDao extends DatabaseAccessor<AppDatabase> with _$PiecesDaoMixin {
 
   Future<List<String>> getUntitledPieceTitles() async {
     final query = select(pieces)
-      ..where((p) => p.title.like('Untitled Piece %'));
+      ..where((p) => p.title.like('$untitledTitlePrefix %'));
     final rows = await query.get();
     return rows.map((r) => r.title).whereType<String>().toList();
   }

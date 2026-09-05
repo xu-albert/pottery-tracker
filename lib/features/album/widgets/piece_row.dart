@@ -6,9 +6,12 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
 import '../../../database/daos/pieces_dao.dart';
+import '../../../models/display_date.dart';
 import '../../../models/piece_stage.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/photos_provider.dart';
+import '../../../widgets/stage_badge.dart';
+import '../../../widgets/tag_chip.dart';
 
 class PieceRow extends ConsumerWidget {
   final PieceWithCover piece;
@@ -55,23 +58,7 @@ class PieceRow extends ConsumerWidget {
                   ),
                   if (stage != null) ...[
                     const SizedBox(width: AppSizes.sm),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: stage.color.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        stage.displayName,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: stage.color,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                    StageBadge(stage: stage),
                   ],
                 ],
               ),
@@ -80,16 +67,10 @@ class PieceRow extends ConsumerWidget {
                 loading: () => const SizedBox.shrink(),
                 error: (_, _) => const SizedBox.shrink(),
                 data: (photos) {
-                  final displayDate =
-                      piece.piece.displayDate ??
-                      (photos.isNotEmpty
-                          ? photos
-                                .map((p) => p.dateTaken)
-                                .reduce((a, b) => a.isAfter(b) ? a : b)
-                          : null) ??
-                      piece.piece.createdAt;
                   return Text(
-                    DateFormat.yMMMd().format(displayDate),
+                    DateFormat.yMMMd().format(
+                      resolveDisplayDate(piece.piece, photos),
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppColors.charcoal.withValues(alpha: 0.5),
                     ),
@@ -119,13 +100,12 @@ class PieceRow extends ConsumerWidget {
     Map<String, Color> tagColorMap,
   ) {
     final chips = <Widget>[];
-    final textStyle = Theme.of(context).textTheme.bodySmall;
 
     final tags = piece.piece.tags;
     if (tags != null && tags.isNotEmpty) {
       for (final tag
           in tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty)) {
-        chips.add(_tagChip(context, tag, textStyle, tagColorMap));
+        chips.add(TagChip(tag: tag, customColor: tagColorMap[tag]));
       }
     }
 
@@ -170,66 +150,6 @@ class PieceRow extends ConsumerWidget {
     }
 
     return lines;
-  }
-
-  // Each entry: (background tint color, accessible text color)
-  static const _defaultTagColors = [
-    (AppColors.teal, AppColors.teal), // #2D6E6E — dark enough
-    (AppColors.terracotta, Color(0xFF8B5536)), // darken terracotta for text
-    (AppColors.dustyRose, Color(0xFF8B5D55)), // darken dustyRose for text
-    (AppColors.sage, Color(0xFF536B53)), // darken sage for text
-    (AppColors.blue, AppColors.blue), // #4A7FB5 — dark enough
-  ];
-
-  Widget _tagChip(
-    BuildContext context,
-    String tag,
-    TextStyle? textStyle,
-    Map<String, Color> tagColorMap,
-  ) {
-    final customColor = tagColorMap[tag];
-    final Color bgColor;
-    final Color textColor;
-    if (customColor != null) {
-      final colors = TagColorPresets.colorsFor(customColor);
-      bgColor = colors.$1;
-      textColor = colors.$2;
-    } else {
-      final colorIndex = tag.hashCode.abs() % _defaultTagColors.length;
-      final defaults = _defaultTagColors[colorIndex];
-      bgColor = defaults.$1.withValues(alpha: 0.18);
-      textColor = defaults.$2;
-    }
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 150),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '#',
-              style: textStyle?.copyWith(
-                color: textColor.withValues(alpha: 0.5),
-              ),
-            ),
-            const SizedBox(width: 2),
-            Flexible(
-              child: Text(
-                tag,
-                style: textStyle?.copyWith(color: textColor),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildPhotoRow(BuildContext context, List<Photo> photos) {
