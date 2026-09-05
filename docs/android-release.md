@@ -322,7 +322,7 @@ These are genuine product choices. Nothing in the repo presumes an answer to any
 | Privacy policy content and hosting | Required for submission. Nothing exists in the repo or the app today. |
 | Apple-sign-in on Android | Apple sign-in is iOS-gated, so an account created with Apple on iPhone **cannot** be signed into on Android at all. Accept it / implement Apple-on-Android / mitigate by prompting iOS users to link Google. |
 | Cupertino widgets on Android | 11 files use `CupertinoAlertDialog` / `CupertinoTextField` / `CupertinoSearchTextField` unguarded. They render fine on Android but look iOS-styled inside a Material app. Ship as-is / adaptive dialogs / full Material conversion. |
-| Ko-fi donation link | The only external link in the app. Worth a check against Play's payments policy before submission. |
+| Ko-fi donation link | Resolved: removed from the app on every platform (2026-08-18 ruling, option B). Nothing left to check against Play's payments policy. |
 | Analytics advertising ID | Keep it and disclose it on the Data Safety form, or strip `AD_ID` from the merged manifest. |
 
 ---

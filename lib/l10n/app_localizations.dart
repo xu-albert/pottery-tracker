@@ -376,12 +376,6 @@ abstract class AppLocalizations {
   /// **'Storage'**
   String get storage;
 
-  /// Support developer label
-  ///
-  /// In en, this message translates to:
-  /// **'Support the Developer'**
-  String get supportDeveloper;
-
   /// Photo counter
   ///
   /// In en, this message translates to:

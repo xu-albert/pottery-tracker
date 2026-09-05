@@ -156,9 +156,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage => 'Storage';
 
   @override
-  String get supportDeveloper => 'Support the Developer';
-
-  @override
   String photoOf(int current, int total) {
     return 'Photo $current of $total';
   }

@@ -104,8 +104,6 @@
   "@syncComingSoon": { "description": "Sync coming soon message" },
   "storage": "Storage",
   "@storage": { "description": "Storage section label" },
-  "supportDeveloper": "Support the Developer",
-  "@supportDeveloper": { "description": "Support developer label" },
   "photoOf": "Photo {current} of {total}",
   "@photoOf": {
     "description": "Photo counter",
