@@ -127,16 +127,12 @@ Future<void> _runPotteryApp(AppDatabase db) async {
 
   final savedMode = prefs.getString('view_mode');
   final initialViewMode = savedMode == 'grid' ? ViewMode.grid : ViewMode.list;
-  final transferPassphraseSet = _transferBackup.exists();
 
   runApp(
     ProviderScope(
       overrides: [
         databaseProvider.overrideWithValue(db),
         transferKeyBackupProvider.overrideWithValue(_transferBackup),
-        transferPassphraseSetProvider.overrideWith(
-          (ref) => transferPassphraseSet,
-        ),
         // Read before runApp so the read-only lock is correct on the first
         // frame: a device belonging to another account must never render the
         // album, not even for the frame before an async read resolves.

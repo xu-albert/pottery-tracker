@@ -15,8 +15,3 @@ final encryptionKeyServiceProvider = Provider<EncryptionKeyService>(
 final transferKeyBackupProvider = Provider<TransferKeyBackup>((ref) {
   throw UnimplementedError('TransferKeyBackup must be provided before runApp');
 });
-
-/// Whether a transfer passphrase is currently set — that is, whether the
-/// backup file exists. Seeded in `main` from the file, kept current by the
-/// settings sheet that writes and removes it.
-final transferPassphraseSetProvider = StateProvider<bool>((ref) => false);

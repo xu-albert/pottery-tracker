@@ -448,12 +448,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               leading: const Icon(Icons.phonelink_lock_outlined),
               title: Text(l10n.transferPassphrase),
               subtitle: Text(
-                ref.watch(transferPassphraseSetProvider)
+                ref.watch(transferKeyBackupProvider).exists()
                     ? l10n.transferPassphraseSet
                     : l10n.transferPassphraseNotSet,
               ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => showTransferPassphraseSheet(context),
+              onTap: () async {
+                await showTransferPassphraseSheet(context);
+                if (mounted) setState(() {});
+              },
             ),
           const Divider(),
 

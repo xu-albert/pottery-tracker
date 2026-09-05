@@ -69,19 +69,32 @@ void assertSqlCipherBacksSqlite3(List<List<Object?>> cipherVersionRows) {
 /// including from the probe, propagates untouched.
 void configureSqlCipher(CommonDatabase db, String key) {
   try {
-    db.execute("PRAGMA key = '${key.replaceAll("'", "''")}'");
+    db.execute('PRAGMA key = ${sqlKeyLiteral(key)}');
   } on SqliteException catch (error) {
-    throw SqlCipherKeyingException(
+    throw keyingFailure(error, key);
+  }
+
+  assertSqlCipherBacksSqlite3(db.select('PRAGMA cipher_version').rows);
+}
+
+/// [key] as the SQL string literal a keying pragma needs — sqlite3 cannot
+/// bind one, so the key has to be quoted into the statement.
+String sqlKeyLiteral(String key) => "'${key.replaceAll("'", "''")}'";
+
+/// A sqlite3 failure of a statement that quotes [key], rewritten into a
+/// [SqlCipherKeyingException] that cannot carry it.
+///
+/// sqlite3 attaches the failing statement to its exception and prints it, so
+/// the original must never reach a log, the screen or Crashlytics. Shared by
+/// [configureSqlCipher] and `AppDatabase.rekey`.
+SqlCipherKeyingException keyingFailure(SqliteException error, String key) =>
+    SqlCipherKeyingException(
       extendedResultCode: error.extendedResultCode,
       message: _withoutKeyMaterial(
         [error.message, error.explanation].whereType<String>().join(', '),
         key,
       ),
     );
-  }
-
-  assertSqlCipherBacksSqlite3(db.select('PRAGMA cipher_version').rows);
-}
 
 const _withheldMessage =
     'sqlite3 rejected the keying statement; its description is withheld '

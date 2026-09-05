@@ -216,11 +216,16 @@ class SyncService {
   /// Re-encrypts the emptied database under a fresh key and stores it.
   ///
   /// The database is rekeyed first and the new key stored second. If storing
-  /// fails, the file is keyed back and the old key stored again, so the stored
-  /// key and the file never disagree — the one combination that strands a
-  /// launch. A rekey that fails is logged and skipped: the erase's promise is
-  /// the data, and it is already gone. A key-back that fails propagates, so
-  /// the erase stays owed and its retry rotates again.
+  /// fails, the file is keyed back and the old key stored again. A process
+  /// that dies in between leaves the file at the new key: once the store's
+  /// migrating copy has landed, the next launch finds the stored key does
+  /// not open the file, probes the copy and finishes the store
+  /// (`LocalDatabaseBootstrap`); before that instant it is a key mismatch
+  /// over an empty database, where starting fresh costs nothing. A rekey
+  /// that fails is logged and skipped — its error never quotes a key
+  /// (`AppDatabase.rekey`): the erase's promise is the data, and it is
+  /// already gone. A key-back that fails propagates, so the erase stays owed
+  /// and its retry rotates again.
   Future<void> _rotateDatabaseKey() async {
     final oldKey = await _keys.readKey();
     if (oldKey == null) return;

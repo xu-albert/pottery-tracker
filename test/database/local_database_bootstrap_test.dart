@@ -22,6 +22,7 @@ import '../helpers/fake_sqlcipher.dart';
 
 const _keyName = 'db_encryption_key';
 const _markerName = 'db_encryption_key_storage_version';
+const _migratingName = 'db_encryption_key_migrating';
 const _oldPhoneKey = 'oldPhoneKey0123456789abcdefghijk';
 
 void main() {
@@ -288,7 +289,7 @@ void main() {
         expect(platform.values[_keyName], _oldPhoneKey);
         expect(platform.values[_markerName], '2');
         expect(
-          platform.values.containsKey('db_encryption_key_migrating'),
+          platform.values.containsKey(_migratingName),
           isFalse,
         );
       },
@@ -307,19 +308,159 @@ void main() {
     );
 
     test(
-      'a hardening rewrite that fails to stick still opens the database',
+      'a migrating copy that fails to stick leaves the key where it was, '
+      'and the database opens',
       () async {
         await restoreOldPhoneDatabase();
         platform.values[_keyName] = _oldPhoneKey;
-        // The first (hardened) write vanishes; the legacy fallback lands.
         final inner = platform;
-        FlutterSecureStoragePlatform.instance = _FirstWriteVanishes(inner);
+        FlutterSecureStoragePlatform.instance = _FirstWriteVanishes(
+          inner,
+          ofKey: _migratingName,
+        );
 
         final launch = await bootstrap().launch();
 
         expect(launch, isA<LocalDatabaseReady>());
         expect(inner.values[_keyName], _oldPhoneKey);
         expect(inner.values.containsKey(_markerName), isFalse);
+        expect(inner.values.containsKey(_migratingName), isFalse);
+      },
+    );
+
+    test(
+      'a hardened add that fails to stick opens the database from the copy, '
+      'never writes the key back under the old protections, and the next '
+      'launch finishes',
+      () async {
+        await restoreOldPhoneDatabase();
+        platform.values[_keyName] = _oldPhoneKey;
+        final inner = platform;
+        FlutterSecureStoragePlatform.instance = _FirstWriteVanishes(
+          inner,
+          ofKey: _keyName,
+        );
+
+        final launch = await bootstrap().launch();
+
+        expect(launch, isA<LocalDatabaseReady>());
+        expect(inner.values.containsKey(_keyName), isFalse);
+        expect(inner.values[_migratingName], _oldPhoneKey);
+        expect(inner.values.containsKey(_markerName), isFalse);
+        expect(inner.writes.where((w) => w.key == _keyName), hasLength(1));
+        await (launch as LocalDatabaseReady).database.close();
+        opened.remove(launch.database);
+
+        FlutterSecureStoragePlatform.instance = inner;
+        final next = await bootstrap().launch();
+
+        expect(next, isA<LocalDatabaseReady>());
+        expect(await (next as LocalDatabaseReady).database.piecesDao.countPieces(), 1);
+        expect(inner.values[_keyName], _oldPhoneKey);
+        expect(inner.values[_markerName], '2');
+        expect(inner.values.containsKey(_migratingName), isFalse);
+      },
+    );
+
+    test(
+      'a rotation that died after its copy landed: the copy opens the '
+      'database and becomes the key',
+      () async {
+        const rotated = 'rotatedKey0123456789abcdefghijkl';
+        final emptied = await openEncrypted(dbFile(), rotated);
+        await emptied.customSelect('SELECT 1').get();
+        await emptied.close();
+        opened.remove(emptied);
+        platform.values[_keyName] = _oldPhoneKey;
+        platform.values[_markerName] = '2';
+        platform.values[_migratingName] = rotated;
+
+        final launch = await bootstrap().launch();
+
+        expect(launch, isA<LocalDatabaseReady>());
+        expect(
+          await (launch as LocalDatabaseReady).database.piecesDao.countPieces(),
+          0,
+        );
+        expect(platform.values[_keyName], rotated);
+        expect(platform.values.containsKey(_migratingName), isFalse);
+        expect(platform.values[_markerName], '2');
+      },
+    );
+
+    test(
+      'a copy that does not open the database either is a key mismatch, '
+      'and nothing is changed',
+      () async {
+        await restoreOldPhoneDatabase();
+        platform.values[_keyName] = 'someOtherKey123456789abcdefghijk';
+        platform.values[_markerName] = '2';
+        platform.values[_migratingName] = 'yetAnotherKey123456789abcdefghij';
+
+        final launch = await bootstrap().launch();
+
+        expect(launch, isA<LocalDatabaseUnreadable>());
+        expect(
+          (launch as LocalDatabaseUnreadable).recovery.cause,
+          UnreadableDatabaseCause.keyMismatch,
+        );
+        expect(platform.values[_keyName], 'someOtherKey123456789abcdefghijk');
+        expect(
+          platform.values[_migratingName],
+          'yetAnotherKey123456789abcdefghij',
+        );
+      },
+    );
+
+    test(
+      'iOS: a launch before the first unlock fails and is retried, never '
+      'recovery, and never creates a key',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        keys = EncryptionKeyService(
+          storage: const FlutterSecureStorage(
+            iOptions: EncryptionKeyService.iosOptions,
+            aOptions: EncryptionKeyService.androidOptions,
+          ),
+          protectedDataAvailable: () async => false,
+        );
+
+        await expectLater(
+          bootstrap().launch(),
+          throwsA(isA<KeyStoreUnavailableException>()),
+        );
+        expect(platform.values, isEmpty);
+        expect(dbFile().existsSync(), isFalse);
+
+        await restoreOldPhoneDatabase();
+        await expectLater(
+          bootstrap().launch(),
+          throwsA(isA<KeyStoreUnavailableException>()),
+        );
+        expect(platform.values, isEmpty);
+        expect(dbFile().existsSync(), isTrue);
+      },
+    );
+
+    test(
+      'Android: a read failure that is not a decrypt failure fails the '
+      'launch, never recovery',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        await restoreOldPhoneDatabase();
+        platform.readFailure = PlatformException(
+          code: 'Exception encountered',
+          message: 'read',
+          details: 'java.lang.NullPointerException: storageCipher',
+        );
+
+        await expectLater(
+          bootstrap().launch(),
+          throwsA(isA<PlatformException>()),
+        );
+        expect(dbFile().existsSync(), isTrue);
       },
     );
   });
@@ -490,7 +631,10 @@ void main() {
 /// rewrite whose delete succeeded and whose add did not.
 class _FirstWriteVanishes extends FlutterSecureStoragePlatform
     with MockPlatformInterfaceMixin {
-  _FirstWriteVanishes(this._inner);
+  _FirstWriteVanishes(this._inner, {this.ofKey});
+
+  /// The key whose first write vanishes; null for whichever comes first.
+  final String? ofKey;
 
   final FakeSecureStoragePlatform _inner;
   var _writes = 0;
@@ -502,7 +646,7 @@ class _FirstWriteVanishes extends FlutterSecureStoragePlatform
     required Map<String, String> options,
   }) async {
     _inner.writes.add(RecordedWrite(key, value, Map.of(options)));
-    if (_writes++ == 0) {
+    if ((ofKey == null || key == ofKey) && _writes++ == 0) {
       _inner.values.remove(key);
       return;
     }

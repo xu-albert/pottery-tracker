@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,7 +22,6 @@ void main() {
   late Directory docs;
   late FakeSecureStoragePlatform platform;
   late TransferKeyBackup backup;
-  late ProviderContainer container;
 
   setUp(() {
     docs = Directory.systemTemp.createTempSync('passphrase_sheet_');
@@ -35,7 +33,7 @@ void main() {
 
   tearDown(() => docs.deleteSync(recursive: true));
 
-  Future<void> pumpSheet(WidgetTester tester, {bool alreadySet = false}) async {
+  Future<void> pumpSheet(WidgetTester tester) async {
     await pumpApp(
       tester,
       Builder(
@@ -54,10 +52,8 @@ void main() {
           ),
         ),
         transferKeyBackupProvider.overrideWithValue(backup),
-        transferPassphraseSetProvider.overrideWith((ref) => alreadySet),
       ],
     );
-    container = ProviderScope.containerOf(tester.element(find.text('open')));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -99,15 +95,13 @@ void main() {
   });
 
   testWidgets(
-    'a valid passphrase writes the backup with this device\'s key, marks '
-    'it set and closes',
+    'a valid passphrase writes the backup with this device\'s key and closes',
     (tester) async {
       await pumpSheet(tester);
       await enterBoth(tester, 'correct horse', 'correct horse');
 
       expect(backup.exists(), isTrue);
       expect(await backup.read('correct horse'), _dbKey);
-      expect(container.read(transferPassphraseSetProvider), isTrue);
       expect(find.text(_l10n.save), findsNothing);
       expect(find.text(_l10n.transferPassphraseSaved), findsOneWidget);
     },
@@ -121,7 +115,6 @@ void main() {
     await enterBoth(tester, 'correct horse', 'correct horse');
 
     expect(backup.exists(), isFalse);
-    expect(container.read(transferPassphraseSetProvider), isFalse);
     expect(
       find.textContaining('no database key', findRichText: true),
       findsOneWidget,
@@ -131,20 +124,20 @@ void main() {
   group('when one is already set', () {
     setUp(() => backup.write(databaseKey: _dbKey, passphrase: 'old phrase'));
 
-    testWidgets('offers to change or remove', (tester) async {
-      await pumpSheet(tester, alreadySet: true);
+    testWidgets('offers to change or remove, read from the file itself', (tester) async {
+      await pumpSheet(tester);
       expect(find.text(_l10n.changeTransferPassphrase), findsOneWidget);
       expect(find.text(_l10n.removeTransferPassphrase), findsOneWidget);
     });
 
     testWidgets('changing replaces the passphrase', (tester) async {
-      await pumpSheet(tester, alreadySet: true);
+      await pumpSheet(tester);
       await enterBoth(tester, 'new phrase here', 'new phrase here');
       expect(await backup.read('new phrase here'), _dbKey);
     });
 
     testWidgets('removing asks first; cancelling keeps it', (tester) async {
-      await pumpSheet(tester, alreadySet: true);
+      await pumpSheet(tester);
       await tester.tap(find.text(_l10n.removeTransferPassphrase));
       await tester.pumpAndSettle();
       expect(find.byType(CupertinoAlertDialog), findsOneWidget);
@@ -155,20 +148,18 @@ void main() {
       await tester.tap(find.text(_l10n.cancel));
       await tester.pumpAndSettle();
       expect(backup.exists(), isTrue);
-      expect(container.read(transferPassphraseSetProvider), isTrue);
     });
 
-    testWidgets('confirming removes the file and clears the flag', (
+    testWidgets('confirming removes the file', (
       tester,
     ) async {
-      await pumpSheet(tester, alreadySet: true);
+      await pumpSheet(tester);
       await tester.tap(find.text(_l10n.removeTransferPassphrase));
       await tester.pumpAndSettle();
       await tester.tap(find.text(_l10n.remove));
       await tester.pumpAndSettle();
       expect(backup.exists(), isFalse);
-      expect(container.read(transferPassphraseSetProvider), isFalse);
-      expect(find.text(_l10n.transferPassphraseRemoved), findsOneWidget);
+        expect(find.text(_l10n.transferPassphraseRemoved), findsOneWidget);
     });
   });
 }

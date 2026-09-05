@@ -83,10 +83,22 @@ class AppDatabase extends _$AppDatabase {
 
   /// Re-encrypts the open database under [key], in place.
   ///
-  /// Quoted the way `configureSqlCipher` quotes `PRAGMA key`: sqlite3 cannot
-  /// bind a pragma value, so the key is a literal.
-  Future<void> rekey(String key) =>
-      customStatement("PRAGMA rekey = '${key.replaceAll("'", "''")}'");
+  /// Quoted and, on failure, redacted the way `configureSqlCipher` handles
+  /// `PRAGMA key`: sqlite3 cannot bind a pragma value, so the key is a
+  /// literal in the statement, and sqlite3 quotes the statement in its
+  /// error — which is logged, shown and reported — so that error never
+  /// leaves here as it came.
+  Future<void> rekey(String key) async {
+    try {
+      await customStatement('PRAGMA rekey = ${sqlKeyLiteral(key)}');
+    } on SqliteException catch (error) {
+      throw keyingFailure(error, key);
+    } on DriftWrappedException catch (error) {
+      final cause = error.cause;
+      if (cause is SqliteException) throw keyingFailure(cause, key);
+      rethrow;
+    }
+  }
 
   @override
   int get schemaVersion => 9;

@@ -23,8 +23,10 @@ Future<void> showTransferPassphraseSheet(BuildContext context) {
 ///
 /// Validation is the sheet's: length and a matching repeat. Writing the file
 /// needs the current key, read from the key store on save so the sheet never
-/// holds it longer than the write. The "set" flag the settings tile shows is
-/// updated here, from what actually happened on disk.
+/// holds it longer than the write. Whether a passphrase is already set is
+/// read from the file itself when the sheet opens — there is no separate
+/// flag to go stale when an erase deletes the file — and the settings tile
+/// reads the file again once the sheet closes.
 class TransferPassphraseSheet extends ConsumerStatefulWidget {
   const TransferPassphraseSheet({super.key});
 
@@ -40,6 +42,7 @@ class _TransferPassphraseSheetState
   String? _passphraseError;
   String? _repeatError;
   bool _busy = false;
+  late final bool _alreadySet = ref.read(transferKeyBackupProvider).exists();
 
   @override
   void dispose() {
@@ -77,7 +80,6 @@ class _TransferPassphraseSheetState
       await ref
           .read(transferKeyBackupProvider)
           .write(databaseKey: key, passphrase: passphrase);
-      ref.read(transferPassphraseSetProvider.notifier).state = true;
       if (!mounted) return;
       Navigator.of(context).pop();
       AppSnackbar.show(context, message: l10n.transferPassphraseSaved);
@@ -120,7 +122,6 @@ class _TransferPassphraseSheetState
     setState(() => _busy = true);
     try {
       await ref.read(transferKeyBackupProvider).delete();
-      ref.read(transferPassphraseSetProvider.notifier).state = false;
       if (!mounted) return;
       Navigator.of(context).pop();
       AppSnackbar.show(context, message: l10n.transferPassphraseRemoved);
@@ -139,7 +140,7 @@ class _TransferPassphraseSheetState
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final alreadySet = ref.watch(transferPassphraseSetProvider);
+    final alreadySet = _alreadySet;
 
     return Padding(
       padding: EdgeInsets.only(

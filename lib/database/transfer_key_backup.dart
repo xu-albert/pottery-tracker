@@ -67,17 +67,29 @@ class TransferKeyBackup {
   static File fileFor(Directory documentsDir) =>
       File(p.join(documentsDir.path, fileName));
 
+  /// Where a replacement is written before it takes the backup's place.
+  static File _stagingFor(File file) => File('${file.path}.tmp');
+
   /// Removes the backup at [documentsDir], for erase paths that have no
   /// instance — the file must go wherever the database it unlocks goes.
   static Future<void> deleteIn(Directory documentsDir) async {
-    final file = fileFor(documentsDir);
-    if (file.existsSync()) file.deleteSync();
+    _deleteFiles(fileFor(documentsDir));
+  }
+
+  static void _deleteFiles(File file) {
+    for (final f in [file, _stagingFor(file)]) {
+      if (f.existsSync()) f.deleteSync();
+    }
   }
 
   bool exists() => _file.existsSync();
 
   /// Writes [databaseKey] wrapped under [passphrase], replacing any earlier
   /// backup — there is only ever one passphrase.
+  ///
+  /// The replacement is built next to the backup and renamed over it only
+  /// once the key is inside, so a change that fails partway leaves the
+  /// previous passphrase working rather than no backup at all.
   Future<void> write({
     required String databaseKey,
     required String passphrase,
@@ -89,9 +101,10 @@ class TransferKeyBackup {
         'must be at least $minPassphraseLength characters',
       );
     }
-    if (_file.existsSync()) _file.deleteSync();
+    final staging = _stagingFor(_file);
+    if (staging.existsSync()) staging.deleteSync();
 
-    final db = _openSqlite(_file.path);
+    final db = _openSqlite(staging.path);
     try {
       _keyDatabase(db, passphrase);
       db.execute(
@@ -106,10 +119,11 @@ class TransferKeyBackup {
       // A half-written backup would read as "you have a passphrase" and then
       // fail to open on the new phone, which is worse than having none.
       db.dispose();
-      if (_file.existsSync()) _file.deleteSync();
+      if (staging.existsSync()) staging.deleteSync();
       rethrow;
     }
     db.dispose();
+    staging.renameSync(_file.path);
   }
 
   /// The database key the backup holds, if [passphrase] opens it.
@@ -144,7 +158,7 @@ class TransferKeyBackup {
   /// under a widget test's fake clock still sees the result the moment the
   /// future completes.
   Future<void> delete() async {
-    if (_file.existsSync()) _file.deleteSync();
+    _deleteFiles(_file);
   }
 }
 

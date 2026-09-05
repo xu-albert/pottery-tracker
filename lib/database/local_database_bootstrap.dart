@@ -166,10 +166,33 @@ class LocalDatabaseBootstrap {
     try {
       return LocalDatabaseReady(await _openAndProbe(key));
     } on _NotADatabaseException {
+      final staged = await _keys.readMigratingCopy();
+      if (staged != null && staged != key) {
+        try {
+          return LocalDatabaseReady(await _openWithStagedKey(staged));
+        } on _NotADatabaseException {
+          // Not the rotation's key either.
+        }
+      }
       return LocalDatabaseUnreadable(
         _Recovery(this, UnreadableDatabaseCause.keyMismatch),
       );
     }
+  }
+
+  /// A rotation at erase rekeys the file and then stores the new key, via a
+  /// migrating copy first. A process that died between the copy landing and
+  /// the item being replaced left the file keyed to the copy; opening with it
+  /// and finishing the store is that launch's ordinary continuation.
+  Future<AppDatabase> _openWithStagedKey(String staged) async {
+    final db = await _openAndProbe(staged);
+    try {
+      await _keys.storeKey(staged);
+    } catch (_) {
+      await db.close();
+      rethrow;
+    }
+    return db;
   }
 
   /// Opens the database and runs one statement against it, so a key that

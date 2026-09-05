@@ -58,18 +58,6 @@ void main() {
       }
     });
 
-    test('the legacy options are what the plugin defaulted to', () {
-      // Pinned so the fallback rewrite puts the key back exactly where the
-      // released app kept it, and nowhere new.
-      final legacy = EncryptionKeyService.legacyIosOptions.toMap();
-      expect(legacy, containsPair('accessibility', 'unlocked'));
-      expect(legacy, containsPair('synchronizable', 'false'));
-      expect(
-        EncryptionKeyService.legacyIosOptions.toMap()['accessibility'],
-        IOSOptions.defaultOptions.toMap()['accessibility'],
-      );
-    });
-
     test('the default storage carries the pinned options', () {
       expect(
         EncryptionKeyService.defaultStorage.iOptions.toMap(),
@@ -98,6 +86,8 @@ void main() {
         containsPair('synchronizable', 'false'),
       ]),
     );
+    /// What the released app stored the key under (the plugin default), and
+    /// what nothing may ever be written under again.
     final legacyIos = isA<IOSOptions>().having(
       (o) => o.toMap()['accessibility'],
       'accessibility',
@@ -265,10 +255,9 @@ void main() {
       );
     });
 
-    test('the fallback, and only the fallback, uses the legacy iOS options — '
-        'with the Android options unchanged', () async {
+    test('when the hardened add does not stick, nothing is written under the '
+        'legacy options: the copy stays and the marker is unset', () async {
       final stored = <String, String>{_keyName: _legacyKey};
-      var writes = 0;
       when(
         () => storage.write(
           key: any(named: 'key'),
@@ -279,7 +268,7 @@ void main() {
       ).thenAnswer((i) async {
         final key = i.namedArguments[#key] as String;
         // The hardened write deletes and fails to re-add.
-        if (key == _keyName && writes++ == 0) {
+        if (key == _keyName) {
           stored.remove(_keyName);
           return;
         }
@@ -295,16 +284,18 @@ void main() {
 
       await onMock.hardenStoredKey(_legacyKey);
 
-      verify(
+      verifyNever(
         () => storage.write(
-          key: _keyName,
-          value: _legacyKey,
+          key: any(named: 'key'),
+          value: any(named: 'value'),
           iOptions: any(named: 'iOptions', that: legacyIos),
-          aOptions: any(named: 'aOptions', that: hardenedAndroid),
+          aOptions: any(named: 'aOptions'),
         ),
-      ).called(1);
-      expect(stored[_keyName], _legacyKey);
+      );
+      expect(stored.containsKey(_keyName), isFalse);
+      expect(stored[_migratingName], _legacyKey);
       expect(stored.containsKey(_markerName), isFalse);
+      expect(await onMock.readKey(), _legacyKey);
     });
   });
 
@@ -339,6 +330,18 @@ void main() {
       expect(await service.readKey(), isNull);
     });
 
+    test('Android: a read failure that is not a decrypt failure propagates', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      platform.values[_keyName] = _legacyKey;
+      platform.readFailure = PlatformException(
+        code: 'Exception encountered',
+        message: 'read',
+        details: 'java.lang.NullPointerException: storageCipher',
+      );
+      expect(service.readKey(), throwsA(isA<PlatformException>()));
+    });
+
     test('falls back to the migrating copy when the item itself is gone', () async {
       platform.values[_migratingName] = _legacyKey;
       expect(await service.readKey(), _legacyKey);
@@ -348,6 +351,63 @@ void main() {
       platform.values[_keyName] = _legacyKey;
       platform.values[_migratingName] = 'staleCopy0123456789abcdefghijklm';
       expect(await service.readKey(), _legacyKey);
+    });
+
+    test('readMigratingCopy reads the copy alone', () async {
+      platform.values[_keyName] = _legacyKey;
+      expect(await service.readMigratingCopy(), isNull);
+      platform.values[_migratingName] = 'staleCopy0123456789abcdefghijklm';
+      expect(
+        await service.readMigratingCopy(),
+        'staleCopy0123456789abcdefghijklm',
+      );
+    });
+
+    group('iOS, before the first unlock', () {
+      EncryptionKeyService withProtectedData(Future<bool?> Function() answer) =>
+          EncryptionKeyService(
+            storage: const FlutterSecureStorage(
+              iOptions: EncryptionKeyService.iosOptions,
+              aOptions: EncryptionKeyService.androidOptions,
+            ),
+            protectedDataAvailable: answer,
+          );
+
+      setUp(() {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      });
+
+      test('nothing stored while protected data is unavailable is not '
+          '"no key"', () {
+        final locked = withProtectedData(() async => false);
+        expect(
+          locked.readKey(),
+          throwsA(isA<KeyStoreUnavailableException>()),
+        );
+      });
+
+      test('nothing stored with protected data available reads as null', () async {
+        final unlocked = withProtectedData(() async => true);
+        expect(await unlocked.readKey(), isNull);
+      });
+
+      test('a stored key is returned without asking', () async {
+        platform.values[_keyName] = _legacyKey;
+        final unasked = withProtectedData(() async => throw StateError('asked'));
+        expect(await unasked.readKey(), _legacyKey);
+      });
+
+      test('a platform with no such notion answers null and is trusted', () async {
+        final unknown = withProtectedData(() async => null);
+        expect(await unknown.readKey(), isNull);
+      });
+
+      test('Android never asks', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final locked = withProtectedData(() async => false);
+        expect(await locked.readKey(), isNull);
+      });
     });
   });
 
@@ -460,41 +520,43 @@ void main() {
       expect(platform.values[_markerName], '2');
     });
 
-    test('when the hardened write does not stick, the key is put back under '
-        'the legacy options and the marker is left unset', () async {
+    test('when the hardened write does not stick, the copy survives, the '
+        'marker is left unset, and the next launch finishes', () async {
       platform.values[_keyName] = _legacyKey;
-      var mainWrites = 0;
       final original = platform;
       FlutterSecureStoragePlatform.instance = _ScriptedPlatform(
         original,
         onWrite: (key, value, options) {
-          // The hardened add of the item vanishes; the fallback lands.
-          if (key == _keyName && mainWrites++ == 0) return;
+          // The hardened add of the item vanishes.
+          if (key == _keyName) return;
           original.values[key] = value;
         },
       );
 
       await service.hardenStoredKey(_legacyKey);
 
-      expect(original.values[_keyName], _legacyKey);
+      expect(original.values.containsKey(_keyName), isFalse);
+      expect(original.values[_migratingName], _legacyKey);
       expect(original.values.containsKey(_markerName), isFalse);
+      expect(original.writes.where((w) => w.key == _keyName), hasLength(1));
+
+      FlutterSecureStoragePlatform.instance = original;
+      expect(await service.readKey(), _legacyKey);
+      await service.hardenStoredKey(_legacyKey);
+
+      expect(original.values[_keyName], _legacyKey);
+      expect(original.values[_markerName], '2');
       expect(original.values.containsKey(_migratingName), isFalse);
-      final fallback = original.writes.last;
-      expect(fallback.key, _keyName);
-      if (fallback.options.containsKey('accessibility')) {
-        expect(fallback.options['accessibility'], 'unlocked');
-      }
     });
 
-    test('a failing hardened write falls back the same way', () async {
+    test('a hardened write that throws leaves the copy the same way', () async {
       platform.values[_keyName] = _legacyKey;
-      var mainWrites = 0;
       final original = platform;
       FlutterSecureStoragePlatform.instance = _ScriptedPlatform(
         original,
         onWrite: (key, value, options) {
-          if (key == _keyName && mainWrites++ == 0) {
-            throw PlatformException(code: 'denied');
+          if (key == _keyName) {
+            throw PlatformException(code: 'interaction-not-allowed');
           }
           original.values[key] = value;
         },
@@ -502,9 +564,10 @@ void main() {
 
       await service.hardenStoredKey(_legacyKey);
 
-      expect(original.values[_keyName], _legacyKey);
+      expect(original.values.containsKey(_keyName), isFalse);
+      expect(original.values[_migratingName], _legacyKey);
       expect(original.values.containsKey(_markerName), isFalse);
-      expect(original.values.containsKey(_migratingName), isFalse);
+      expect(await service.readKey(), _legacyKey);
     });
 
     test(
@@ -557,7 +620,7 @@ void main() {
 
         expect(original.values[_keyName], _legacyKey);
         expect(original.values.containsKey(_markerName), isFalse);
-        // The key is never rewritten under the legacy options in this case.
+        expect(original.values.containsKey(_migratingName), isFalse);
         expect(original.writes.where((w) => w.key == _keyName), hasLength(1));
       },
     );

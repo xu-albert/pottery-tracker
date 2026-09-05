@@ -7,10 +7,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// Thrown when the database key could not be persisted where the next launch
 /// will look for it.
 ///
-/// Raised only after every fallback has been tried and a read-back still does
-/// not return the key. Continuing would let this session write pottery into a
-/// database that no launch after it can open, so the caller must stop rather
-/// than proceed with the key it still holds in memory.
+/// Raised only once neither the stored item nor its migrating copy reads
+/// back. Continuing would let this session write pottery into a database
+/// that no launch after it can open, so the caller must stop rather than
+/// proceed with the key it still holds in memory.
 class KeyStorageException implements Exception {
   const KeyStorageException(this.message);
 
@@ -18,6 +18,23 @@ class KeyStorageException implements Exception {
 
   @override
   String toString() => 'KeyStorageException: $message';
+}
+
+/// Thrown when the keychain cannot answer yet.
+///
+/// On iOS, before the device has been unlocked for the first time since it
+/// started — when iOS may prewarm the app — every item is inaccessible, and
+/// the plugin reports an item it may not read as absent. That is not "no
+/// key". A launch that gets this must fail and be retried, never decide that
+/// the database has no key: that decision is only safe once protected data
+/// is available.
+class KeyStoreUnavailableException implements Exception {
+  const KeyStoreUnavailableException();
+
+  @override
+  String toString() =>
+      'KeyStoreUnavailableException: the keychain is not available yet; the '
+      'device has not been unlocked since it started';
 }
 
 /// Owns the SQLCipher key for the local database: where it is kept, under
@@ -50,8 +67,9 @@ class KeyStorageException implements Exception {
 /// A key that reaches the disk under different protections than these is a
 /// silent regression — on iOS it starts travelling in backups again — so
 /// every call here passes the options explicitly rather than relying on the
-/// injected storage's defaults, and [hardenStoredKey] is what moves a key
-/// stored by a release before this one.
+/// injected storage's defaults, nothing is ever written under any other
+/// options, and [hardenStoredKey] is what moves a key stored by a release
+/// before this one.
 class EncryptionKeyService {
   static const _storageKey = 'db_encryption_key';
 
@@ -80,14 +98,6 @@ class EncryptionKeyService {
     synchronizable: false,
   );
 
-  /// What releases before this one stored the key under, kept only so a
-  /// hardening rewrite that fails can put the key back where it was rather
-  /// than leave the device with no key at all.
-  static const legacyIosOptions = IOSOptions(
-    accessibility: KeychainAccessibility.unlocked,
-    synchronizable: false,
-  );
-
   /// The one Android configuration the key is ever written under.
   static const androidOptions = AndroidOptions(
     encryptedSharedPreferences: false,
@@ -104,9 +114,19 @@ class EncryptionKeyService {
   );
 
   final FlutterSecureStorage _storage;
+  final Future<bool?> Function() _protectedDataAvailable;
 
-  EncryptionKeyService({FlutterSecureStorage? storage})
-    : _storage = storage ?? defaultStorage;
+  /// [protectedDataAvailable] answers whether the iOS keychain can be read at
+  /// all right now (see [KeyStoreUnavailableException]). It defaults to the
+  /// plugin's own query and is injectable because the plugin only answers it
+  /// over a real method channel; null means the platform has no such notion.
+  EncryptionKeyService({
+    FlutterSecureStorage? storage,
+    Future<bool?> Function()? protectedDataAvailable,
+  }) : _storage = storage ?? defaultStorage,
+       _protectedDataAvailable =
+           protectedDataAvailable ??
+           (storage ?? defaultStorage).isCupertinoProtectedDataAvailable;
 
   /// Generates a fresh 32-character alphanumeric key.
   ///
@@ -130,12 +150,27 @@ class EncryptionKeyService {
   /// died halfway through a rewrite finds the key in the migrating copy
   /// instead (see [_writeMigratingCopy]).
   ///
-  /// On iOS a storage failure propagates rather than reading as "no key":
-  /// a keychain that refuses says nothing about the item, and treating an
-  /// unreadable key as a missing one would send a user with a perfectly good
-  /// database into recovery. Android is the exception — see [_read].
-  Future<String?> readKey() async =>
-      await _read(_storageKey) ?? await _read(_migratingStorageKey);
+  /// Null is only returned once it can be trusted. On iOS the plugin reports
+  /// an item it is not allowed to read as absent, so a null is confirmed
+  /// against protected-data availability and becomes
+  /// [KeyStoreUnavailableException] when the keychain is simply not open
+  /// yet. A read that throws propagates rather than reading as "no key";
+  /// Android's one exception is in [_read].
+  Future<String?> readKey() async {
+    final key =
+        await _read(_storageKey) ?? await _read(_migratingStorageKey);
+    if (key != null) return key;
+    if (defaultTargetPlatform == TargetPlatform.iOS &&
+        await _protectedDataAvailable() == false) {
+      throw const KeyStoreUnavailableException();
+    }
+    return null;
+  }
+
+  /// The migrating copy alone, for a launch whose stored key does not open
+  /// the database: a rotation at erase that died after its copy landed but
+  /// before the item was replaced left the file keyed to the copy.
+  Future<String?> readMigratingCopy() => _read(_migratingStorageKey);
 
   /// Generates a key, stores it under the pinned options and returns it.
   ///
@@ -161,17 +196,18 @@ class EncryptionKeyService {
   /// changed in place, so the item is deleted (under any accessibility) and
   /// added again under the pinned one — see [_addMain], with a copy on disk
   /// throughout ([_writeMigratingCopy]) so that a process dying between the
-  /// two leaves a key the next launch can read; the Android plugin re-encrypts every
-  /// value when the cipher options differ from the ones it recorded. Both
-  /// are idempotent, so the marker is an optimisation that also spares the
-  /// key a delete-and-add on every launch.
+  /// two leaves a key the next launch can read; the Android plugin
+  /// re-encrypts every value when the cipher options differ from the ones it
+  /// recorded. Both are idempotent, so the marker is an optimisation that
+  /// also spares the key a delete-and-add on every launch.
   ///
-  /// Verified by reading back. If the hardened write does not stick, the key
-  /// is written back under [legacyIosOptions] so the device is no worse off
-  /// than before this launch, and the marker is left unset so the next launch
-  /// tries again. A [KeyStorageException] stops the launch only if neither
-  /// the item nor the copy reads back: proceeding with the in-memory key
-  /// would let this session add pottery that no later launch can read.
+  /// Verified by reading back. If the hardened add does not stick, the copy
+  /// — itself under the pinned options — is what the device keeps, and the
+  /// marker is left unset so the next launch tries again; nothing is ever
+  /// written back under the old protections. A [KeyStorageException] stops
+  /// the launch only if neither the item nor the copy reads back: proceeding
+  /// with the in-memory key would let this session add pottery that no
+  /// later launch can read.
   Future<void> hardenStoredKey(String key) async {
     if (await _read(_storageVersionKey) == _currentStorageVersion) return;
 
@@ -196,27 +232,26 @@ class EncryptionKeyService {
       hardened = await _addMain(key, iosOptions);
       if (!hardened) {
         debugPrint(
-          'EncryptionKeyService: the hardened key did not read back; '
-          'restoring the previous protections',
+          'EncryptionKeyService: the hardened key did not read back; the '
+          'migrating copy stays until the next launch',
         );
       }
     } catch (e) {
-      debugPrint('EncryptionKeyService: hardening rewrite failed: $e');
+      debugPrint(
+        'EncryptionKeyService: hardening rewrite failed; the migrating copy '
+        'stays until the next launch: $e',
+      );
     }
     if (hardened) {
       await _finishHardened();
       return;
     }
 
-    if (await _addMain(key, legacyIosOptions)) {
-      await _tryDeleteMigratingCopy();
-      return;
-    }
     if (await _read(_migratingStorageKey) != key) {
       throw const KeyStorageException(
-        'the database key could not be stored under either the current or '
-        'the previous protections; refusing to open the database with a key '
-        'the next launch will not have',
+        'the database key could not be stored under the pinned protections '
+        'and its migrating copy is gone; refusing to open the database with '
+        'a key the next launch will not have',
       );
     }
   }
@@ -290,6 +325,9 @@ class EncryptionKeyService {
   /// launch that is the same situation as a restored database with no key:
   /// the recovery screen, not a launch failure whose retry fails the same
   /// way forever. The next write replaces the value and reads back fine.
+  /// Only that failure reads as absent — the plugin reports every error
+  /// under one code, so it is told apart by the `AEADBadTagException` the
+  /// GCM decrypt raises; anything else propagates, as on iOS.
   Future<String?> _read(String name) async {
     final String? value;
     try {
@@ -299,15 +337,21 @@ class EncryptionKeyService {
         aOptions: androidOptions,
       );
     } on PlatformException catch (e) {
-      if (defaultTargetPlatform != TargetPlatform.android) rethrow;
+      if (defaultTargetPlatform != TargetPlatform.android ||
+          !_isUndecryptable(e)) {
+        rethrow;
+      }
       debugPrint(
-        'EncryptionKeyService: $name is stored but cannot be read on this '
-        'device: $e',
+        'EncryptionKeyService: $name is stored but cannot be decrypted on '
+        'this device: $e',
       );
       return null;
     }
     return (value == null || value.isEmpty) ? null : value;
   }
+
+  static bool _isUndecryptable(PlatformException e) =>
+      '${e.message} ${e.details}'.contains('AEADBadTagException');
 
   Future<void> _write(String name, String value, IOSOptions iOptions) =>
       _storage.write(

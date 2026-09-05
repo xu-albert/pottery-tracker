@@ -79,14 +79,64 @@ void main() {
       throwsA(isA<SqlCipherUnavailableException>()),
     );
     expect(refusing.exists(), isFalse);
+    expect(docs.listSync(), isEmpty);
   });
 
-  test('the production keyer is the SQLCipher guard', () {
-    // Not exercisable here (no SQLCipher under flutter test), but the default
-    // must stay the guard: it is what refuses to write the key in the clear
-    // when SQLCipher did not load.
+  test('a change that fails partway keeps the previous passphrase working', () async {
+    await backup.write(databaseKey: _dbKey, passphrase: 'first phrase');
+    final refusing = TransferKeyBackup(
+      documentsDir: docs,
+      keyDatabase: (_, _) => throw const SqlCipherUnavailableException(),
+    );
+
+    await expectLater(
+      refusing.write(databaseKey: _dbKey, passphrase: 'second phrase'),
+      throwsA(isA<SqlCipherUnavailableException>()),
+    );
+
+    expect(backup.exists(), isTrue);
+    expect(await backup.read('first phrase'), _dbKey);
+    expect(docs.listSync().map((f) => f.path.split('/').last), [
+      TransferKeyBackup.fileName,
+    ]);
+  });
+
+  test('a replacement only takes the old backup\'s place once it holds the '
+      'key', () async {
+    await backup.write(databaseKey: _dbKey, passphrase: 'first phrase');
+    final finalFile = TransferKeyBackup.fileFor(docs);
+    final before = finalFile.lastModifiedSync();
+    String? finalDuringWrite;
+    final observing = TransferKeyBackup(
+      documentsDir: docs,
+      keyDatabase: (db, key) {
+        fakeSqlCipher(db, key);
+        finalDuringWrite = finalFile.existsSync()
+            ? finalFile.lastModifiedSync().toIso8601String()
+            : null;
+      },
+    );
+
+    await observing.write(databaseKey: _dbKey, passphrase: 'second phrase');
+
+    expect(finalDuringWrite, before.toIso8601String());
+    expect(await backup.read('second phrase'), _dbKey);
+  });
+
+  test('the production keyer refuses to write when SQLCipher is not what '
+      'loaded, and leaves nothing behind', () async {
+    // `flutter test` runs on plain sqlite3, so the guard's probe finds no
+    // cipher and refuses — which is exactly what must happen on a build
+    // where SQLCipher did not load, rather than a key written in the clear.
     final production = TransferKeyBackup(documentsDir: docs);
-    expect(production, isA<TransferKeyBackup>());
+
+    await expectLater(
+      production.write(databaseKey: _dbKey, passphrase: 'correct horse'),
+      throwsA(isA<SqlCipherUnavailableException>()),
+    );
+
+    expect(production.exists(), isFalse);
+    expect(docs.listSync(), isEmpty);
   });
 
   test('reading a missing backup is a programming error, not a wrong key', () {
@@ -104,6 +154,14 @@ void main() {
       await backup.write(databaseKey: _dbKey, passphrase: 'correct horse');
       await TransferKeyBackup.deleteIn(docs);
       expect(backup.exists(), isFalse);
+
+      // A replacement that never finished goes with them.
+      File('${TransferKeyBackup.fileFor(docs).path}.tmp').writeAsStringSync('x');
+      await backup.delete();
+      expect(docs.listSync(), isEmpty);
+      File('${TransferKeyBackup.fileFor(docs).path}.tmp').writeAsStringSync('x');
+      await TransferKeyBackup.deleteIn(docs);
+      expect(docs.listSync(), isEmpty);
     },
   );
 

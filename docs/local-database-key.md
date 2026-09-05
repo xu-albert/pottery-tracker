@@ -55,10 +55,18 @@ under `unlocked` is found), then `hardenStoredKey`:
    On Android the plugin re-encrypts on a cipher change. All of it is idempotent.
 3. Read back. Matches → delete the copy, then write the marker (best effort, and never before the
    copy is gone, or a launch that trusts the marker would leave it behind). Does not match, or
-   the write threw → write the key back under the **legacy** options (`unlocked`) so the device
-   is no worse off, leave the marker unset so the next launch retries. `KeyStorageException`
-   stops the launch only if neither the item nor the copy reads back: proceeding with the
-   in-memory key would let the user add pottery no later launch can read.
+   the add threw → the copy, itself under the pinned options, is what the device keeps, and the
+   marker stays unset so the next launch tries again; nothing is ever written back under the old
+   `unlocked` protections. `KeyStorageException` stops the launch only if neither the item nor
+   the copy reads back: proceeding with the in-memory key would let the user add pottery no
+   later launch can read.
+
+Before any of that, a launch that finds *no* key confirms the keychain is actually open. Before
+the first unlock after a restart — when iOS may prewarm the app — every item is inaccessible and
+the plugin reports it as absent, which is not "no key". `readKey` checks protected-data
+availability (`isCupertinoProtectedDataAvailable`) whenever it is about to answer null and throws
+`KeyStoreUnavailableException` instead, so the launch fails to the retry screen rather than
+deciding the database has no key and offering to delete it.
 
 Then the database is opened and probed with one statement (`SELECT count(*) FROM sqlite_master`), so
 a key that does not decrypt the file fails *here*, distinguishable, rather than on the album's
@@ -120,14 +128,21 @@ and a backup taken while the file existed keeps a copy of it after `deleteLocalD
 the original. Were the key never rotated, the next person on this device would be writing pottery
 under a key the previous owner's passphrase still unwraps. So `deleteLocalData` rekeys the emptied
 database in place (`AppDatabase.rekey`, `PRAGMA rekey`) and then stores the fresh key, in that
-order. If the store fails, the file is keyed back and the old key stored again, so the stored key
-and the file never disagree — the one combination that strands a launch. A rekey that fails is
-logged and skipped (the erase's promise is the data, and it is gone); a key-back that fails
-propagates, so the erase stays owed and its retry rotates again. Neither key ever enters a backup.
+order. If the store fails, the file is keyed back and the old key stored again. A process that
+dies in between leaves the file at the new key: once the store's migrating copy has landed, the
+next launch finds that the stored key does not open the file, probes the copy, and finishes the
+store (`LocalDatabaseBootstrap`); before the copy lands — the instant after the rekey — the
+launch is a key mismatch over an *empty* database, where Start fresh costs nothing and clears the
+owed erase. A rekey that fails is logged and skipped (the erase's promise is the data, and it is
+gone) and its error never quotes a key (`keyingFailure`, shared with `configureSqlCipher`); a
+key-back that fails propagates, so the erase stays owed and its retry rotates again. Neither key
+ever enters a backup.
 
 Settings › *Moving to a new phone* › **Transfer passphrase** (iOS): set / change / remove, with
-the threat model in the sheet text. State is `transferPassphraseSetProvider`, seeded from the file
-before `runApp`.
+the threat model in the sheet text. Whether one is set is read from the file itself, by the tile
+and by the sheet, so nothing goes stale when an erase deletes it. A replacement is written to a
+sibling temp file and renamed over the old one only once the key is inside, so a change that
+fails partway keeps the previous passphrase working.
 
 ### Android
 
@@ -143,10 +158,12 @@ backup agent walks from both `<device-transfer>` and `<cloud-backup>`, and
 Should a data directory reach another device anyway (a manufacturer's cloning tool that bypasses
 the backup framework), the plugin cannot decrypt the stored key: its storage key is wrapped by a
 KeyStore key that never leaves the device, and reading the value throws. On Android,
-`EncryptionKeyService` reports such a value as *no key*, so the launch lands on the recovery screen
-— where a restored iOS database goes — rather than on a launch failure whose retry fails the same
-way forever; the next write replaces the value and reads back. On iOS a read error is a keychain
-state, not a verdict on the item, and propagates as before.
+`EncryptionKeyService` reports that one failure as *no key* — the plugin reports every error under
+a single code, so it is told apart by the `AEADBadTagException` the GCM decrypt raises — and the
+launch lands on the recovery screen, where a restored iOS database goes, rather than on a launch
+failure whose retry fails the same way forever; the next write replaces the value and reads back.
+Any other read failure propagates to the launch-failed screen and its retry, as on iOS, where a
+read error is a keychain state, not a verdict on the item.
 
 The passphrase tile is behind `Platform.isIOS`; on Android the *Moving to a new phone* section
 states plainly that pottery kept only on this phone does not move, and that signing in is what
@@ -176,9 +193,12 @@ Real keychain behaviour — that the delete-then-add lands the item under
 `first_unlock_this_device`, and that the item is then absent from a restore — is native iOS
 behaviour exercised only on a device. The plugin's Swift for 9.2.4 was read (a delete with no
 accessibility in its query matches the item under any; an add creates it under the one given), and
-the service verifies by read-back with a legacy fallback, but the first release carrying this
+the service verifies by read-back with a migrating copy, but the first release carrying this
 should be checked once on a real iPhone: update from 1.2.x, confirm the marker is set and the
 database opens; then an encrypted backup restore onto a second device, confirming the recovery
-screen appears and the passphrase path opens the pottery. The Android path has never run on a
-device at all (see `AGENTS.md`); whether a given manufacturer's device-to-device transfer honours
+screen appears and the passphrase path opens the pottery; then Sign Out & Erase and relaunch,
+confirming the rekeyed, empty database opens with no recovery screen — plain sqlite3 ignores
+`PRAGMA rekey`, so the tests pin only the statement order and the key-back, never that SQLCipher
+rekeys the live keyed connection in place. The Android path has never run on a device at all (see
+`AGENTS.md`); whether a given manufacturer's device-to-device transfer honours
 `dataExtractionRules` is likewise only observable on two real devices.
