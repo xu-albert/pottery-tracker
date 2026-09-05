@@ -282,8 +282,9 @@ accurately:
   into the manifest by default; `android/app/src/main/AndroidManifest.xml` removes all three with
   `tools:node="remove"` and sets `google_analytics_adid_collection_enabled` to `false` so the SDK
   does not read the ID at runtime either. Decided 2026-08-18: accept reduced Analytics attribution.
-  On the form, **do not declare advertising-ID collection**; declare Analytics as app-interaction
-  data only.
+  On the form, **do not declare advertising-ID collection** — but Analytics still identifies the
+  device via the Firebase app-instance ID and the Firebase installation ID (neither is the
+  advertising ID), so declare both **"App interactions"** and **"Device or other IDs"**.
   Before uploading, confirm the permissions are still absent from the built artifact:
 
   ```bash
