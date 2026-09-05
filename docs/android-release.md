@@ -16,6 +16,7 @@ and what it unblocks.
 | `applicationId` | `com.potterytracker.pottery_tracker` — **permanent once published** | `android/app/build.gradle.kts` |
 | `minSdk` / `targetSdk` | 24 / 36, inherited from the Flutter SDK | `android/app/build.gradle.kts` |
 | Manifest hardening | `allowBackup="false"`, `usesCleartextTraffic="false"`, network security config | `android/app/src/main/AndroidManifest.xml` |
+| Advertising-ID permissions | the three `firebase_analytics` merges in are stripped with `tools:node="remove"`, and runtime collection is off — see "Data Safety" in section 6 | `android/app/src/main/AndroidManifest.xml` |
 | Portrait lock | `userPortrait` + restricted-resizability opt-out | see "Design Constraints" in `AGENTS.md` |
 | Release signing | reads `android/key.properties` if present, falls back to the debug key with a warning | `android/app/build.gradle.kts` |
 | Firebase Gradle plugins | `google-services`, `crashlytics`, `firebase-perf` all applied | `android/app/build.gradle.kts` |
@@ -275,10 +276,25 @@ accurately:
 - **Account identifiers** — Firebase Auth uid, email, display name.
 - **Photos and user content** — piece photos and metadata, in Firestore + Cloud Storage.
 - **Diagnostics** — Crashlytics and Performance.
-- **Analytics** — Firebase Analytics. Note this merges `com.google.android.gms.permission.AD_ID` and
-  the AdServices permissions into the manifest, so the form must declare **advertising-ID
-  collection** even though the app shows no ads. Whether to keep or strip that is a decision — see
-  section 8.
+- **Analytics** — Firebase Analytics, **without the advertising ID**. `firebase_analytics` (via
+  `play-services-measurement-api`) merges `com.google.android.gms.permission.AD_ID`,
+  `android.permission.ACCESS_ADSERVICES_AD_ID` and `android.permission.ACCESS_ADSERVICES_ATTRIBUTION`
+  into the manifest by default; `android/app/src/main/AndroidManifest.xml` removes all three with
+  `tools:node="remove"` and sets `google_analytics_adid_collection_enabled` to `false` so the SDK
+  does not read the ID at runtime either. Decided 2026-08-18: accept reduced Analytics attribution.
+  On the form, **do not declare advertising-ID collection** — but Analytics still identifies the
+  device via the Firebase app-instance ID and the Firebase installation ID (neither is the
+  advertising ID), so declare both **"App interactions"** and **"Device or other IDs"**.
+  Before uploading, confirm the permissions are still absent from the built artifact:
+
+  ```bash
+  ~/Library/Android/sdk/build-tools/<version>/aapt2 dump badging \
+    build/app/outputs/flutter-apk/app-release.apk | grep uses-permission
+  # expect no AD_ID and no ACCESS_ADSERVICES_* lines
+  ```
+
+  A `firebase_analytics` upgrade that starts pulling a newer measurement SDK is the usual way one
+  of these comes back.
 - **Feedback** — free text plus device model, OS version, app version and locale
   (`lib/services/feedback_service.dart`).
 - Encryption in transit: **yes**.
@@ -323,7 +339,7 @@ These are genuine product choices. Nothing in the repo presumes an answer to any
 | Apple-sign-in on Android | Apple sign-in is iOS-gated, so an account created with Apple on iPhone **cannot** be signed into on Android at all. Accept it / implement Apple-on-Android / mitigate by prompting iOS users to link Google. |
 | Cupertino widgets on Android | 11 files use `CupertinoAlertDialog` / `CupertinoTextField` / `CupertinoSearchTextField` unguarded. They render fine on Android but look iOS-styled inside a Material app. Ship as-is / adaptive dialogs / full Material conversion. |
 | Ko-fi donation link | Resolved: removed from the app on every platform (2026-08-18 ruling, option B). Nothing left to check against Play's payments policy. |
-| Analytics advertising ID | Keep it and disclose it on the Data Safety form, or strip `AD_ID` from the merged manifest. |
+| Analytics advertising ID | Resolved: stripped `AD_ID` (and the related `ACCESS_ADSERVICES_*` permissions) from the merged manifest (2026-08-18 ruling, option B); see section 0's Data Safety notes. |
 
 ---
 
