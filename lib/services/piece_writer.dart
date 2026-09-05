@@ -106,7 +106,6 @@ class PieceWriter {
 
   /// Stores [orderedIds] as the new display order, first photo on top.
   Future<void> reorderPhotos(List<String> orderedIds) async {
-    if (orderedIds.isEmpty) return;
     final updates = <({String id, int sortOrder})>[
       for (var i = 0; i < orderedIds.length; i++)
         (id: orderedIds[i], sortOrder: orderedIds.length - 1 - i),
