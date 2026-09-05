@@ -34,7 +34,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   @visibleForTesting
   AuthNotifier.withState(super.initial);
 
-  static const _onboardingKey = 'hasCompletedOnboarding';
+  /// Set once the user has signed in or chosen to skip; a launch that finds
+  /// it goes to the album rather than the sign-in screen. Public because the
+  /// database bootstrap clears it when it discards a restored database, so
+  /// that launch lands on sign-in — where a cloud user re-downloads.
+  static const onboardingKey = 'hasCompletedOnboarding';
 
   static Set<String> _providerIds(User user) {
     return user.providerData.map((info) => info.providerId).toSet();
@@ -62,7 +66,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             );
           } catch (_) {}
           final prefs = await SharedPreferences.getInstance();
-          final completed = prefs.getBool(_onboardingKey) ?? false;
+          final completed = prefs.getBool(onboardingKey) ?? false;
           state = completed
               ? const AuthState(status: AuthStatus.authenticated)
               : const AuthState(status: AuthStatus.unauthenticated);
@@ -76,13 +80,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
           linkedProviders: _providerIds(currentUser),
         );
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_onboardingKey, true);
+        await prefs.setBool(onboardingKey, true);
         return;
       }
 
       // No Firebase user — check if they skipped sign-in previously
       final prefs = await SharedPreferences.getInstance();
-      final completed = prefs.getBool(_onboardingKey) ?? false;
+      final completed = prefs.getBool(onboardingKey) ?? false;
       if (completed) {
         state = const AuthState(status: AuthStatus.authenticated);
       } else {
@@ -96,7 +100,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> signIn(User user) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_onboardingKey, true);
+    await prefs.setBool(onboardingKey, true);
     state = AuthState(
       status: AuthStatus.authenticated,
       displayName: user.displayName,
@@ -107,7 +111,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> skip() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_onboardingKey, true);
+    await prefs.setBool(onboardingKey, true);
     state = const AuthState(status: AuthStatus.authenticated);
   }
 
@@ -118,7 +122,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       debugPrint('Firebase signOut failed: $e');
     }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_onboardingKey, false);
+    await prefs.setBool(onboardingKey, false);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 

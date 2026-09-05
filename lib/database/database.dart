@@ -3,13 +3,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqlcipher_flutter_libs/sqlcipher_flutter_libs.dart';
 import 'package:sqlite3/open.dart' as sqlite_open;
 import 'package:uuid/uuid.dart';
 
-import '../services/encryption_key_service.dart';
 import 'sqlcipher_guard.dart';
 import 'tables/pieces_table.dart';
 import 'tables/photos_table.dart';
@@ -43,8 +40,16 @@ class AppDatabase extends _$AppDatabase {
 
   AppDatabase.forTesting(super.executor);
 
-  static Future<AppDatabase> open() async {
-    // Ensure SQLCipher library is used instead of system/bundled SQLite
+  /// The database file's name inside the app's documents directory.
+  static const fileName = 'pottery_tracker.db';
+
+  /// Points `package:sqlite3` at the SQLCipher build instead of the system or
+  /// bundled sqlite3, on the platforms that ship one.
+  ///
+  /// Idempotent, and called before anything opens a database — the main one
+  /// or the transfer backup — because the override has to be in place before
+  /// `sqlite3` is first touched in the process.
+  static void useSqlCipherLibrary() {
     if (Platform.isAndroid) {
       sqlite_open.open.overrideFor(
         sqlite_open.OperatingSystem.android,
@@ -56,10 +61,17 @@ class AppDatabase extends _$AppDatabase {
         () => DynamicLibrary.open('SQLCipher.framework/SQLCipher'),
       );
     }
+  }
 
-    final key = await EncryptionKeyService().getOrCreateKey();
-    final dbDir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dbDir.path, 'pottery_tracker.db'));
+  /// Opens [file] as a SQLCipher database keyed with [key].
+  ///
+  /// Which key, and whether this device may open this file at all, is decided
+  /// by `LocalDatabaseBootstrap` before this is called. The `setup` callback
+  /// is the one place `configureSqlCipher` guards the real database; it is
+  /// exercised only on a device, never by `flutter test`, so it must not be
+  /// refactored away without a device run.
+  static Future<AppDatabase> open(File file, String key) async {
+    useSqlCipherLibrary();
 
     final executor = NativeDatabase(
       file,

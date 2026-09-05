@@ -1125,6 +1125,282 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t send — try again later'**
   String get feedbackSendFailed;
+
+  /// Title of the screen shown before the app when a database file is present but no key on this device opens it
+  ///
+  /// In en, this message translates to:
+  /// **'This phone can\'t open your pottery journal'**
+  String get recoveryTitle;
+
+  /// Recovery explanation when no database key is stored on this device: the backup-restore case
+  ///
+  /// In en, this message translates to:
+  /// **'Your journal was restored from a backup, but the key that unlocks it stays on the phone it was made on and is never included in backups. That protects your pottery if a backup is ever copied — and it means this phone can\'t read the restored copy on its own.'**
+  String get recoveryMessageKeyMissing;
+
+  /// Recovery explanation when a key is stored but does not decrypt the database
+  ///
+  /// In en, this message translates to:
+  /// **'The journal on this phone was encrypted with a key this phone no longer has, so it can\'t be read on its own.'**
+  String get recoveryMessageKeyMismatch;
+
+  /// Recovery hint when the restored preferences name a synced account, so re-downloading loses nothing
+  ///
+  /// In en, this message translates to:
+  /// **'This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept.'**
+  String get recoveryCloudHint;
+
+  /// Recovery hint when no synced account is recorded: the data existed on the old phone only
+  ///
+  /// In en, this message translates to:
+  /// **'This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can\'t be recovered here.'**
+  String get recoveryLocalOnlyHint;
+
+  /// Heading above the passphrase field on the recovery screen, shown only when a transfer backup came with the database
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock with your transfer passphrase'**
+  String get recoveryPassphraseSection;
+
+  /// Label of the passphrase field on the recovery screen
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer passphrase'**
+  String get recoveryPassphraseLabel;
+
+  /// Button that tries the entered transfer passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock'**
+  String get recoveryUnlock;
+
+  /// Inline error when the transfer passphrase does not open the backup
+  ///
+  /// In en, this message translates to:
+  /// **'That passphrase doesn\'t match.'**
+  String get recoveryWrongPassphrase;
+
+  /// Inline error when the passphrase opens the backup but the key inside does not open the database
+  ///
+  /// In en, this message translates to:
+  /// **'The passphrase is right, but the key it protects doesn\'t open this journal.'**
+  String get recoveryTransferKeyMismatch;
+
+  /// Recovery action for a synced account: discard the unreadable copy and go to sign-in
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in and download again'**
+  String get recoveryRedownload;
+
+  /// Confirmation title before discarding an unreadable database that has a cloud copy
+  ///
+  /// In en, this message translates to:
+  /// **'Download your pieces again?'**
+  String get recoveryRedownloadConfirmTitle;
+
+  /// Confirmation body before discarding an unreadable database that has a cloud copy; states that photo files are kept
+  ///
+  /// In en, this message translates to:
+  /// **'The unreadable copy on this phone is removed. Your photos stay, and your pieces are downloaded again once you sign in.'**
+  String get recoveryRedownloadConfirmMessage;
+
+  /// Confirming button of the re-download dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Remove and sign in'**
+  String get recoveryRedownloadConfirm;
+
+  /// Recovery action that deletes the restored pieces and photos and begins an empty journal
+  ///
+  /// In en, this message translates to:
+  /// **'Start fresh without them'**
+  String get recoveryStartFresh;
+
+  /// Confirmation title before deleting an unreadable database and its photos
+  ///
+  /// In en, this message translates to:
+  /// **'Delete the restored pieces?'**
+  String get recoveryStartFreshConfirmTitle;
+
+  /// Confirmation body before deleting an unreadable database and its photos; names the one way the data can still be recovered
+  ///
+  /// In en, this message translates to:
+  /// **'The pieces and photos restored from your old phone are deleted from this phone. If you still have the old phone, set a transfer passphrase in its Settings and restore this phone from a new backup instead. This cannot be undone.'**
+  String get recoveryStartFreshConfirmMessage;
+
+  /// Confirming button of the start-fresh dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Delete and start fresh'**
+  String get recoveryStartFreshConfirm;
+
+  /// Shown when a recovery action itself fails
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong: {error}'**
+  String recoveryFailed(String error);
+
+  /// Title of the screen shown when opening the local database failed for a reason other than a missing key
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open your pottery journal'**
+  String get launchFailedTitle;
+
+  /// Body of the launch-failure screen; carries the underlying error
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing was changed. Try again, and if this keeps happening, send feedback from a fresh install so it can be fixed.\n\n{error}'**
+  String launchFailedMessage(String error);
+
+  /// Retry button
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get tryAgain;
+
+  /// Settings section header for the transfer passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Moving to a new phone'**
+  String get deviceTransfer;
+
+  /// Settings tile title
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer passphrase'**
+  String get transferPassphrase;
+
+  /// Settings tile subtitle when a transfer backup exists
+  ///
+  /// In en, this message translates to:
+  /// **'Set — a phone backup can carry your pottery'**
+  String get transferPassphraseSet;
+
+  /// Settings tile subtitle when no transfer backup exists
+  ///
+  /// In en, this message translates to:
+  /// **'Not set'**
+  String get transferPassphraseNotSet;
+
+  /// Settings explanation of the transfer passphrase for a user who is not signed in
+  ///
+  /// In en, this message translates to:
+  /// **'Pottery kept only on this phone is encrypted with a key that never leaves it, so a phone backup restores the journal but can\'t open it. A transfer passphrase lets a new phone unlock it. Signing in backs pottery up to the cloud instead.'**
+  String get transferExplanationLocalOnly;
+
+  /// Settings explanation of the transfer passphrase for a signed-in user
+  ///
+  /// In en, this message translates to:
+  /// **'Your pieces are backed up to your account and come back by signing in on a new phone. A transfer passphrase is only needed for pottery kept on this phone alone.'**
+  String get transferExplanationSignedIn;
+
+  /// Sheet title / action when no passphrase is set
+  ///
+  /// In en, this message translates to:
+  /// **'Set transfer passphrase'**
+  String get setTransferPassphrase;
+
+  /// Action to replace the existing transfer passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Change passphrase'**
+  String get changeTransferPassphrase;
+
+  /// Action to delete the transfer backup
+  ///
+  /// In en, this message translates to:
+  /// **'Remove passphrase'**
+  String get removeTransferPassphrase;
+
+  /// Guidance at the top of the set-passphrase sheet; states the threat model plainly
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a passphrase you\'ll remember — you type it once, on the new phone. Anyone holding a backup of this phone can try to guess it, so make it a phrase rather than a PIN: at least {min} characters.'**
+  String transferPassphraseSheetMessage(int min);
+
+  /// First passphrase field label
+  ///
+  /// In en, this message translates to:
+  /// **'Passphrase'**
+  String get transferPassphraseHint;
+
+  /// Second passphrase field label
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat passphrase'**
+  String get transferPassphraseConfirmHint;
+
+  /// Validation error for a short passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Use at least {min} characters.'**
+  String transferPassphraseTooShort(int min);
+
+  /// Validation error when the repeated passphrase differs
+  ///
+  /// In en, this message translates to:
+  /// **'The two entries don\'t match.'**
+  String get transferPassphraseMismatch;
+
+  /// Toast after the transfer backup is written
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer passphrase set.'**
+  String get transferPassphraseSaved;
+
+  /// Toast after the transfer backup is deleted
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer passphrase removed.'**
+  String get transferPassphraseRemoved;
+
+  /// Toast when writing the transfer backup fails
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the passphrase: {error}'**
+  String transferPassphraseFailed(String error);
+
+  /// Confirmation title before deleting the transfer backup
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the transfer passphrase?'**
+  String get transferPassphraseRemoveConfirmTitle;
+
+  /// Confirmation body before deleting the transfer backup
+  ///
+  /// In en, this message translates to:
+  /// **'A backup of this phone will no longer be able to open your pottery on a new phone.'**
+  String get transferPassphraseRemoveConfirmMessage;
+
+  /// Generic remove button
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get remove;
+
+  /// Title of the one-time notice shown to a user whose pottery exists on this phone only
+  ///
+  /// In en, this message translates to:
+  /// **'Moving to a new phone someday?'**
+  String get transferNoticeTitle;
+
+  /// Body of the one-time notice; states the consequence of the key staying on this device and both ways to prepare
+  ///
+  /// In en, this message translates to:
+  /// **'Your pottery is kept on this phone only. For your protection it can\'t be read from a backup by another phone — so before you switch phones, set a transfer passphrase in Settings, or sign in to back it up.'**
+  String get transferNoticeMessage;
+
+  /// Notice action that opens the settings tab
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings'**
+  String get transferNoticeOpenSettings;
+
+  /// Dismisses the one-time notice
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get notNow;
 }
 
 class _AppLocalizationsDelegate

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
+import '../database/transfer_key_backup.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -42,8 +43,9 @@ class SyncService {
 
   /// Prefix of the per-uid "last successful pull" watermarks written by
   /// [_saveLastPulledAt]. Shared with [deleteLocalData], which has to clear
-  /// every one of them.
-  static const _lastPulledAtPrefix = 'lastPulledAt_';
+  /// every one of them, and with the database bootstrap, which clears them
+  /// when it discards a restored database before any `SyncService` exists.
+  static const lastPulledAtPrefix = 'lastPulledAt_';
 
   /// The uid whose data this device's local database holds.
   ///
@@ -180,6 +182,10 @@ class SyncService {
 
     final photoFailure = await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
+    // The transfer passphrase was the leaving user's. The key it wraps stays
+    // (see above), but the next person on this device must not inherit a
+    // backup that a passphrase they do not know can open.
+    await TransferKeyBackup.deleteIn(await getApplicationDocumentsDirectory());
 
     // The data is gone, so nobody owns this device any more: the next account
     // to sign in starts from a clean slate rather than inheriting the claim,
@@ -271,7 +277,7 @@ class SyncService {
     final prefs = await SharedPreferences.getInstance();
     final stale = prefs
         .getKeys()
-        .where((k) => k.startsWith(_lastPulledAtPrefix))
+        .where((k) => k.startsWith(lastPulledAtPrefix))
         .toList();
     for (final key in stale) {
       await prefs.remove(key);
@@ -610,7 +616,7 @@ class SyncService {
 
   Future<DateTime?> getLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    final ms = prefs.getInt('$_lastPulledAtPrefix$uid');
+    final ms = prefs.getInt('$lastPulledAtPrefix$uid');
     if (ms == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(ms);
   }
@@ -618,7 +624,7 @@ class SyncService {
   Future<void> _saveLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(
-      '$_lastPulledAtPrefix$uid',
+      '$lastPulledAtPrefix$uid',
       DateTime.now().millisecondsSinceEpoch,
     );
   }

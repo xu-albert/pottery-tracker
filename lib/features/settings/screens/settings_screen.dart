@@ -11,7 +11,9 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/auth_service.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../providers/transfer_provider.dart';
 import '../../../widgets/app_snackbar.dart';
+import '../widgets/transfer_passphrase_sheet.dart';
 
 /// How long a partial-failure message stays up.
 ///
@@ -419,6 +421,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // Cloud Backup section
           _SectionHeader(title: l10n.syncStatus),
           _buildSyncTile(context, ref, l10n, auth),
+          const Divider(),
+
+          // Device transfer section. The key that encrypts the local database
+          // never enters a phone backup, so pottery kept on this phone alone
+          // does not follow the user to a new phone unless they set this.
+          _SectionHeader(title: l10n.deviceTransfer),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSizes.md,
+              0,
+              AppSizes.md,
+              AppSizes.sm,
+            ),
+            child: Text(
+              auth.isSignedIn
+                  ? l10n.transferExplanationSignedIn
+                  : l10n.transferExplanationLocalOnly,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.phonelink_lock_outlined),
+            title: Text(l10n.transferPassphrase),
+            subtitle: Text(
+              ref.watch(transferPassphraseSetProvider)
+                  ? l10n.transferPassphraseSet
+                  : l10n.transferPassphraseNotSet,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showTransferPassphraseSheet(context),
+          ),
           const Divider(),
 
           // Support
