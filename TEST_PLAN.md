@@ -26,8 +26,8 @@ since they're feature backlog, not test backlog.
 
 Pottery Tracker is a single-developer, offline-first Flutter app with a thin Cloud
 Functions backend. The pyramid is deliberately bottom-heavy: Drift/Riverpod logic is cheap
-to unit-test in Dart's VM test runner (no simulator needed), so most of the 323 current
-tests (`flutter test`, 2026-09-02) sit there; widget tests cover the handful of screens
+to unit-test in Dart's VM test runner (no simulator needed), so most of the 376 current
+tests (`flutter test`, 2026-09-04) sit there; widget tests cover the handful of screens
 with real branching logic; there are zero automated end-to-end tests (§5) because the two
 things that would require — Camera and PHPicker multi-select — do not work in the iOS
 Simulator at all (`AGENTS.md`, `TEST_PLAN.md` §6.4), so E2E coverage of the photo pipeline
@@ -727,7 +727,7 @@ before shipping.
 ### 10.1 CI-enforced (blocks merge to `main` via required checks)
 - [ ] `dart analyze` — zero issues
 - [ ] `dart format --set-exit-if-changed .` — no formatting diffs
-- [ ] `flutter test` — full Dart/Flutter suite green (323 tests as of 2026-09-02)
+- [ ] `flutter test` — full Dart/Flutter suite green (376 tests as of 2026-09-04)
 - [ ] `npm test` in `functions/` — TypeScript compiles, `sanitize`/`notify_discord` tests green
 
 ### 10.2 Manual, required before every release
@@ -798,7 +798,7 @@ today, plus the pieces useful for local iteration.
 flutter pub get
 dart analyze
 dart format --set-exit-if-changed .
-flutter test                      # 323 tests as of 2026-09-02
+flutter test                      # 376 tests as of 2026-09-04
 flutter test --coverage           # coverage/lcov.info (not currently read by anything)
 
 # Cloud Functions (feedback sanitiser + Discord webhook contract test)
