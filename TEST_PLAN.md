@@ -502,7 +502,7 @@ agent/computer-use variant, current as of writing.
 - [ ] "Moving to a new phone" section explains that pottery kept on this phone alone travels only with a passphrase (signed in: that the account carries it instead)
 - [ ] iOS only: a "Transfer passphrase" row whose subtitle reads Set/Not set from the backup file itself — set, change, remove, and a too-short passphrase refused (floor: `TransferKeyBackup.minPassphraseLength`; design: `docs/local-database-key.md`)
 - [ ] Android: the section says local-only pottery does not move and offers no passphrase row at all
-- [ ] "Support Developer — Coming soon" placeholder
+- [ ] Support section offers only "Send Feedback"; no Ko-fi support link or donation link is present
 - [ ] Version row shows the `version` from `pubspec.yaml` (the authoritative source), not a hardcoded string
 
 #### Manage Clays Screen (`/settings/clays`)
@@ -592,7 +592,7 @@ agent/computer-use variant, current as of writing.
 
 #### Offline-First
 - [ ] All features work without network connectivity
-- [ ] No Firebase calls in Phase 1
+- [ ] Firebase sync is live: when signed in, local writes are pushed to Firestore/Cloud Storage; when offline, the sync queue holds them and retries
 
 #### Localization
 - [ ] All UI strings from `app_en.arb` (no hardcoded user-facing strings except error messages)
@@ -862,7 +862,7 @@ device, which is exactly why they're catalogued separately rather than folded in
 | 2026-02-14 | Input field UX cleanup: TextCapitalization.sentences on all inputs, autocorrect disabled, "Add New" button text de-duplicated |
 | 2026-02-14 | Swipe-to-archive: left-swipe on album rows with teal background, haptic feedback, and 4-second undo snackbar |
 | 2026-02-14 | Archive thumbnail titles: bottom-right title overlay with gradient fade on archive grid thumbnails |
-| 2026-02-14 | Widget tests: 20 automated tests across 6 files covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings |
+| 2026-02-14 | Widget tests added covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings; run `flutter test` to execute them |
 | 2026-02-14 | Firebase Analytics & Crashlytics: 11 custom events, auto screen tracking, crash reporting with test crash button |
 | 2026-05-09 | In-app review prompt + feedback form |
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |

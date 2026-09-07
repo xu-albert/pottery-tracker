@@ -49,10 +49,24 @@ void main() {
       AuthState(status: AuthStatus.authenticated, uid: uid);
 
   /// Lets the sync chain (auth listener → `_onAuthChanged` → `syncNow`) run to
-  /// completion; every step is async but none of it waits on a real clock.
+  /// completion; every pump is a zero-delay future, so settling never waits
+  /// on the wall clock.
   Future<void> settle() async {
-    for (var i = 0; i < 50; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 1));
+    for (var i = 0; i < 100; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  /// Pumps the event loop until [condition] holds or [maxTurns] pumps have
+  /// passed. Used to pin event order with Completer gates: wait until the
+  /// gated path has reached a known point, then release the next one — no
+  /// wall-clock margin involved.
+  Future<void> pumpUntil(
+    bool Function() condition, {
+    int maxTurns = 500,
+  }) async {
+    for (var i = 0; i < maxTurns && !condition(); i++) {
+      await Future<void>.delayed(Duration.zero);
     }
   }
 
@@ -64,7 +78,9 @@ void main() {
     File('${photoDir.path}/photo-$pieceId.jpg').writeAsBytesSync([1, 2, 3]);
     File('${photoDir.path}/photo-${pieceId}_thumb.jpg').writeAsBytesSync([4]);
 
-    final now = DateTime.now();
+    // Fixed so this file never reads the wall clock; nothing under test
+    // orders by it.
+    final now = DateTime.utc(2026, 1, 1);
     await db.piecesDao.insertPiece(
       PiecesCompanion(
         id: Value(pieceId),
@@ -132,6 +148,7 @@ void main() {
                 throw PlatformException(code: 'requires-recent-login');
               }
             },
+            clock: const _ControlledSyncClock(),
           ),
         ),
       ],
@@ -487,17 +504,20 @@ void main() {
       // B makes a piece as the sign-in lands, so its debounced push is already
       // scheduled when the auth state flips.
       await insertPieceWithPhoto('piece-b', "B's bowl");
-      await container.read(syncTriggerProvider).afterPieceWrite('piece-b');
 
       // Stall the pending-count read `_onAuthChanged` awaits before it starts
       // the sign-in sync. That is the async gap the debounced push slips
-      // through in production; holding it open just makes the order certain.
-      queue.pendingCountDelay = const Duration(milliseconds: 1000);
+      // through in production; holding the gate until the push has uploaded
+      // is what makes the order deterministic instead of a bet that 500ms
+      // beats 1000ms on a loaded machine.
+      final gate = Completer<void>();
+      queue.pendingCountGate = gate;
       syncService.pushAllLocalCalls.clear();
       syncService.pushLog.clear();
+      await container.read(syncTriggerProvider).afterPieceWrite('piece-b');
       auth.set(signedInAs(uidB));
-      await Future<void>.delayed(const Duration(milliseconds: 2200));
-      queue.pendingCountDelay = Duration.zero;
+      await pumpUntil(() => syncService.pushLog.contains('pushPiece:piece-b'));
+      gate.complete();
       await settle();
 
       expect(
@@ -555,9 +575,12 @@ void main() {
   test('a confirmed erase reports back when the device is busy', () async {
     await insertPieceWithPhoto('piece-a', "A's mug");
 
-    syncService.pushAllLocalDelay = const Duration(milliseconds: 600);
+    syncService.pushAllLocalGate = Completer<void>();
+    final entered = syncService.pushAllLocalEntered = Completer<void>();
     final inFlight = notifier.syncNow(forceFullSync: true);
-    await Future<void>.delayed(const Duration(milliseconds: 150));
+    // The sync is provably inside pushAllLocal (and holding the device) long
+    // before the erase below asks — the gate pins it there deterministically.
+    await entered.future;
 
     expect(
       await notifier.eraseLocalDataNow(),
@@ -570,7 +593,7 @@ void main() {
       reason: 'a refused erase must not half-delete anything',
     );
 
-    syncService.pushAllLocalDelay = Duration.zero;
+    syncService.pushAllLocalGate!.complete();
     await inFlight;
     await settle();
 
@@ -662,12 +685,15 @@ void main() {
       // incremental branch and never reaches pushAllLocal.
       expect(await syncService.getLastPulledAt(uidA), isNotNull);
 
+      // Stall the drain's wrap-up (its pending-count refresh) so it still
+      // holds the device when the forced sync arrives. The gate opens before
+      // the enqueue, so whichever event-loop turn the zero-delay debounce
+      // fires on, the drain is guaranteed to walk into it.
+      final gate = Completer<void>();
+      queue.pendingCountGate = gate;
       await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
-      queue.pendingCountDelay = const Duration(milliseconds: 1200);
+      await pumpUntil(() => queue.pendingCountIsStalled);
 
-      // Let the debounced drain start and stall, then reach for the sync tile's
-      // long press while it still holds the device.
-      await Future<void>.delayed(const Duration(milliseconds: 800));
       syncService.pushAllLocalCalls.clear();
       await notifier.syncNow(forceFullSync: true);
       expect(
@@ -676,8 +702,8 @@ void main() {
         reason: 'the drain held the device, so this request stood down',
       );
 
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
-      queue.pendingCountDelay = Duration.zero;
+      gate.complete();
+      await pumpUntil(() => syncService.pushAllLocalCalls.contains(uidA));
       await settle();
 
       expect(
@@ -1315,7 +1341,7 @@ void main() {
       // neither the debounced push nor a manual sync reaches the stamp.
       syncService.pushAllLocalCalls.clear();
       notifier.scheduleProcessQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await settle();
       await notifier.syncNow(forceFullSync: true);
       await settle();
 
@@ -1538,59 +1564,51 @@ void main() {
   });
 
   group('a sync that outlives a confirmed wipe', () {
-    test(
-      'is published while it runs, and withdrawn when it ends',
-      () async {
-        await settle();
-        await insertPieceWithPhoto('piece-a', "A's mug");
+    test('is published while it runs, and withdrawn when it ends', () async {
+      await settle();
+      await insertPieceWithPhoto('piece-a', "A's mug");
 
-        // Hold a sync open past the window the sign-out wait watches. That wait
-        // is 5s, so the stall has to outlast it for the device to reach the
-        // state this is about.
-        syncService.pushAllLocalDelay = const Duration(seconds: 7);
-        unawaited(notifier.syncNow(forceFullSync: true));
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        expect(
-          container.read(staleSyncBlockingWipeProvider),
-          isFalse,
-          reason: 'nothing has confirmed a wipe yet',
-        );
+      // Hold a sync open past the bounded wait the sign-out watches. The
+      // controlled clock shrinks that wait to a handful of immediate pumps,
+      // and the gate holds the sync open for however long the test needs —
+      // no wall-clock timeout is being raced.
+      syncService.pushAllLocalGate = Completer<void>();
+      final entered = syncService.pushAllLocalEntered = Completer<void>();
+      unawaited(notifier.syncNow(forceFullSync: true));
+      await entered.future;
+      expect(
+        container.read(staleSyncBlockingWipeProvider),
+        isFalse,
+        reason: 'nothing has confirmed a wipe yet',
+      );
 
-        await notifier.signOutAndWipeLocalData(() async {});
+      await notifier.signOutAndWipeLocalData(() async {});
 
-        expect(
-          container.read(staleSyncBlockingWipeProvider),
-          isTrue,
-          reason:
-              'the sync outlasted the wait, so the delete cannot be shown to '
-              'have beaten its writes',
-        );
-        expect(
-          container.read(pendingLocalWipeProvider),
-          isTrue,
-          reason: 'which is why the wipe stays owed and the lock holds',
-        );
+      expect(
+        container.read(staleSyncBlockingWipeProvider),
+        isTrue,
+        reason:
+            'the sync outlasted the wait, so the delete cannot be shown to '
+            'have beaten its writes',
+      );
+      expect(
+        container.read(pendingLocalWipeProvider),
+        isTrue,
+        reason: 'which is why the wipe stays owed and the lock holds',
+      );
 
-        // Let the straggler unwind.
-        syncService.pushAllLocalDelay = Duration.zero;
-        for (
-          var i = 0;
-          i < 100 && container.read(staleSyncBlockingWipeProvider);
-          i++
-        ) {
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        }
+      // Let the straggler unwind.
+      syncService.pushAllLocalGate!.complete();
+      await pumpUntil(() => !container.read(staleSyncBlockingWipeProvider));
 
-        expect(
-          container.read(staleSyncBlockingWipeProvider),
-          isFalse,
-          reason:
-              'the lock screen waits on this to know the retry is worth making '
-              'again — left set, the device stays locked for good',
-        );
-      },
-      timeout: const Timeout(Duration(seconds: 90)),
-    );
+      expect(
+        container.read(staleSyncBlockingWipeProvider),
+        isFalse,
+        reason:
+            'the lock screen waits on this to know the retry is worth making '
+            'again — left set, the device stays locked for good',
+      );
+    });
   });
 }
 
@@ -1622,8 +1640,12 @@ class _FlakyWipeSyncService extends SyncService {
   /// got there first rather than only that both eventually ran.
   final List<String> pushLog = [];
 
-  /// Holds `pushAllLocal` open, standing in for a slow first sync.
-  Duration pushAllLocalDelay = Duration.zero;
+  /// Holds `pushAllLocal` open, standing in for a slow first sync. A test
+  /// completes [pushAllLocalEntered] (or reads it) to know the sync is
+  /// provably inside the call, then releases [pushAllLocalGate] — ordering
+  /// pinned by gates instead of by hoping one delay beats another.
+  Completer<void>? pushAllLocalGate;
+  Completer<void>? pushAllLocalEntered;
 
   /// Holds `deleteLocalData` open, so a test can look at the device while the
   /// wipe the user confirmed is still running.
@@ -1651,9 +1673,9 @@ class _FlakyWipeSyncService extends SyncService {
   Future<void> pushAllLocal(String uid) async {
     pushAllLocalCalls.add(uid);
     pushLog.add('pushAllLocal:$uid');
-    if (pushAllLocalDelay > Duration.zero) {
-      await Future<void>.delayed(pushAllLocalDelay);
-    }
+    pushAllLocalEntered?.complete();
+    final gate = pushAllLocalGate;
+    if (gate != null) await gate.future;
     return super.pushAllLocal(uid);
   }
 
@@ -1664,16 +1686,24 @@ class _FlakyWipeSyncService extends SyncService {
   }
 }
 
-/// The real [SyncQueue] with one seam: [pendingCountDelay] stalls the pending
+/// The real [SyncQueue] with one seam: [pendingCountGate] stalls the pending
 /// count read that `_onAuthChanged` awaits before it starts the sign-in sync,
-/// which is the window a debounced push slips through in production.
+/// which is the window a debounced push slips through in production. A test
+/// waits on [pendingCountIsStalled] to know the read is inside the gate, and
+/// completes the gate when the ordering it wants is established.
 class _StallableSyncQueue extends SyncQueue {
-  Duration pendingCountDelay = Duration.zero;
+  Completer<void>? pendingCountGate;
+
+  /// True while a pending-count read is being held by [pendingCountGate].
+  bool pendingCountIsStalled = false;
 
   @override
   Future<int> get pendingCount async {
-    if (pendingCountDelay > Duration.zero) {
-      await Future<void>.delayed(pendingCountDelay);
+    final gate = pendingCountGate;
+    if (gate != null) {
+      pendingCountIsStalled = true;
+      await gate.future;
+      pendingCountIsStalled = false;
     }
     return super.pendingCount;
   }
@@ -1685,4 +1715,25 @@ class _TestAuthNotifier extends AuthNotifier {
   _TestAuthNotifier(super.initial) : super.withState();
 
   void set(AuthState next) => state = next;
+}
+
+/// The controlled clock every test above runs the notifier on: scheduled
+/// delays fire on the next event-loop turn, sleeps return immediately, and
+/// the wipe's bounded wait is a few immediate polls. Nothing in this file
+/// waits on the wall clock; event order is pinned with Completer gates.
+class _ControlledSyncClock extends SyncClock {
+  const _ControlledSyncClock();
+
+  @override
+  DateTime now() => DateTime.utc(2026, 1, 1);
+
+  @override
+  Timer runAfter(Duration delay, void Function() callback) =>
+      Timer(Duration.zero, callback);
+
+  @override
+  Future<void> sleep(Duration duration) => Future<void>.value();
+
+  @override
+  int get wipeSyncMaxPolls => 5;
 }

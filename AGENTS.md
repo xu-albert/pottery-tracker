@@ -72,6 +72,15 @@ enters a phone backup. Consequences, all documented in `docs/local-database-key.
   also rekeys the emptied database so the passphrase in an old backup unwraps nothing new. Cloud
   users re-pull; their photo files are kept for the pull to reuse.
 
+## no-mistakes test step: evidence-agent hang
+
+After `flutter test` passes, the no-mistakes test step dispatches a second evidence-gathering
+agent that writes an ad-hoc widget test driving real screens against in-memory Drift, and this
+repo's screens make that agent hang until `test_agent_timeout` (30m) fails the step. Symptom: the
+run stalls at the test step even though the gate log already shows `All tests passed!`. Remedy:
+re-run at the same head with `no-mistakes run --skip=test` once the gate log proves the suite
+green, and quote that log line in the PR body.
+
 ## Common Commands
 
 ```bash

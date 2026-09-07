@@ -138,6 +138,30 @@ Future<void> _deleteFirebaseAccount() async {
   await FirebaseAuth.instance.currentUser?.delete();
 }
 
+/// The clock [SyncNotifier] runs its timers, waits and timestamps on.
+///
+/// Injectable so a test can put the notifier on a controlled clock instead of
+/// the wall clock; production passes nothing and gets the real one, and every
+/// default here is the behaviour that shipped.
+class SyncClock {
+  const SyncClock();
+
+  DateTime now() => DateTime.now();
+
+  /// Debounce before a queued drain fires after an edit.
+  Duration get debounceDelay => const Duration(milliseconds: 500);
+
+  /// The bounded wait for an in-flight sync to unwind before a local wipe
+  /// runs: at most [wipeSyncMaxPolls] polls, [wipeSyncPollInterval] apart.
+  int get wipeSyncMaxPolls => 50;
+  Duration get wipeSyncPollInterval => const Duration(milliseconds: 100);
+
+  Timer runAfter(Duration delay, void Function() callback) =>
+      Timer(delay, callback);
+
+  Future<void> sleep(Duration duration) => Future<void>.delayed(duration);
+}
+
 class SyncNotifier extends StateNotifier<SyncState> {
   /// Set for the duration of a local wipe so an interrupted one (crash, kill,
   /// failed delete) can be finished before anything is ever pushed again.
@@ -183,12 +207,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// Production always passes nothing and gets Firebase.
   final Future<void> Function() _deleteAuthAccount;
 
+  final SyncClock _clock;
+
   SyncNotifier(
     this._ref,
     this._queue,
     this._syncService, {
     Future<void> Function()? deleteAuthAccount,
+    SyncClock? clock,
   }) : _deleteAuthAccount = deleteAuthAccount ?? _deleteFirebaseAccount,
+       _clock = clock ?? const SyncClock(),
        super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.isSignedIn && prev?.uid != next.uid) {
@@ -232,7 +260,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   void scheduleProcessQueue() {
     _processTimer?.cancel();
-    _processTimer = Timer(const Duration(milliseconds: 500), () {
+    _processTimer = _clock.runAfter(_clock.debounceDelay, () {
       _pushQueue();
     });
   }
@@ -253,7 +281,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // full sync is still owed would name a backup that has not happened.
         state = state.copyWith(
           status: SyncStatus.idle,
-          lastSyncedAt: DateTime.now(),
+          lastSyncedAt: _clock.now(),
         );
       }
     } catch (e) {
@@ -322,7 +350,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = SyncState(
         status: SyncStatus.idle,
         pendingCount: 0,
-        lastSyncedAt: DateTime.now(),
+        lastSyncedAt: _clock.now(),
       );
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
@@ -365,7 +393,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         } catch (e) {
           debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
           if (attempt < 2) {
-            await Future.delayed(Duration(seconds: 1 << attempt));
+            await _clock.sleep(Duration(seconds: 1 << attempt));
           }
         }
       }
@@ -436,8 +464,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // Let an in-flight sync unwind — its session is gone, so it fails fast —
       // rather than letting its writes land after the tables are emptied.
-      for (var i = 0; i < 50 && _syncing; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+      for (var i = 0; i < _clock.wipeSyncMaxPolls && _syncing; i++) {
+        await _clock.sleep(_clock.wipeSyncPollInterval);
       }
 
       // A sync that outlived the wait can still be inserting rows and writing
