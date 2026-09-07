@@ -172,9 +172,7 @@ class DiesAfterDelete extends FlutterSecureStoragePlatform
   }
 
   @override
-  Future<Map<String, String>> readAll({
-    required Map<String, String> options,
-  }) {
+  Future<Map<String, String>> readAll({required Map<String, String> options}) {
     _alive();
     return inner.readAll(options: options);
   }

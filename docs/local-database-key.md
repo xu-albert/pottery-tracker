@@ -86,16 +86,17 @@ database once one can actually be opened. Nothing is ever created over the user'
 |---|---|---|---|
 | database + **transfer backup** | either | "This phone can't open your pottery journal" with the backup explanation, a passphrase field and **Unlock** (primary). Wrong passphrase → inline "That passphrase doesn't match." | `TransferKeyBackup.read(passphrase)` unwraps the key; the database is opened and probed with it *first*, then the key is stored under the pinned options. Everything is in place — stamp, sign-in flag, photos. Next launch is ordinary. |
 | database + **owner stamp**, no backup | cloud-sync | Same title; "This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept. Changes the old phone never finished backing up are lost." **Sign in and download again** (primary) behind a non-destructive confirmation that repeats the unsynced-change loss. | `redownloadFromCloud()`: delete the database and its `-wal/-shm/-journal`, the transfer backup, the owner stamp, the contested flag, every `lastPulledAt_*` watermark (else the next pull is incremental and skips everything) and the sync queue; set `hasCompletedOnboarding=false` so the router lands on sign-in; create a key, open empty. **Photo files are kept**: `pullAll` downloads only photos whose `localPath` is missing, so the restored files are reused. |
-| database only, **no stamp, no backup** | local-only | Same title; "This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can't be recovered here." Only **Start fresh without them**, red, behind a destructive confirmation that names the one remaining way out (set a passphrase on the old phone, back up again). | `startFresh()`: as above, plus the `photos/` directory and the image-picker temp files, and an owed `pendingLocalDataWipe` is cleared. Reported if it fails; never silent. |
+| database only, **no stamp, no backup** | local-only | Same title; "This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can't be recovered here." Only **Start fresh without them**, red, behind a destructive confirmation that names the one remaining way out (set a passphrase on the old phone, back up again). | `startFresh()`: as above, plus the `photos/` directory and the image-picker temp files. Reported if it fails; never silent. |
 
 A key that is present but does not decrypt the file (`keyMismatch`, rare) reaches the same screen
 with a different first paragraph and the same options. Ownership state is never touched by the
 passphrase path. Both discard paths clear `localDataOwnerUid` and `localDataContested`, consistent
 with `SyncService.deleteLocalData`. `pendingLocalDataWipe` — an erase the old phone's owner
-confirmed and never got, restored with the preferences — is cleared only by **Start fresh**, which
-deletes everything that erase owed. **Sign in and download again** keeps the photo files the erase
-promised to delete, so it leaves the flag set and the app opens locked at `/device-locked` until the
-erase is finished there.
+confirmed and never got, restored with the preferences — is cleared by *every* exit from recovery,
+the passphrase unlock included. Each of them leaves the user with a database they chose, and the
+lock screen would otherwise retry that erase without asking anything — over the journal the
+passphrase just unlocked, or over the photo files **Sign in and download again** deliberately
+keeps for the pull.
 
 ## The migration path for local-only users: a transfer passphrase
 
@@ -139,8 +140,9 @@ itself worked — is reported the same way, because they leave the same state. T
 either way, so it is never "nothing was deleted": the erase stays owed as *erased but not
 secured*, and its retry rotates again. A transfer backup that will not delete is reported the same
 way, even when the rotation worked and the copy that outlived the wipe unwraps nothing: that file
-is what Settings reads to decide a passphrase is set, and only the erase ever removes it. No error from that path quotes a key (`keyingFailure`,
-shared with `configureSqlCipher`), and neither key ever enters a backup.
+is what Settings reads to decide a passphrase is set, and only the erase ever removes it. No
+error from that path quotes a key (`keyingFailure`, shared with `configureSqlCipher`), and
+neither key ever enters a backup.
 
 Settings › *Moving to a new phone* › **Transfer passphrase** (iOS): set / change / remove, with
 the threat model in the sheet text. Whether one is set is read from the file itself, by the tile
@@ -167,7 +169,9 @@ a single code, so it is told apart by the `AEADBadTagException` the GCM decrypt 
 launch lands on the recovery screen, where a restored iOS database goes, rather than on a launch
 failure whose retry fails the same way forever; the next write replaces the value and reads back.
 Any other read failure propagates to the launch-failed screen and its retry, as on iOS, where a
-read error is a keychain state, not a verdict on the item.
+read error is a keychain state, not a verdict on the item. The screen says it in Android's own
+terms — nothing was restored from a backup there, so its copy names the key this phone's secure
+hardware no longer reads, and it never offers the passphrase.
 
 The passphrase tile is behind `Platform.isIOS`; on Android the *Moving to a new phone* section
 states plainly that pottery kept only on this phone does not move, and that signing in is what
@@ -176,10 +180,11 @@ the vector the manifest closes, for a path Android users have never had.
 
 ## Deliberately not changed
 
-- `flutter_secure_storage`, `sqlite3`, `drift`, Firebase, Riverpod: frozen, untouched. Two
-  packages that already resolved transitively (`flutter_secure_storage_platform_interface`,
-  `plugin_platform_interface`) became direct **dev** dependencies so tests can install a fake
-  platform; the lockfile changed only their dependency kind.
+- `flutter_secure_storage`, `sqlite3`, `drift`, Firebase, Riverpod: frozen, untouched. Three
+  packages that already resolved transitively became direct **dev** dependencies —
+  `flutter_secure_storage_platform_interface` and `plugin_platform_interface`, so tests can
+  install a fake platform, and `xml`, so the Android backup rules are parsed rather than
+  grepped; the lockfile changed only their dependency kind.
 - The `setup: configureSqlCipher` call site in `AppDatabase.open` — only its signature gained
   `(file, key)`; the call is the same statement.
 - `sync_provider.dart` changed only in what it hands `SyncService` (the key service).

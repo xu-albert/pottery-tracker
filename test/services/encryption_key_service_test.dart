@@ -86,6 +86,7 @@ void main() {
         containsPair('synchronizable', 'false'),
       ]),
     );
+
     /// What the released app stored the key under (the plugin default), and
     /// what nothing may ever be written under again.
     final legacyIos = isA<IOSOptions>().having(
@@ -322,30 +323,39 @@ void main() {
       expect(service.readKey(), throwsA(isA<PlatformException>()));
     });
 
-    test('Android: a value this device cannot decrypt reads as no key', () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      platform.values[_keyName] = _legacyKey;
-      platform.unreadableKeys.add(_keyName);
-      expect(await service.readKey(), isNull);
-    });
+    test(
+      'Android: a value this device cannot decrypt reads as no key',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        platform.values[_keyName] = _legacyKey;
+        platform.unreadableKeys.add(_keyName);
+        expect(await service.readKey(), isNull);
+      },
+    );
 
-    test('Android: a read failure that is not a decrypt failure propagates', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      platform.values[_keyName] = _legacyKey;
-      platform.readFailure = PlatformException(
-        code: 'Exception encountered',
-        message: 'read',
-        details: 'java.lang.NullPointerException: storageCipher',
-      );
-      expect(service.readKey(), throwsA(isA<PlatformException>()));
-    });
+    test(
+      'Android: a read failure that is not a decrypt failure propagates',
+      () {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        platform.values[_keyName] = _legacyKey;
+        platform.readFailure = PlatformException(
+          code: 'Exception encountered',
+          message: 'read',
+          details: 'java.lang.NullPointerException: storageCipher',
+        );
+        expect(service.readKey(), throwsA(isA<PlatformException>()));
+      },
+    );
 
-    test('falls back to the migrating copy when the item itself is gone', () async {
-      platform.values[_migratingName] = _legacyKey;
-      expect(await service.readKey(), _legacyKey);
-    });
+    test(
+      'falls back to the migrating copy when the item itself is gone',
+      () async {
+        platform.values[_migratingName] = _legacyKey;
+        expect(await service.readKey(), _legacyKey);
+      },
+    );
 
     test('prefers the item over a copy left behind', () async {
       platform.values[_keyName] = _legacyKey;
@@ -381,27 +391,32 @@ void main() {
       test('nothing stored while protected data is unavailable is not '
           '"no key"', () {
         final locked = withProtectedData(() async => false);
-        expect(
-          locked.readKey(),
-          throwsA(isA<KeyStoreUnavailableException>()),
-        );
+        expect(locked.readKey(), throwsA(isA<KeyStoreUnavailableException>()));
       });
 
-      test('nothing stored with protected data available reads as null', () async {
-        final unlocked = withProtectedData(() async => true);
-        expect(await unlocked.readKey(), isNull);
-      });
+      test(
+        'nothing stored with protected data available reads as null',
+        () async {
+          final unlocked = withProtectedData(() async => true);
+          expect(await unlocked.readKey(), isNull);
+        },
+      );
 
       test('a stored key is returned without asking', () async {
         platform.values[_keyName] = _legacyKey;
-        final unasked = withProtectedData(() async => throw StateError('asked'));
+        final unasked = withProtectedData(
+          () async => throw StateError('asked'),
+        );
         expect(await unasked.readKey(), _legacyKey);
       });
 
-      test('a platform with no such notion answers null and is trusted', () async {
-        final unknown = withProtectedData(() async => null);
-        expect(await unknown.readKey(), isNull);
-      });
+      test(
+        'a platform with no such notion answers null and is trusted',
+        () async {
+          final unknown = withProtectedData(() async => null);
+          expect(await unknown.readKey(), isNull);
+        },
+      );
 
       test('Android never asks', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -462,7 +477,9 @@ void main() {
         original,
         onWrite: (key, value, options) => original.values[key] = value,
         onDelete: (key) {
-          if (key == _keyName) copyAtDelete.add(original.values[_migratingName]);
+          if (key == _keyName) {
+            copyAtDelete.add(original.values[_migratingName]);
+          }
           original.values.remove(key);
         },
       );
@@ -472,32 +489,29 @@ void main() {
       expect(copyAtDelete, [_legacyKey]);
     });
 
-    test(
-      'a process that dies between the delete and the add leaves the copy, '
-      'and the next launch finishes the rewrite from it',
-      () async {
-        platform.values[_keyName] = _legacyKey;
-        FlutterSecureStoragePlatform.instance = DiesAfterDelete(
-          platform,
-          key: _keyName,
-        );
+    test('a process that dies between the delete and the add leaves the copy, '
+        'and the next launch finishes the rewrite from it', () async {
+      platform.values[_keyName] = _legacyKey;
+      FlutterSecureStoragePlatform.instance = DiesAfterDelete(
+        platform,
+        key: _keyName,
+      );
 
-        await expectLater(
-          service.hardenStoredKey(_legacyKey),
-          throwsA(isA<ProcessDied>()),
-        );
-        expect(platform.values.containsKey(_keyName), isFalse);
-        expect(platform.values[_migratingName], _legacyKey);
+      await expectLater(
+        service.hardenStoredKey(_legacyKey),
+        throwsA(isA<ProcessDied>()),
+      );
+      expect(platform.values.containsKey(_keyName), isFalse);
+      expect(platform.values[_migratingName], _legacyKey);
 
-        FlutterSecureStoragePlatform.instance = platform;
-        expect(await service.readKey(), _legacyKey);
-        await service.hardenStoredKey(_legacyKey);
+      FlutterSecureStoragePlatform.instance = platform;
+      expect(await service.readKey(), _legacyKey);
+      await service.hardenStoredKey(_legacyKey);
 
-        expect(platform.values[_keyName], _legacyKey);
-        expect(platform.values[_markerName], '2');
-        expect(platform.values.containsKey(_migratingName), isFalse);
-      },
-    );
+      expect(platform.values[_keyName], _legacyKey);
+      expect(platform.values[_markerName], '2');
+      expect(platform.values.containsKey(_migratingName), isFalse);
+    });
 
     test(
       'does nothing once the marker says the key is already hardened',
@@ -570,20 +584,17 @@ void main() {
       expect(await service.readKey(), _legacyKey);
     });
 
-    test(
-      'when nothing can be written, the key is left where it was and the '
-      'marker unset',
-      () async {
-        platform.values[_keyName] = _legacyKey;
-        platform.writesVanish = true;
+    test('when nothing can be written, the key is left where it was and the '
+        'marker unset', () async {
+      platform.values[_keyName] = _legacyKey;
+      platform.writesVanish = true;
 
-        await service.hardenStoredKey(_legacyKey);
+      await service.hardenStoredKey(_legacyKey);
 
-        expect(platform.values[_keyName], _legacyKey);
-        expect(platform.values.containsKey(_markerName), isFalse);
-        expect(platform.values.containsKey(_migratingName), isFalse);
-      },
-    );
+      expect(platform.values[_keyName], _legacyKey);
+      expect(platform.values.containsKey(_markerName), isFalse);
+      expect(platform.values.containsKey(_migratingName), isFalse);
+    });
 
     test('throws when the rewrite loses both the item and its copy', () async {
       platform.values[_keyName] = _legacyKey;

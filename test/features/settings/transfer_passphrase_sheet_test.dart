@@ -124,7 +124,9 @@ void main() {
   group('when one is already set', () {
     setUp(() => backup.write(databaseKey: _dbKey, passphrase: 'old phrase'));
 
-    testWidgets('offers to change or remove, read from the file itself', (tester) async {
+    testWidgets('offers to change or remove, read from the file itself', (
+      tester,
+    ) async {
       await pumpSheet(tester);
       expect(find.text(_l10n.changeTransferPassphrase), findsOneWidget);
       expect(find.text(_l10n.removeTransferPassphrase), findsOneWidget);
@@ -150,16 +152,14 @@ void main() {
       expect(backup.exists(), isTrue);
     });
 
-    testWidgets('confirming removes the file', (
-      tester,
-    ) async {
+    testWidgets('confirming removes the file', (tester) async {
       await pumpSheet(tester);
       await tester.tap(find.text(_l10n.removeTransferPassphrase));
       await tester.pumpAndSettle();
       await tester.tap(find.text(_l10n.remove));
       await tester.pumpAndSettle();
       expect(backup.exists(), isFalse);
-        expect(find.text(_l10n.transferPassphraseRemoved), findsOneWidget);
+      expect(find.text(_l10n.transferPassphraseRemoved), findsOneWidget);
     });
   });
 }

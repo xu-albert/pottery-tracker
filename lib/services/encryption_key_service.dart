@@ -157,8 +157,7 @@ class EncryptionKeyService {
   /// yet. A read that throws propagates rather than reading as "no key";
   /// Android's one exception is in [_read].
   Future<String?> readKey() async {
-    final key =
-        await _read(_storageKey) ?? await _read(_migratingStorageKey);
+    final key = await _read(_storageKey) ?? await _read(_migratingStorageKey);
     if (key != null) return key;
     if (defaultTargetPlatform == TargetPlatform.iOS &&
         await _protectedDataAvailable() == false) {

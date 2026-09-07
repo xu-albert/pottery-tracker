@@ -40,27 +40,24 @@ void main() {
     expect(application.getAttribute('android:allowBackup'), 'false');
   });
 
-  test(
-    'Android 12+ device transfer and cloud backup exclude every domain, '
-    'and include nothing',
-    () {
-      final reference = application.getAttribute('android:dataExtractionRules');
-      expect(reference, startsWith('@xml/'));
-      final rules = XmlDocument.parse(
-        File(
-          'android/app/src/main/res/xml/${reference!.substring(5)}.xml',
-        ).readAsStringSync(),
-      );
+  test('Android 12+ device transfer and cloud backup exclude every domain, '
+      'and include nothing', () {
+    final reference = application.getAttribute('android:dataExtractionRules');
+    expect(reference, startsWith('@xml/'));
+    final rules = XmlDocument.parse(
+      File(
+        'android/app/src/main/res/xml/${reference!.substring(5)}.xml',
+      ).readAsStringSync(),
+    );
 
-      final excludes = _wholeDomainExcludes(rules);
-      for (final section in const ['cloud-backup', 'device-transfer']) {
-        expect(excludes[section], _everyDomain, reason: section);
-        expect(
-          rules.rootElement.findElements(section).single.findElements('include'),
-          isEmpty,
-          reason: section,
-        );
-      }
-    },
-  );
+    final excludes = _wholeDomainExcludes(rules);
+    for (final section in const ['cloud-backup', 'device-transfer']) {
+      expect(excludes[section], _everyDomain, reason: section);
+      expect(
+        rules.rootElement.findElements(section).single.findElements('include'),
+        isEmpty,
+        reason: section,
+      );
+    }
+  });
 }

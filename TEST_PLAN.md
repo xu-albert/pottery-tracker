@@ -26,8 +26,8 @@ since they're feature backlog, not test backlog.
 
 Pottery Tracker is a single-developer, offline-first Flutter app with a thin Cloud
 Functions backend. The pyramid is deliberately bottom-heavy: Drift/Riverpod logic is cheap
-to unit-test in Dart's VM test runner (no simulator needed), so most of the 376 current
-tests (`flutter test`, 2026-09-04) sit there; widget tests cover the handful of screens
+to unit-test in Dart's VM test runner (no simulator needed), so most of the suite sits
+there (§2.1 counts the cases file by file); widget tests cover the handful of screens
 with real branching logic; there are zero automated end-to-end tests (§5) because the two
 things that would require — Camera and PHPicker multi-select — do not work in the iOS
 Simulator at all (`AGENTS.md`, `TEST_PLAN.md` §6.4), so E2E coverage of the photo pipeline
@@ -39,9 +39,9 @@ is manual-only by necessity, not by neglect.
       ╱   ╲
      ╱  E2E ╲  (§5) — none automated; camera/multi-picker require a real device
     ╱───────╲
-   ╱  Widget  ╲ (§2.2) — 8 files, screens/components with branching UI logic
+   ╱  Widget  ╲ (§2.2) — 16 files, screens/components with branching UI logic
   ╱─────────────╲
- ╱   Unit / DAO   ╲ (§2.1) — 21 files: providers, services, DAOs, pure helpers
+ ╱   Unit / DAO   ╲ (§2.1) — 26 files: providers, services, DAOs, pure helpers
 ╱───────────────────╲
 ```
 
@@ -79,6 +79,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 
 | File | Subject | Approx. cases |
 |---|---|---|
+| `test/android/data_extraction_rules_test.dart` | Android backup configuration as the backup agent parses it: `allowBackup` off, every domain excluded from both cloud backup and Android 12+ device transfer, nothing included | 2 |
 | `test/database/materials_dao_junction_test.dart` | Clay/Glaze/Tag junction-table DAOs | 15 |
 | `test/database/photos_dao_test.dart` | `PhotosDao` sort ordering, `getNextSortOrder`, batch reorder, per-piece delete scoping | 8 |
 | `test/database/pieces_dao_test.dart` | `PiecesDao` archived filter, search matching, stream re-emission, CRUD, `getUntitledPieceTitles` | 12 |
@@ -102,7 +103,6 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/services/sync_queue_entry_test.dart` | `SyncQueueEntry` (de)serialization | 14 |
 | `test/services/sync_queue_test.dart` | Queue enqueue/drain/backoff | 9 |
 | `test/services/sync_service_test.dart` | Push/pull, `pushAllLocal`, `deleteLocalData` (§11 gap: new local stores must be added here) including the key rotation at erase: `PRAGMA rekey` then store, and every way it can end with the old key still on the file — an unreadable key store, a rekey the database refuses, a key-back after a rejected store whether or not the key-back worked — reported as such, only once the photos, watermarks and ownership stamp are gone, and reporting a transfer backup that would not delete the same way — with the rotation's cause alongside it when both failed, and on its own even when the rotation worked, because that file is what Settings reads to claim a passphrase is set | 40 |
-| `test/android/data_extraction_rules_test.dart` | Android backup configuration as the backup agent parses it: `allowBackup` off, every domain excluded from both cloud backup and Android 12+ device transfer, nothing included | 2 |
 | `test/services/sync_trigger_test.dart` | DAO-write → queue-enqueue wiring (`AGENTS.md`'s "every write path" rule) | 13 |
 | `test/widgets/vase_logo_test.dart` | `buildVasePath` pure path geometry | 5 |
 
@@ -117,12 +117,12 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/features/album/widgets/filter_chips_test.dart` | Active/Archive chip selection |
 | `test/features/auth/device_locked_screen_test.dart` | Foreign-pottery vs. owed-wipe copy and actions (mirrors §6.1's "Device Locked" checklist), including the words each partial erase gets: photos left behind, and an erase whose key could not be replaced |
 | `test/features/feedback/enjoyment_dialog_test.dart` | Soft-ask dialog paths |
-| `test/features/recovery/database_recovery_screen_test.dart` | Pre-app recovery screen: copy per cause, user class and platform (Android is never offered the iOS-only transfer passphrase), passphrase unlock (right/wrong/mismatched key), confirmed re-download and start-fresh, failure reported |
-| `test/features/settings/transfer_passphrase_sheet_test.dart` | Set/change/remove transfer passphrase: validation, file written with this device's key, flag and toasts |
 | `test/features/feedback/feedback_screen_test.dart` | Form validation, submit states |
+| `test/features/recovery/database_recovery_screen_test.dart` | Pre-app recovery screen: copy per cause, user class and platform (Android is never offered the iOS-only transfer passphrase), passphrase unlock (right/wrong/mismatched key), confirmed re-download and start-fresh, failure reported |
 | `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow, including the words each partial outcome gets: a wipe that deleted nothing, one that left photo files, and one that erased everything but could not secure the device |
 | `test/features/settings/settings_screen_test.dart` | Materials section, title |
 | `test/features/settings/settings_support_section_test.dart` | Support section offers feedback only: no donation link, tip jar, or outside page (Ko-fi removed app-wide, 2026-08-18 ruling) |
+| `test/features/settings/transfer_passphrase_sheet_test.dart` | Set/change/remove transfer passphrase: validation, file written with this device's key, flag and toasts |
 | `test/widgets/splash_overlay_test.dart` | Splash animation completion gating |
 | `test/widgets/stage_badge_test.dart` | Per-stage label text, tint and text colour (one case per `PieceStage`) |
 | `test/widgets/tag_chip_test.dart` | Hash prefix, custom colour, stable palette pick for uncoloured tags, width cap |
@@ -152,8 +152,9 @@ mocked or faked in-process. There is no Firebase emulator suite wired up (§11).
 
 | Boundary | Real in tests? | How | Where |
 |---|---|---|---|
-| SQLCipher/Drift database | Yes — real Drift + `sqlite3` against a temp file, keyed with a real (test) passphrase | `NativeDatabase` in a temp dir, torn down per test | `account_switch_test.dart`, `materials_dao_junction_test.dart`, `sqlcipher_guard_test.dart` |
-| Local filesystem (photos, cache) | Yes — real files under a temp `docsDir` | `Directory`/`File` against `path_provider` overridden to a temp path | `account_switch_test.dart` (writes real photo bytes so the wipe has real files to orphan) |
+| SQLCipher/Drift database | Yes — real Drift + `sqlite3` against a temp file, keyed with a real (test) passphrase, but plain `sqlite3` stands in for SQLCipher (`test/helpers/fake_sqlcipher.dart`): `PRAGMA key`/`rekey` are pinned as statements, never as encryption | `NativeDatabase` in a temp dir, torn down per test | `account_switch_test.dart`, `materials_dao_junction_test.dart`, `sqlcipher_guard_test.dart`, `local_database_bootstrap_test.dart`, `app_database_rekey_test.dart`, `transfer_key_backup_test.dart` |
+| Local filesystem (photos, cache, database and transfer-backup files) | Yes — real files under a temp `docsDir` | `Directory`/`File` against `path_provider` overridden to a temp path | `account_switch_test.dart` (writes real photo bytes so the wipe has real files to orphan), `local_database_bootstrap_test.dart` (a database file restored with no key), `transfer_key_backup_test.dart` |
+| Secure key storage (`flutter_secure_storage`) | Faked at the *platform* boundary, so the real `FlutterSecureStorage` serialises the options the service passed and a test can pin them | `FakeSecureStoragePlatform` installed as `FlutterSecureStoragePlatform.instance` (`test/helpers/fake_secure_storage.dart`), recording every write with its options | `encryption_key_service_test.dart`, `local_database_bootstrap_test.dart` |
 | Firebase Auth | Faked | Hand-rolled fake in `test/helpers/firebase_mocks.dart` implementing the subset of the SDK surface the app calls | `auth_provider_test.dart`, `account_switch_test.dart` |
 | Cloud Firestore (sync push/pull) | Faked | In-memory fake store, not `fake_cloud_firestore` or an emulator | `sync_service_test.dart`, `sync_provider_test.dart` |
 | Cloud Storage (photo upload) | Faked | `firebase_storage_mocks` package | `sync_service_test.dart` |
@@ -290,6 +291,7 @@ Both:
 - [ ] An erase that could not run (a sync or wipe in flight) says so rather than failing silently
 - [ ] An erase that failed says so rather than closing the dialog on silence
 - [ ] An erase that removed the pieces and materials but not every photo file says exactly that — never "Nothing was deleted" — and the lock stays up, still offering the erase that finishes it
+- [ ] An erase that removed everything but could not secure the device — the database key not replaced, or the transfer backup not deleted — says exactly that, never that data was left behind, and the lock stays up offering the retry that finishes it
 - [ ] The same from "Delete Account & Data" in a session with no account ("Skip for now"): the message says the pieces and materials are gone and some photo files remain — never "Nothing was deleted" — and the lock underneath agrees
 
 **Regression note:** this whole area is the highest-churn part of the app (14 of the 25
@@ -493,9 +495,13 @@ agent/computer-use variant, current as of writing.
 - [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
 - [ ] Force-quit mid-wipe → the device comes back locked read-only, the lock screen finishes the wipe on its own without being asked, and nothing is uploaded before it does; Settings is not reachable at all while it is owed
 - [ ] A "Sign Out & Erase" whose wipe failed says the device stays locked until the erase finishes — it never promises that the next sign-in will do it, because the lock is what retries it
+- [ ] A "Sign Out & Erase" that erased everything but could not secure the device says that, not that data was left behind (same wording as the lock screen, §6.1)
 - [ ] The only connected sign-in provider cannot be disconnected — its row is disabled and explains why
 - [ ] "Materials" section with "Manage Clays", "Manage Glazes", and "Manage Tags" options
 - [ ] "Cloud Backup" section shows the current sync status and a "Sync Now" action
+- [ ] "Moving to a new phone" section explains that pottery kept on this phone alone travels only with a passphrase (signed in: that the account carries it instead)
+- [ ] iOS only: a "Transfer passphrase" row whose subtitle reads Set/Not set from the backup file itself — set, change, remove, and a too-short passphrase refused (floor: `TransferKeyBackup.minPassphraseLength`; design: `docs/local-database-key.md`)
+- [ ] Android: the section says local-only pottery does not move and offers no passphrase row at all
 - [ ] "Support Developer — Coming soon" placeholder
 - [ ] Version row shows the `version` from `pubspec.yaml` (the authoritative source), not a hardcoded string
 
@@ -735,7 +741,7 @@ before shipping.
 ### 10.1 CI-enforced (blocks merge to `main` via required checks)
 - [ ] `dart analyze` — zero issues
 - [ ] `dart format --set-exit-if-changed .` — no formatting diffs
-- [ ] `flutter test` — full Dart/Flutter suite green (376 tests as of 2026-09-04)
+- [ ] `flutter test` — full Dart/Flutter suite green (§2.1/§2.2 list what it runs)
 - [ ] `npm test` in `functions/` — TypeScript compiles, `sanitize`/`notify_discord` tests green
 
 ### 10.2 Manual, required before every release
@@ -807,7 +813,7 @@ today, plus the pieces useful for local iteration.
 flutter pub get
 dart analyze
 dart format --set-exit-if-changed .
-flutter test                      # 376 tests as of 2026-09-04
+flutter test                      # the whole suite (§2.1/§2.2 list every file)
 flutter test --coverage           # coverage/lcov.info (not currently read by anything)
 
 # Cloud Functions (feedback sanitiser + Discord webhook contract test)
@@ -862,5 +868,5 @@ device, which is exactly why they're catalogued separately rather than folded in
 | 2026-07-28 | Splash logo draw-on: animated vase mark on cream, router holds /splash until the stroke finishes (3s fallback), native launch screens matched to cream, app icon regenerated from the same path |
 | 2026-08-18 | Sign-out erases this device's local data behind a "Sign Out & Erase" confirmation, an unfinished wipe pauses backup until it completes, the last remaining sign-in provider cannot be disconnected, and the feedback reply email is capped at 254 characters |
 | 2026-08-19 | A device still holding another account's pottery is locked read-only at `/device-locked`: no route that can write is reachable, and the only ways out are the owner signing back in or a confirmed erase |
-| 2026-09-04 | Database key hardened to `first_unlock_this_device` / Android OAEP+GCM with a marker-verified migration; a restored database with no key gets a pre-app recovery screen (passphrase unlock, cloud re-download keeping photos, or confirmed start-fresh); transfer passphrase in Settings on iOS (Android keeps every domain out of cloud backup and device transfer via `dataExtractionRules` and says plainly that local-only pottery does not move); the hardening rewrite keeps a migrating copy so a crash mid-rewrite loses no key and never writes the key back under `unlocked`; a pre-unlock iOS launch fails and retries instead of deciding recovery; the database is rekeyed at Sign Out & Erase (a rotation that died after its copy landed is finished by the next launch; a failed rekey never quotes the key); the transfer backup replaces atomically and its "set" state is the file itself; start-fresh settles an owed wipe restored with the preferences. 111 tests added (321 → 432) |
 | 2026-09-02 | Restructured around the 12-section testing-plan framework (strategy/pyramid, unit, integration/contract, regression catalog, E2E, manual — folded in unchanged, performance, security, accessibility, release checklist, gaps backlog, headless run guide); no test behavior changed, docs only |
+| 2026-09-04 | Database key hardened to `first_unlock_this_device` / Android OAEP+GCM with a marker-verified migration; a restored database with no key gets a pre-app recovery screen (passphrase unlock, cloud re-download keeping photos, or confirmed start-fresh); transfer passphrase in Settings on iOS (Android keeps every domain out of cloud backup and device transfer via `dataExtractionRules` and says plainly that local-only pottery does not move); the hardening rewrite keeps a migrating copy so a crash mid-rewrite loses no key and never writes the key back under `unlocked`; a pre-unlock iOS launch fails and retries instead of deciding recovery; the database is rekeyed at Sign Out & Erase (a rotation that died after its copy landed is finished by the next launch; a failed rekey never quotes the key); the transfer backup replaces atomically and its "set" state is the file itself; every exit from recovery settles an owed wipe restored with the preferences. 121 test cases added |
