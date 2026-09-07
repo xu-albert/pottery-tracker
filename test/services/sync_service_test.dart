@@ -772,7 +772,10 @@ void main() {
 
         await expectLater(
           service.deleteLocalData(),
-          throwsA(isA<PlatformException>()),
+          throwsA(isA<LocalKeyRotationException>()),
+          reason:
+              'its own type, so no caller can report a complete wipe as '
+              '"nothing was deleted"',
         );
 
         expect(platform.values[_keyName], _oldKey);

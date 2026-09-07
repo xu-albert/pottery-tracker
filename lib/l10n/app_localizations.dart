@@ -940,6 +940,12 @@ abstract class AppLocalizations {
   /// **'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.'**
   String get eraseLocalDataPhotosSurvived;
 
+  /// Shown when an erase removed every row, photo, watermark and stamp but could not rotate the database key, including a Delete Account & Data from a session with no account. Says what is true — nothing was left behind, the re-keying is what is owed — and points at the retry the lock screen keeps offering
+  ///
+  /// In en, this message translates to:
+  /// **'Everything on this device was erased, but its database key could not be replaced, so the device is not yet secured for whoever uses it next. The erase is still owed, so try again to finish it.'**
+  String get eraseLocalDataNotSecured;
+
   /// Settings tile that deletes the account and everything with it
   ///
   /// In en, this message translates to:
@@ -1138,6 +1144,12 @@ abstract class AppLocalizations {
   /// **'Your journal was restored from a backup, but the key that unlocks it stays on the phone it was made on and is never included in backups. That protects your pottery if a backup is ever copied — and it means this phone can\'t read the restored copy on its own.'**
   String get recoveryMessageKeyMissing;
 
+  /// Recovery explanation when no database key is readable on Android, where the app is excluded from backups and device transfer so nothing was restored: the key itself became unreadable
+  ///
+  /// In en, this message translates to:
+  /// **'The key that unlocks this journal is held in this phone\'s secure hardware and never leaves it, so it is never included in a backup or a phone-to-phone transfer. This phone can no longer read that key, so the journal stored here can\'t be opened on its own.'**
+  String get recoveryMessageKeyMissingAndroid;
+
   /// Recovery explanation when a key is stored but does not decrypt the database
   ///
   /// In en, this message translates to:
@@ -1155,6 +1167,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can\'t be recovered here.'**
   String get recoveryLocalOnlyHint;
+
+  /// Recovery hint on Android when no synced account is recorded. Says the same thing without offering the transfer passphrase, which Android does not have — see the Settings tile, which is iOS-only
+  ///
+  /// In en, this message translates to:
+  /// **'This journal was never signed in, so there is no cloud copy to download. Pottery kept on this phone alone can\'t be recovered without its key.'**
+  String get recoveryLocalOnlyHintAndroid;
 
   /// Heading above the passphrase field on the recovery screen, shown only when a transfer backup came with the database
   ///
@@ -1227,6 +1245,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The pieces and photos restored from your old phone are deleted from this phone. If you still have the old phone, set a transfer passphrase in its Settings and restore this phone from a new backup instead. This cannot be undone.'**
   String get recoveryStartFreshConfirmMessage;
+
+  /// Confirmation body on Android before deleting an unreadable database and its photos. Names no recovery route because there is none: the transfer passphrase is iOS-only
+  ///
+  /// In en, this message translates to:
+  /// **'The pieces and photos on this phone are deleted. This cannot be undone.'**
+  String get recoveryStartFreshConfirmMessageAndroid;
 
   /// Confirming button of the start-fresh dialog
   ///

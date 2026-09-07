@@ -76,6 +76,11 @@ void main() {
     }
   });
 
+  // The screen's copy names the transfer passphrase, which exists on iOS
+  // only, so the tests that read those strings say which platform they are.
+  final onIOS = TargetPlatformVariant.only(TargetPlatform.iOS);
+  final onAndroid = TargetPlatformVariant.only(TargetPlatform.android);
+
   Future<void> pump(WidgetTester tester, _FakeRecovery recovery) async {
     await tester.pumpWidget(
       PreLaunchApp(
@@ -107,7 +112,7 @@ void main() {
       expect(find.text(_l10n.recoveryTitle), findsOneWidget);
       expect(find.text(_l10n.recoveryMessageKeyMissing), findsOneWidget);
       expect(find.text(_l10n.recoveryMessageKeyMismatch), findsNothing);
-    });
+    }, variant: onIOS);
 
     testWidgets('a key that does not fit: the mismatch explanation', (
       tester,
@@ -130,6 +135,7 @@ void main() {
         expect(find.text(_l10n.recoveryRedownload), findsNothing);
         expect(find.text(_l10n.recoveryStartFresh), findsOneWidget);
       },
+      variant: onIOS,
     );
 
     testWidgets('a synced account: says the pieces are in the cloud and makes '
@@ -265,7 +271,7 @@ void main() {
       await confirmDialog(tester, _l10n.cancel);
 
       expect(recovery.calls, isEmpty);
-    });
+    }, variant: onIOS);
 
     testWidgets('confirming deletes and hands over the fresh database', (
       tester,
@@ -297,5 +303,46 @@ void main() {
     );
     // And the screen is still standing, so it can be tried again.
     expect(find.text(_l10n.recoveryStartFresh), findsOneWidget);
+  });
+
+  group('on Android, where the transfer passphrase does not exist', () {
+    // Android opts out of cloud backup and of device transfer, so a database
+    // here was never restored from anywhere and there is no passphrase to
+    // offer — copy that says otherwise sends the user after something the app
+    // does not have, inside the confirmation for an irreversible delete.
+    testWidgets(
+      'the unreadable-key explanation does not claim a restore',
+      (tester) async {
+        await pump(tester, _FakeRecovery());
+
+        expect(
+          find.text(_l10n.recoveryMessageKeyMissingAndroid),
+          findsOneWidget,
+        );
+        expect(find.text(_l10n.recoveryMessageKeyMissing), findsNothing);
+      },
+      variant: onAndroid,
+    );
+
+    testWidgets('the local-only hint offers no passphrase', (tester) async {
+      await pump(tester, _FakeRecovery());
+
+      expect(find.text(_l10n.recoveryLocalOnlyHintAndroid), findsOneWidget);
+      expect(find.text(_l10n.recoveryLocalOnlyHint), findsNothing);
+      expect(find.textContaining('transfer passphrase'), findsNothing);
+    }, variant: onAndroid);
+
+    testWidgets('nor does the start-fresh confirmation', (tester) async {
+      await pump(tester, _FakeRecovery());
+
+      await tester.tap(find.text(_l10n.recoveryStartFresh));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(_l10n.recoveryStartFreshConfirmMessageAndroid),
+        findsOneWidget,
+      );
+      expect(find.textContaining('transfer passphrase'), findsNothing);
+    }, variant: onAndroid);
   });
 }

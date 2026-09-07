@@ -90,9 +90,9 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
     if (ref.read(deviceLockReasonProvider) != DeviceLockReason.pendingWipe) {
       return;
     }
-    await _whileBusy(
-      () => ref.read(syncStateProvider.notifier).retryOwedWipe(),
-    );
+    await _whileBusy(() async {
+      _report(await ref.read(syncStateProvider.notifier).retryOwedWipe());
+    });
   }
 
   /// Drops to the sign-in screen without destroying anything.
@@ -147,18 +147,27 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
       final result = await ref
           .read(syncStateProvider.notifier)
           .eraseLocalDataNow();
-      if (!mounted) return;
-      switch (result) {
-        case EraseLocalDataResult.erased:
-          break;
-        case EraseLocalDataResult.busy:
-          AppSnackbar.show(context, message: l10n.eraseLocalDataBusy);
-        case EraseLocalDataResult.failed:
-          AppSnackbar.show(context, message: l10n.eraseLocalDataFailed);
-        case EraseLocalDataResult.photosSurvived:
-          AppSnackbar.show(context, message: l10n.eraseLocalDataPhotosSurvived);
-      }
+      _report(result);
     });
+  }
+
+  /// The one place an erase outcome becomes words, so the button and the
+  /// automatic retry can never come to disagree about what happened.
+  void _report(EraseLocalDataResult? result) {
+    if (!mounted || result == null) return;
+    final l10n = AppLocalizations.of(context)!;
+    switch (result) {
+      case EraseLocalDataResult.erased:
+        break;
+      case EraseLocalDataResult.busy:
+        AppSnackbar.show(context, message: l10n.eraseLocalDataBusy);
+      case EraseLocalDataResult.failed:
+        AppSnackbar.show(context, message: l10n.eraseLocalDataFailed);
+      case EraseLocalDataResult.photosSurvived:
+        AppSnackbar.show(context, message: l10n.eraseLocalDataPhotosSurvived);
+      case EraseLocalDataResult.erasedButNotSecured:
+        AppSnackbar.show(context, message: l10n.eraseLocalDataNotSecured);
+    }
   }
 
   @override

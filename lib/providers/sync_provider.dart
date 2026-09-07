@@ -79,6 +79,12 @@ enum EraseLocalDataResult {
   /// separately because "nothing was deleted" is false here, and the user has
   /// a retry available on the lock screen that finishes it.
   photosSurvived,
+
+  /// Every local store is gone, but the database key could not be replaced,
+  /// so the device is erased and not yet secured for whoever uses it next.
+  /// Reported separately for the same reason as [photosSurvived]: "nothing
+  /// was deleted" is false here, and the retry rotates the key again.
+  erasedButNotSecured,
 }
 
 /// What a confirmed account deletion actually did. Mirrors
@@ -119,6 +125,12 @@ enum DeleteAllDataResult {
   /// [failed] because "nothing was deleted" is false here, and separately
   /// from [localDataSurvived] because there is no cloud side to speak of.
   localPhotosSurvived,
+
+  /// The local wipe removed everything it promised to, but could not replace
+  /// this device's database key. Separate from [failed] because nothing
+  /// survived, and from [localDataSurvived] because the local copy is gone —
+  /// only the rotation is still owed.
+  localErasedButNotSecured,
 }
 
 Future<void> _deleteFirebaseAccount() async {
@@ -159,7 +171,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   bool _syncOwed = false;
   bool _owedSyncForcesFull = false;
   Timer? _processTimer;
-  Future<void>? _wipeInFlight;
+  Future<EraseLocalDataResult?>? _wipeInFlight;
 
   /// Deletes the Firebase account itself.
   ///
@@ -486,6 +498,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } on LocalPhotoWipeException catch (e) {
       await _recordFailedWipe('explicit erase', e);
       return EraseLocalDataResult.photosSurvived;
+    } on LocalKeyRotationException catch (e) {
+      await _recordFailedWipe('explicit erase', e);
+      return EraseLocalDataResult.erasedButNotSecured;
     } catch (e) {
       await _recordFailedWipe('explicit erase', e);
       return EraseLocalDataResult.failed;
@@ -686,35 +701,50 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// own again, and the erase is still there when it does not. The screen
   /// owns both triggers, not the push path or the sync's own completion: no
   /// delete ever fires behind an edit.
-  Future<void> retryOwedWipe() => _finishInterruptedWipe();
+  /// Returns what the retry did, or null when there was nothing owed to
+  /// retry — the destructive action the user confirmed reports from here too,
+  /// because a retry that keeps the device locked has to say why.
+  Future<EraseLocalDataResult?> retryOwedWipe() => _finishInterruptedWipe();
 
   /// Re-runs a wipe that was started but never confirmed complete.
   ///
   /// Cheap in the normal case: one preference read and nothing else.
-  Future<void> _finishInterruptedWipe() {
+  Future<EraseLocalDataResult?> _finishInterruptedWipe() {
     // An explicit sign-out wipe already owns the flag; a second pass would
     // race its delete and could clear the flag before it is finished.
-    if (_wiping) return Future<void>.value();
+    if (_wiping) return Future<EraseLocalDataResult?>.value();
     return _wipeInFlight ??= _finishInterruptedWipeOnce().whenComplete(() {
       _wipeInFlight = null;
     });
   }
 
-  Future<void> _finishInterruptedWipeOnce() async {
+  Future<EraseLocalDataResult?> _finishInterruptedWipeOnce() async {
     final prefs = await SharedPreferences.getInstance();
     // Re-check `_wiping` here, not only on the way in: a wipe can start while
     // this is still waiting on preferences, and it raises the flag it owns
     // only after its own first await.
-    if (_wiping || prefs.getBool(pendingWipeKey) != true) return;
+    if (_wiping || prefs.getBool(pendingWipeKey) != true) return null;
     debugPrint('SyncNotifier: finishing an interrupted local data wipe');
     try {
       await _wipeLocalData();
+      return EraseLocalDataResult.erased;
+    } on LocalPhotoWipeException catch (e) {
+      await _reportResumedWipeFailure(e);
+      return EraseLocalDataResult.photosSurvived;
+    } on LocalKeyRotationException catch (e) {
+      await _reportResumedWipeFailure(e);
+      return EraseLocalDataResult.erasedButNotSecured;
     } catch (e) {
-      // Leave the flag set: [_blockedByPendingWipe] then refuses every push
-      // until a later attempt succeeds, rather than uploading what survived.
-      debugPrint('SyncNotifier: resumed wipe failed, still pending: $e');
-      await _publishOwedWipe();
+      await _reportResumedWipeFailure(e);
+      return EraseLocalDataResult.failed;
     }
+  }
+
+  /// Leaves the flag set: [_blockedByPendingWipe] then refuses every push
+  /// until a later attempt succeeds, rather than uploading what survived.
+  Future<void> _reportResumedWipeFailure(Object error) async {
+    debugPrint('SyncNotifier: resumed wipe failed, still pending: $error');
+    await _publishOwedWipe();
   }
 
   Future<DeleteAllDataResult> deleteAllData() async {
@@ -735,6 +765,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     var cloudDeleted = false;
     var accountSurvived = false;
     var localWiped = false;
+    var keyNotRotated = false;
     var sessionEnded = false;
 
     try {
@@ -777,6 +808,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
       } on LocalPhotoWipeException catch (e) {
         await _recordFailedWipe('deleteAllData local wipe', e);
         if (!cloudDeleted) return DeleteAllDataResult.localPhotosSurvived;
+      } on LocalKeyRotationException catch (e) {
+        // Nothing local survived this one, so it is not a local copy that is
+        // still standing: every row, photograph, watermark and stamp is gone
+        // and only the key rotation is owed.
+        localWiped = true;
+        keyNotRotated = true;
+        await _recordFailedWipe('deleteAllData local wipe', e);
       } catch (e) {
         await _recordFailedWipe('deleteAllData local wipe', e);
         if (!cloudDeleted) rethrow;
@@ -801,8 +839,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       await _ref.read(authProvider.notifier).signOut();
       sessionEnded = true;
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
-      return accountSurvived
-          ? DeleteAllDataResult.accountSurvived
+      // A surviving account outranks an unrotated key: it is the outcome the
+      // user has to act on, and the lock screen keeps offering the retry that
+      // rotates the key either way.
+      if (accountSurvived) return DeleteAllDataResult.accountSurvived;
+      return keyNotRotated
+          ? DeleteAllDataResult.localErasedButNotSecured
           : DeleteAllDataResult.deleted;
     } catch (e) {
       debugPrint('SyncNotifier: deleteAllData failed: $e');

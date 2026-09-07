@@ -931,6 +931,30 @@ void main() {
       );
     });
 
+    test(
+      'an erase that could not replace the key never says "nothing"',
+      () async {
+        await refuseB();
+
+        syncService.keyRotationFails = true;
+        expect(
+          await notifier.eraseLocalDataNow(),
+          EraseLocalDataResult.erasedButNotSecured,
+          reason:
+              '"nothing was deleted" would be false: the foreign pottery is '
+              'gone and only the key rotation is owed',
+        );
+        await settle();
+
+        expect(await db.select(db.pieces).get(), isEmpty);
+        expect(
+          container.read(deviceLockReasonProvider),
+          DeviceLockReason.pendingWipe,
+          reason: 'the erase stays owed until the key can be replaced',
+        );
+      },
+    );
+
     test('a failed erase does not release an owed wipe', () async {
       await insertPieceWithPhoto('piece-a', "A's mug");
       await notifier.syncNow(forceFullSync: true);
@@ -1461,6 +1485,39 @@ void main() {
       },
     );
 
+    test('that could not replace the key says so, never "nothing"', () async {
+      syncService.keyRotationFails = true;
+
+      expect(
+        await notifier.deleteAllData(),
+        DeleteAllDataResult.localErasedButNotSecured,
+        reason:
+            'every row and file the user asked for is gone; only the '
+            'rotation is owed',
+      );
+      await settle();
+
+      expect(await db.select(db.pieces).get(), isEmpty);
+      expect(await db.select(db.photos).get(), isEmpty);
+      expect(
+        container.read(deviceLockReasonProvider),
+        DeviceLockReason.pendingWipe,
+        reason: 'the key was not replaced, so the erase is still owed',
+      );
+
+      // And the retry is what finishes it, once the key store takes a key.
+      syncService.keyRotationFails = false;
+      expect(
+        await notifier.retryOwedWipe(),
+        EraseLocalDataResult.erased,
+        reason:
+            'the retry reports what it did, so the lock can explain '
+            'itself',
+      );
+      await settle();
+      expect(container.read(deviceLockReasonProvider), isNull);
+    });
+
     test('that deleted nothing still says nothing was deleted', () async {
       syncService.wipeFails = true;
 
@@ -1550,6 +1607,11 @@ class _FlakyWipeSyncService extends SyncService {
   /// gone, so here too the rows really are deleted before it is thrown.
   bool photoWipeFails = false;
 
+  /// Stands in for a key store that will not take the rotated key. Like the
+  /// photo failure, the real wipe raises this only once everything it
+  /// promised to delete is gone — nothing local survives it.
+  bool keyRotationFails = false;
+
   /// Every uid `pushAllLocal` has run for. Only [SyncNotifier.syncNow] takes
   /// that branch, so it is how a test tells which of the two push paths did an
   /// upload — both leave the same rows in the cloud.
@@ -1576,6 +1638,9 @@ class _FlakyWipeSyncService extends SyncService {
       throw LocalPhotoWipeException(
         Exception('simulated photos directory failure'),
       );
+    }
+    if (keyRotationFails) {
+      throw LocalKeyRotationException(Exception('simulated key store failure'));
     }
   }
 

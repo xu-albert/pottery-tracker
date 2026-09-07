@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -102,6 +103,11 @@ class _DatabaseRecoveryScreenState extends State<DatabaseRecoveryScreen> {
     }
   }
 
+  /// The transfer passphrase is iOS-only — Android opts out of backups and of
+  /// device transfer entirely — so the copy that offers it, and the copy that
+  /// explains a restore, must not be shown there.
+  bool get _isIOS => defaultTargetPlatform == TargetPlatform.iOS;
+
   Future<bool> _confirm({
     required String title,
     required String message,
@@ -149,7 +155,9 @@ class _DatabaseRecoveryScreenState extends State<DatabaseRecoveryScreen> {
     final l10n = AppLocalizations.of(context)!;
     if (!await _confirm(
       title: l10n.recoveryStartFreshConfirmTitle,
-      message: l10n.recoveryStartFreshConfirmMessage,
+      message: _isIOS
+          ? l10n.recoveryStartFreshConfirmMessage
+          : l10n.recoveryStartFreshConfirmMessageAndroid,
       action: l10n.recoveryStartFreshConfirm,
       destructive: true,
     )) {
@@ -184,8 +192,10 @@ class _DatabaseRecoveryScreenState extends State<DatabaseRecoveryScreen> {
                 const SizedBox(height: AppSizes.md),
                 Text(
                   switch (recovery.cause) {
-                    UnreadableDatabaseCause.keyMissing =>
+                    UnreadableDatabaseCause.keyMissing when _isIOS =>
                       l10n.recoveryMessageKeyMissing,
+                    UnreadableDatabaseCause.keyMissing =>
+                      l10n.recoveryMessageKeyMissingAndroid,
                     UnreadableDatabaseCause.keyMismatch =>
                       l10n.recoveryMessageKeyMismatch,
                   },
@@ -194,7 +204,11 @@ class _DatabaseRecoveryScreenState extends State<DatabaseRecoveryScreen> {
                 ),
                 const SizedBox(height: AppSizes.md),
                 Text(
-                  cloud ? l10n.recoveryCloudHint : l10n.recoveryLocalOnlyHint,
+                  cloud
+                      ? l10n.recoveryCloudHint
+                      : _isIOS
+                      ? l10n.recoveryLocalOnlyHint
+                      : l10n.recoveryLocalOnlyHintAndroid,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium,
                 ),

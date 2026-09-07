@@ -555,6 +555,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       message: l10n.eraseLocalDataPhotosSurvived,
                       duration: _partialOutcomeDuration,
                     );
+                  // Everything asked for is gone; what is owed is the key
+                  // rotation, and the lock screen's retry is what pays it.
+                  case DeleteAllDataResult.localErasedButNotSecured:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.eraseLocalDataNotSecured,
+                      duration: _partialOutcomeDuration,
+                    );
                 }
               } finally {
                 if (mounted) setState(() => _isDeletingAccount = false);

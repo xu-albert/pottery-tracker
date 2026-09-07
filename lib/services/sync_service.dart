@@ -30,6 +30,28 @@ class LocalPhotoWipeException implements Exception {
       'LocalPhotoWipeException: local photo files were not deleted: $cause';
 }
 
+/// Raised by [SyncService.deleteLocalData] when every local store was
+/// destroyed but the database key could not be replaced.
+///
+/// Its own type for the same reason as [LocalPhotoWipeException]: the caller
+/// must not report this as "nothing was deleted". Everything the confirmation
+/// promised to delete is gone — the rows, the photographs, the queue, the
+/// watermarks, the transfer backup and the ownership stamp. What did not
+/// happen is the rotation that stops a key an old phone backup may still
+/// carry from opening what the next person on this device makes, so the erase
+/// stays owed and its retry rotates again.
+class LocalKeyRotationException implements Exception {
+  /// What stopped the key from being replaced.
+  final Object cause;
+
+  LocalKeyRotationException(this.cause);
+
+  @override
+  String toString() =>
+      'LocalKeyRotationException: local data was erased but the database key '
+      'was not replaced: $cause';
+}
+
 class SyncService {
   final AppDatabase _db;
   final FirebaseFirestore _firestore;
@@ -212,7 +234,7 @@ class SyncService {
       throw LocalPhotoWipeException(photoFailure);
     }
     if (rotationFailure != null) {
-      throw rotationFailure;
+      throw LocalKeyRotationException(rotationFailure);
     }
   }
 
@@ -232,8 +254,8 @@ class SyncService {
   /// A key store that cannot be read, and a key-back that fails, are returned
   /// rather than thrown: the photographs the user was promised must be
   /// deleted before any of this is reported, so [deleteLocalData] raises what
-  /// comes back here once the rest of the wipe has run. The erase still stays
-  /// owed, and its retry rotates again.
+  /// comes back here as a [LocalKeyRotationException] once the rest of the
+  /// wipe has run. The erase still stays owed, and its retry rotates again.
   Future<Object?> _rotateDatabaseKey() async {
     final String? oldKey;
     try {

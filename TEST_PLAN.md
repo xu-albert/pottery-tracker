@@ -89,7 +89,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/models/display_date_test.dart` | `resolveDisplayDate` precedence: explicit date, then newest photo, then `createdAt` | 4 |
 | `test/models/untitled_title_test.dart` | `isUntitledTitle` and `nextUntitledTitle` gap-filling numbering | 5 |
 | `test/providers/account_deletion_record_test.dart` | Local record of a pending account deletion | 3 |
-| `test/providers/account_switch_test.dart` | End-to-end account-switch/lock/wipe state machine, against a real Drift DB (`AGENTS.md`'s "end-to-end guard") | 47 |
+| `test/providers/account_switch_test.dart` | End-to-end account-switch/lock/wipe state machine, against a real Drift DB (`AGENTS.md`'s "end-to-end guard"), including what each partial wipe is reported as — photos left behind, and a key that could not be replaced — which is never "nothing was deleted" | 49 |
 | `test/providers/auth_provider_test.dart` | `AuthState` transitions | 7 |
 | `test/providers/sync_provider_test.dart` | `SyncState.copyWith` and notifier plumbing | 41 |
 | `test/router/app_router_test.dart` | GoRouter redirect logic (device-lock gate, auth gate) | 2 |
@@ -115,9 +115,9 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/features/album/widgets/archive_thumbnail_test.dart` | Title overlay rendering |
 | `test/features/album/widgets/empty_state_test.dart` | Illustration + message |
 | `test/features/album/widgets/filter_chips_test.dart` | Active/Archive chip selection |
-| `test/features/auth/device_locked_screen_test.dart` | Foreign-pottery vs. owed-wipe copy and actions (mirrors §6.1's "Device Locked" checklist) |
+| `test/features/auth/device_locked_screen_test.dart` | Foreign-pottery vs. owed-wipe copy and actions (mirrors §6.1's "Device Locked" checklist), including the words each partial erase gets: photos left behind, and an erase whose key could not be replaced |
 | `test/features/feedback/enjoyment_dialog_test.dart` | Soft-ask dialog paths |
-| `test/features/recovery/database_recovery_screen_test.dart` | Pre-app recovery screen: copy per cause and user class, passphrase unlock (right/wrong/mismatched key), confirmed re-download and start-fresh, failure reported |
+| `test/features/recovery/database_recovery_screen_test.dart` | Pre-app recovery screen: copy per cause, user class and platform (Android is never offered the iOS-only transfer passphrase), passphrase unlock (right/wrong/mismatched key), confirmed re-download and start-fresh, failure reported |
 | `test/features/settings/transfer_passphrase_sheet_test.dart` | Set/change/remove transfer passphrase: validation, file written with this device's key, flag and toasts |
 | `test/features/feedback/feedback_screen_test.dart` | Form validation, submit states |
 | `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow |
@@ -180,7 +180,7 @@ alongside it below where they're still live risks).
 | Commit | Bug fixed | Guarding test |
 |---|---|---|
 | (this PR) | Database key stored under migratable iOS keychain accessibility and legacy Android ciphers (security review M6/L2); hardening alone would have made a restored local-only database unreadable with no way out | `encryption_key_service_test.dart` (options pinned at the call boundary), `local_database_bootstrap_test.dart` ("restore onto a new phone … no key is created over it"), `database_recovery_screen_test.dart`; the native keychain behaviour itself is **UNGUARDED** (device only, §11-P0) |
-| `cb0eadf` (#13) | Sign-out didn't erase local data; a refused account could write; feedback intake was unbounded | `account_switch_test.dart` (47 cases), `feedback_screen_test.dart`, `firestore.rules` allowlist (rules themselves **UNGUARDED**, §3) |
+| `cb0eadf` (#13) | Sign-out didn't erase local data; a refused account could write; feedback intake was unbounded | `account_switch_test.dart` (49 cases), `feedback_screen_test.dart`, `firestore.rules` allowlist (rules themselves **UNGUARDED**, §3) |
 | `e75373c`/`3d4bc49` | Owed wipe never retried once the sync blocking it ended | `account_switch_test.dart`: `"a sync that outlives a confirmed wipe is published while it runs, and withdrawn when it ends"` |
 | `75008bb` | Lock-exit request wasn't scoped; wipes were reported that hadn't happened | `account_switch_test.dart` (`eraseLocalDataNow`/`deleteAllData` result-reporting cases) |
 | `52929e3` | Redirect had no fixed point when session + lock both vanished | `app_router_test.dart` |

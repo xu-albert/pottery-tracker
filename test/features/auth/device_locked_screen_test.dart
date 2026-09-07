@@ -234,6 +234,35 @@ void main() {
     expect(find.text('Erase This Device'), findsOneWidget);
   });
 
+  testWidgets('an erase that could not replace the key never says "nothing"', (
+    tester,
+  ) async {
+    // Everything the confirmation promised is gone by the time this is
+    // thrown; what is owed is the rotation that secures the device for
+    // whoever uses it next.
+    when(
+      () => syncService.deleteLocalData(),
+    ).thenThrow(LocalKeyRotationException(Exception('the key store is full')));
+    await pumpLocked(tester);
+
+    await tester.tap(find.text('Erase This Device'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Erase'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(find.textContaining('could not be replaced'), findsOneWidget);
+    expect(
+      find.textContaining('Nothing was deleted'),
+      findsNothing,
+      reason: 'everything really was erased; only the re-keying was not done',
+    );
+
+    await tester.pump();
+    expect(find.text('This device still has to be erased'), findsOneWidget);
+  });
+
   group("ruling 4: the explanation wraps, however long it runs", () {
     // This guard used to live on the Settings sync tile and went with it when
     // both blocked reasons started locking the router. The explanation moved
