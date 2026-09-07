@@ -29,9 +29,9 @@
 - [ ] **Handle duplicate metadata** — decide behavior when user creates a clay, glaze, or tag with a name that already exists (e.g., prevent, merge, warn). Also decide policy for duplicate piece titles (allow silently, warn, or append suffix)
 
 ## Technical / Infrastructure
-- [ ] **Firebase sync (Phase 2)** — Google/Apple auth backend, Firestore, Cloud Storage
+- [x] **Firebase sync (Phase 2)** — Google/Apple auth backend, Firestore, Cloud Storage
 - [x] **Firebase Analytics** — 11 custom events (sign-in, filter, photo, piece CRUD, materials) + auto screen tracking
 - [x] **Firebase Crashlytics** — crash reporting with test crash button in Settings
 - [ ] **Dark mode** — respect system setting
-- [x] **Widget tests** — 20 widget tests covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings
+- [x] **Widget tests** — run `flutter test` to execute the widget tests covering album screen, filter chips, album grid, archive thumbnails, empty state, and settings
 - [x] **CI/CD** — GitHub Actions for `dart analyze` + `flutter test` on PRs, plus a Cloud Function typecheck + test job
