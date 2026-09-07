@@ -31,27 +31,31 @@ class LocalPhotoWipeException implements Exception {
 }
 
 /// Raised by [SyncService.deleteLocalData] when every local store was
-/// destroyed but the device was not left secured against the user leaving it.
+/// destroyed but the database is still on the key the leaving user's transfer
+/// backup wraps.
 ///
 /// Its own type for the same reason as [LocalPhotoWipeException]: the caller
 /// must not report this as "nothing was deleted". Everything the confirmation
 /// promised to delete is gone — the rows, the photographs, the queue, the
-/// watermarks and the ownership stamp. What did not happen is one of the two
-/// steps that stop the leaving user reaching what the next person makes here:
-/// replacing the database key, or deleting the transfer backup that wraps it.
-/// One outcome rather than two because they are the same thing to the reader
-/// and want the same thing from them — the erase stays owed, and its retry
-/// does both again.
+/// watermarks and the ownership stamp. What did not happen is the rotation
+/// that puts what the next person makes here beyond a passphrase the leaving
+/// user still holds a backup of, so the erase stays owed and its retry
+/// rotates again.
+///
+/// A transfer backup that would not delete belongs here only while that is
+/// also true: once the file has been rekeyed, the copy that outlived the wipe
+/// unwraps a key that opens nothing on this device. [causes] carries every
+/// step that failed, so a report never drops one in favour of another.
 class LocalDeviceNotSecuredException implements Exception {
-  /// What stopped the device from being secured.
-  final Object cause;
+  /// What stopped the device from being secured, in the order it happened.
+  final List<Object> causes;
 
-  LocalDeviceNotSecuredException(this.cause);
+  LocalDeviceNotSecuredException(this.causes);
 
   @override
   String toString() =>
       'LocalDeviceNotSecuredException: local data was erased but the device '
-      'was not secured for its next user: $cause';
+      'was not secured for its next user: ${causes.join('; ')}';
 }
 
 class SyncService {
@@ -232,9 +236,14 @@ class SyncService {
     if (photoFailure != null) {
       throw LocalPhotoWipeException(photoFailure);
     }
-    final notSecured = transferFailure ?? rotationFailure;
-    if (notSecured != null) {
-      throw LocalDeviceNotSecuredException(notSecured);
+    // The transfer backup only endangers the next person while the key it
+    // wraps is still the key on this file, so it is reported with the
+    // rotation that would have retired it and never on its own.
+    if (rotationFailure != null) {
+      throw LocalDeviceNotSecuredException([
+        rotationFailure,
+        ?transferFailure,
+      ]);
     }
   }
 
@@ -268,10 +277,12 @@ class SyncService {
   /// (`LocalDatabaseBootstrap`); before that instant it is a key mismatch
   /// over an empty database, where starting fresh costs nothing.
   ///
-  /// Every way this can end without a new key on the file — a key store that
-  /// cannot be read, a rekey that sqlite3 refuses, a key-back after a store
-  /// that failed — leaves the same state and is returned the same way, so
-  /// none of them can be the one that passes for a rotation that happened.
+  /// Every way this can end with the old key still on the file — a key store
+  /// that cannot be read, a rekey that sqlite3 refuses, a key-back after a
+  /// store that failed, whether that key-back succeeded or not — leaves the
+  /// same state and is returned the same way, so none of them can be the one
+  /// that passes for a rotation that happened. A key-back that works is the
+  /// likeliest of them: it is the designed fallback, not a refusal.
   /// Returned rather than thrown because the photographs the user was
   /// promised must be deleted first, so [deleteLocalData] raises what comes
   /// back here as a [LocalDeviceNotSecuredException] once the rest of the
@@ -305,6 +316,7 @@ class SyncService {
       } catch (keyBack) {
         return keyBack;
       }
+      return e;
     }
     return null;
   }

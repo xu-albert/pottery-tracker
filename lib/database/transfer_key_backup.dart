@@ -185,9 +185,6 @@ SqliteException _withoutBoundParameters(SqliteException error) =>
 /// through as sqlite3 raised it, so that is the only shape to recognise.
 bool isNotADatabase(Object error) {
   const sqliteNotADb = 26;
-  if (error is SqliteException) {
-    return error.extendedResultCode == sqliteNotADb ||
-        error.resultCode == sqliteNotADb;
-  }
+  if (error is SqliteException) return error.resultCode == sqliteNotADb;
   return false;
 }

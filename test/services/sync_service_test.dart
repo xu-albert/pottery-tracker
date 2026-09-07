@@ -742,12 +742,19 @@ void main() {
       },
     );
 
-    test('when the fresh key cannot be stored, the file is keyed back to the '
-        'old key and the erase still completes', () async {
+    test('a key-back that works still leaves the old key on the file, and '
+        'says so rather than passing for a rotation', () async {
       platform.rejectWrite = (key, value) =>
           key == _keyName && value != _oldKey;
 
-      await service.deleteLocalData();
+      await expectLater(
+        service.deleteLocalData(),
+        throwsA(isA<LocalDeviceNotSecuredException>()),
+        reason:
+            'the designed fallback leaves exactly the state a refused rekey '
+            "does, so the leaving user's passphrase still opens whatever the "
+            'next person makes here',
+      );
 
       expect(platform.values[_keyName], _oldKey);
       expect(rekeys.keys, hasLength(2));
@@ -807,6 +814,47 @@ void main() {
 
         expect(platform.values[_keyName], _oldKey);
         expect(await keyed.piecesDao.countPieces(), 0);
+      },
+    );
+
+    test(
+      'a rotation and a transfer delete that both fail report both causes',
+      () async {
+        rekeys.failure = Exception('the database refused the rekey');
+        TransferKeyBackup.fileFor(docsDir).writeAsBytesSync([1, 2, 3]);
+        Process.runSync('chmod', ['500', docsDir.path]);
+        addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+        var deletionIsBlocked = false;
+        try {
+          TransferKeyBackup.fileFor(docsDir).deleteSync();
+        } catch (_) {
+          deletionIsBlocked = true;
+        }
+        if (!deletionIsBlocked) {
+          markTestSkipped('the filesystem here does not enforce the mode bits');
+          return;
+        }
+
+        Object? thrown;
+        try {
+          await service.deleteLocalData();
+        } catch (e) {
+          thrown = e;
+        }
+
+        expect(thrown, isA<LocalDeviceNotSecuredException>());
+        final notSecured = thrown! as LocalDeviceNotSecuredException;
+        expect(
+          notSecured.causes,
+          hasLength(2),
+          reason:
+              'reporting one of the two would drop the other from the error '
+              'the caller records',
+        );
+        expect(
+          notSecured.toString(),
+          contains('the database refused the rekey'),
+        );
       },
     );
 
@@ -918,45 +966,46 @@ void main() {
     });
   });
 
-  group('deleteLocalData reports a transfer backup it could not delete', () {
-    test(
-      'the ownership stamp still goes, and it is never "nothing was deleted"',
-      () async {
-        await insertPiece(id: 'piece-a', title: 'Mug');
-        TransferKeyBackup.fileFor(docsDir).writeAsBytesSync([1, 2, 3]);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(SyncService.localDataOwnerKey, _uid);
+  group('deleteLocalData and a transfer backup it could not delete', () {
+    test('once the file is rekeyed the surviving copy unwraps nothing, so the '
+        'erase completes and still clears the ownership stamp', () async {
+      final platform = FakeSecureStoragePlatform();
+      FlutterSecureStoragePlatform.instance = platform;
+      platform.values[_keyName] = _oldKey;
+      platform.values[_markerName] = '2';
+      await insertPiece(id: 'piece-a', title: 'Mug');
+      TransferKeyBackup.fileFor(docsDir).writeAsBytesSync([1, 2, 3]);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(SyncService.localDataOwnerKey, _uid);
 
-        // Take away the parent's write permission so the backup cannot be
-        // unlinked. Root ignores the mode bits, so check the setup bites.
-        Process.runSync('chmod', ['500', docsDir.path]);
-        addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
-        var deletionIsBlocked = false;
-        try {
-          TransferKeyBackup.fileFor(docsDir).deleteSync();
-        } catch (_) {
-          deletionIsBlocked = true;
-        }
-        if (!deletionIsBlocked) {
-          markTestSkipped('the filesystem here does not enforce the mode bits');
-          return;
-        }
+      // Take away the parent's write permission so the backup cannot be
+      // unlinked. Root ignores the mode bits, so check the setup bites.
+      Process.runSync('chmod', ['500', docsDir.path]);
+      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+      var deletionIsBlocked = false;
+      try {
+        TransferKeyBackup.fileFor(docsDir).deleteSync();
+      } catch (_) {
+        deletionIsBlocked = true;
+      }
+      if (!deletionIsBlocked) {
+        markTestSkipped('the filesystem here does not enforce the mode bits');
+        return;
+      }
 
-        await expectLater(
-          syncService.deleteLocalData(),
-          throwsA(isA<LocalDeviceNotSecuredException>()),
-          reason:
-              'the leaving user can still unwrap this device with their own '
-              'passphrase, which is exactly what the erase promised to end',
-        );
+      await syncService.deleteLocalData();
 
-        // Raised last, so the clears after it ran: an ownership stamp left on
-        // an emptied device refuses the next account for nothing.
-        expect(await db.select(db.pieces).get(), isEmpty);
-        expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
-        expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
-      },
-    );
+      expect(
+        platform.values[_keyName],
+        isNot(_oldKey),
+        reason: 'the rotation is what makes the surviving copy harmless',
+      );
+      // The clears after the delete still ran: an ownership stamp left on
+      // an emptied device refuses the next account for nothing.
+      expect(await db.select(db.pieces).get(), isEmpty);
+      expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
+      expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
+    });
   });
 
   group('deleteLocalData reports a photo wipe it could not finish', () {

@@ -240,7 +240,7 @@ void main() {
     // Everything the confirmation promised is gone by the time this is
     // thrown; what is owed is securing the device for whoever uses it next.
     when(() => syncService.deleteLocalData()).thenThrow(
-      LocalDeviceNotSecuredException(Exception('the key store is full')),
+      LocalDeviceNotSecuredException([Exception('the key store is full')]),
     );
     await pumpLocked(tester);
 

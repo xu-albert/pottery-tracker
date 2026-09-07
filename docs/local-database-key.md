@@ -133,11 +133,13 @@ dies in between leaves the file at the new key: once the store's migrating copy 
 next launch finds that the stored key does not open the file, probes the copy, and finishes the
 store (`LocalDatabaseBootstrap`); before the copy lands — the instant after the rekey — the
 launch is a key mismatch over an *empty* database, where Start fresh costs nothing and clears the
-owed erase. Every way the rotation can end without a new key on the file — an unreadable key
-store, a rekey sqlite3 refuses, a key-back after a store that failed — is reported the same way,
-because they leave the same state; so is a transfer backup that will not delete. The data is gone
+owed erase. Every way the rotation can end with the old key still on the file — an unreadable key
+store, a rekey sqlite3 refuses, a key-back after a store that failed, whether or not that key-back
+itself worked — is reported the same way, because they leave the same state. The data is gone
 either way, so it is never "nothing was deleted": the erase stays owed as *erased but not
-secured*, and its retry does both again. No error from that path quotes a key (`keyingFailure`,
+secured*, and its retry rotates again. A transfer backup that will not delete is reported with
+them, and only with them: once the file has been rekeyed, the copy that outlived the wipe unwraps
+a key that opens nothing here. No error from that path quotes a key (`keyingFailure`,
 shared with `configureSqlCipher`), and neither key ever enters a backup.
 
 Settings › *Moving to a new phone* › **Transfer passphrase** (iOS): set / change / remove, with

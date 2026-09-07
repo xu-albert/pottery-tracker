@@ -1641,9 +1641,9 @@ class _FlakyWipeSyncService extends SyncService {
       );
     }
     if (securingFails) {
-      throw LocalDeviceNotSecuredException(
+      throw LocalDeviceNotSecuredException([
         Exception('simulated key store failure'),
-      );
+      ]);
     }
   }
 
