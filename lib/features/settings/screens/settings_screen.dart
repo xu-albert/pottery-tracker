@@ -10,8 +10,11 @@ import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/sync_service.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../providers/transfer_provider.dart';
 import '../../../widgets/app_snackbar.dart';
+import '../widgets/transfer_passphrase_sheet.dart';
 
 /// How long a partial-failure message stays up.
 ///
@@ -166,6 +169,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref
           .read(syncStateProvider.notifier)
           .signOutAndWipeLocalData(_authService.signOut);
+    } on LocalDeviceNotSecuredException catch (e) {
+      // Nothing of theirs is left here, so "some data could not be deleted"
+      // would be false: what is owed is the securing, which is what the lock
+      // screen's retry does — and it says the same thing there.
+      debugPrint('SettingsScreen: sign-out left the device unsecured: $e');
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: l10n.eraseLocalDataNotSecured,
+          duration: _partialOutcomeDuration,
+        );
+      }
     } catch (e) {
       // The session is already gone and the wipe is still flagged pending, so
       // the lock screen takes over and retries it. Say so rather than implying
@@ -421,6 +436,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _buildSyncTile(context, ref, l10n, auth),
           const Divider(),
 
+          // Device transfer section. The key that encrypts the local database
+          // never enters a phone backup, so pottery kept on this phone alone
+          // does not follow the user to a new phone unless they set this.
+          _SectionHeader(title: l10n.deviceTransfer),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSizes.md,
+              0,
+              AppSizes.md,
+              AppSizes.sm,
+            ),
+            child: Text(
+              !Platform.isIOS
+                  ? l10n.transferExplanationAndroid
+                  : auth.isSignedIn
+                  ? l10n.transferExplanationSignedIn
+                  : l10n.transferExplanationLocalOnly,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          if (Platform.isIOS)
+            ListTile(
+              leading: const Icon(Icons.phonelink_lock_outlined),
+              title: Text(l10n.transferPassphrase),
+              subtitle: Text(
+                ref.watch(transferKeyBackupProvider).exists()
+                    ? l10n.transferPassphraseSet
+                    : l10n.transferPassphraseNotSet,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                await showTransferPassphraseSheet(context);
+                if (mounted) setState(() {});
+              },
+            ),
+          const Divider(),
+
           // Support
           ListTile(
             leading: const Icon(Icons.mail_outline),
@@ -514,6 +566,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     AppSnackbar.show(
                       context,
                       message: l10n.eraseLocalDataPhotosSurvived,
+                      duration: _partialOutcomeDuration,
+                    );
+                  // Everything asked for is gone; what is owed is the key
+                  // rotation, and the lock screen's retry is what pays it.
+                  case DeleteAllDataResult.localErasedButNotSecured:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.eraseLocalDataNotSecured,
                       duration: _partialOutcomeDuration,
                     );
                 }

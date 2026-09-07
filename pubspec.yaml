@@ -72,6 +72,14 @@ dev_dependencies:
   fake_cloud_firestore: ^3.1.0
   firebase_storage_mocks: ^0.7.0
   firebase_core_platform_interface: ^6.0.2
+  # Test-only: lets tests install a fake secure-storage platform under the real
+  # FlutterSecureStorage, so the options that reach the native side are the
+  # ones asserted. Both already resolve transitively; these pin nothing new.
+  flutter_secure_storage_platform_interface: ^1.1.2
+  plugin_platform_interface: ^2.1.8
+  # Test-only: parses the Android backup rules and manifest into a semantic
+  # model rather than grepping them. Already resolved transitively.
+  xml: ^6.6.1
 
 flutter:
   uses-material-design: true

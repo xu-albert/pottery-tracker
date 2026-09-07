@@ -7,6 +7,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
@@ -14,6 +15,8 @@ import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../helpers/fake_secure_storage.dart';
 
 /// End-to-end cover for the cross-account leak: sign-out has to destroy this
 /// device's local data, because the *next* account's first sync pushes
@@ -107,6 +110,10 @@ void main() {
   setUp(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
+    // A stored key, so every wipe here also rotates it as the real one does.
+    FlutterSecureStoragePlatform.instance = FakeSecureStoragePlatform()
+      ..values['db_encryption_key'] = 'accountSwitchKey0123456789abcdef'
+      ..values['db_encryption_key_storage_version'] = '2';
     docsDir = Directory.systemTemp.createTempSync('account_switch_docs_');
     cacheDir = Directory.systemTemp.createTempSync('account_switch_cache_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -950,6 +957,30 @@ void main() {
       );
     });
 
+    test(
+      'an erase that left the device unsecured never says "nothing"',
+      () async {
+        await refuseB();
+
+        syncService.securingFails = true;
+        expect(
+          await notifier.eraseLocalDataNow(),
+          EraseLocalDataResult.erasedButNotSecured,
+          reason:
+              '"nothing was deleted" would be false: the foreign pottery is '
+              'gone and only the key rotation is owed',
+        );
+        await settle();
+
+        expect(await db.select(db.pieces).get(), isEmpty);
+        expect(
+          container.read(deviceLockReasonProvider),
+          DeviceLockReason.pendingWipe,
+          reason: 'the erase stays owed until the device can be secured',
+        );
+      },
+    );
+
     test('a failed erase does not release an owed wipe', () async {
       await insertPieceWithPhoto('piece-a', "A's mug");
       await notifier.syncNow(forceFullSync: true);
@@ -1480,6 +1511,39 @@ void main() {
       },
     );
 
+    test('that left the device unsecured says so, never "nothing"', () async {
+      syncService.securingFails = true;
+
+      expect(
+        await notifier.deleteAllData(),
+        DeleteAllDataResult.localErasedButNotSecured,
+        reason:
+            'every row and file the user asked for is gone; only the '
+            'rotation is owed',
+      );
+      await settle();
+
+      expect(await db.select(db.pieces).get(), isEmpty);
+      expect(await db.select(db.photos).get(), isEmpty);
+      expect(
+        container.read(deviceLockReasonProvider),
+        DeviceLockReason.pendingWipe,
+        reason: 'the key was not replaced, so the erase is still owed',
+      );
+
+      // And the retry is what finishes it, once the key store takes a key.
+      syncService.securingFails = false;
+      expect(
+        await notifier.retryOwedWipe(),
+        EraseLocalDataResult.erased,
+        reason:
+            'the retry reports what it did, so the lock can explain '
+            'itself',
+      );
+      await settle();
+      expect(container.read(deviceLockReasonProvider), isNull);
+    });
+
     test('that deleted nothing still says nothing was deleted', () async {
       syncService.wipeFails = true;
 
@@ -1561,6 +1625,12 @@ class _FlakyWipeSyncService extends SyncService {
   /// gone, so here too the rows really are deleted before it is thrown.
   bool photoWipeFails = false;
 
+  /// Stands in for a key store that will not take the rotated key, or a
+  /// transfer backup that will not delete. Like the photo failure, the real
+  /// wipe raises this only once everything it promised to delete is gone —
+  /// nothing local survives it.
+  bool securingFails = false;
+
   /// Every uid `pushAllLocal` has run for. Only [SyncNotifier.syncNow] takes
   /// that branch, so it is how a test tells which of the two push paths did an
   /// upload — both leave the same rows in the cloud.
@@ -1591,6 +1661,11 @@ class _FlakyWipeSyncService extends SyncService {
       throw LocalPhotoWipeException(
         Exception('simulated photos directory failure'),
       );
+    }
+    if (securingFails) {
+      throw LocalDeviceNotSecuredException([
+        Exception('simulated key store failure'),
+      ]);
     }
   }
 

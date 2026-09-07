@@ -470,6 +470,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.';
 
   @override
+  String get eraseLocalDataNotSecured =>
+      'Everything on this device was erased, but it could not be fully secured for whoever uses it next. The erase is still owed, so try again to finish it.';
+
+  @override
   String get deleteAccountTitle => 'Delete Account & Data';
 
   @override
@@ -571,4 +575,174 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get feedbackSendFailed => 'Couldn\'t send — try again later';
+
+  @override
+  String get recoveryTitle => 'This phone can\'t open your pottery journal';
+
+  @override
+  String get recoveryMessageKeyMissing =>
+      'Your journal was restored from a backup, but the key that unlocks it stays on the phone it was made on and is never included in backups. That protects your pottery if a backup is ever copied — and it means this phone can\'t read the restored copy on its own.';
+
+  @override
+  String get recoveryMessageKeyMissingAndroid =>
+      'The key that unlocks this journal is held in this phone\'s secure hardware and never leaves it, so it is never included in a backup or a phone-to-phone transfer. This phone can no longer read that key, so the journal stored here can\'t be opened on its own.';
+
+  @override
+  String get recoveryMessageKeyMismatch =>
+      'The journal on this phone was encrypted with a key this phone no longer has, so it can\'t be read on its own.';
+
+  @override
+  String get recoveryCloudHint =>
+      'This journal was backed up to an account. Sign in with it and your pieces are downloaded again; the photos already on this phone are kept. Changes the old phone never finished backing up are lost.';
+
+  @override
+  String get recoveryLocalOnlyHint =>
+      'This journal was kept on the old phone only and never signed in, so there is no cloud copy to download. Without its transfer passphrase, its pieces can\'t be recovered here.';
+
+  @override
+  String get recoveryLocalOnlyHintAndroid =>
+      'This journal was never signed in, so there is no cloud copy to download. Pottery kept on this phone alone can\'t be recovered without its key.';
+
+  @override
+  String get recoveryPassphraseSection =>
+      'Unlock with your transfer passphrase';
+
+  @override
+  String get recoveryPassphraseLabel => 'Transfer passphrase';
+
+  @override
+  String get recoveryUnlock => 'Unlock';
+
+  @override
+  String get recoveryWrongPassphrase => 'That passphrase doesn\'t match.';
+
+  @override
+  String get recoveryTransferKeyMismatch =>
+      'The passphrase is right, but the key it protects doesn\'t open this journal.';
+
+  @override
+  String get recoveryRedownload => 'Sign in and download again';
+
+  @override
+  String get recoveryRedownloadConfirmTitle => 'Download your pieces again?';
+
+  @override
+  String get recoveryRedownloadConfirmMessage =>
+      'The unreadable copy on this phone is removed. Your photos stay, and your pieces are downloaded again once you sign in. Any changes the old phone never finished backing up are lost.';
+
+  @override
+  String get recoveryRedownloadConfirm => 'Remove and sign in';
+
+  @override
+  String get recoveryStartFresh => 'Start fresh without them';
+
+  @override
+  String get recoveryStartFreshConfirmTitle => 'Delete the restored pieces?';
+
+  @override
+  String get recoveryStartFreshConfirmMessage =>
+      'The pieces and photos restored from your old phone are deleted from this phone. If you still have the old phone, set a transfer passphrase in its Settings and restore this phone from a new backup instead. This cannot be undone.';
+
+  @override
+  String get recoveryStartFreshConfirmMessageAndroid =>
+      'The pieces and photos on this phone are deleted. This cannot be undone.';
+
+  @override
+  String get recoveryStartFreshConfirm => 'Delete and start fresh';
+
+  @override
+  String recoveryFailed(String error) {
+    return 'Something went wrong: $error';
+  }
+
+  @override
+  String get launchFailedTitle => 'Couldn\'t open your pottery journal';
+
+  @override
+  String launchFailedMessage(String error) {
+    return 'Nothing was changed. Try again, and if this keeps happening, send feedback from a fresh install so it can be fixed.\n\n$error';
+  }
+
+  @override
+  String get tryAgain => 'Try again';
+
+  @override
+  String get deviceTransfer => 'Moving to a new phone';
+
+  @override
+  String get transferPassphrase => 'Transfer passphrase';
+
+  @override
+  String get transferPassphraseSet =>
+      'Set — a phone backup can carry your pottery';
+
+  @override
+  String get transferPassphraseNotSet => 'Not set';
+
+  @override
+  String get transferExplanationLocalOnly =>
+      'Pottery kept only on this phone is encrypted with a key that never leaves it, so a phone backup restores the journal but can\'t open it. A transfer passphrase lets a new phone unlock it. Signing in backs pottery up to the cloud instead.';
+
+  @override
+  String get transferExplanationSignedIn =>
+      'Your pieces are backed up to your account and come back by signing in on a new phone. A transfer passphrase is only needed for pottery kept on this phone alone.';
+
+  @override
+  String get transferExplanationAndroid =>
+      'Pottery kept only on this phone stays on this phone: the app keeps its data out of Android backups and phone-to-phone transfers, so it can\'t be moved to a new phone. Signing in backs it up to your account instead, and it comes back by signing in on the new phone.';
+
+  @override
+  String get setTransferPassphrase => 'Set transfer passphrase';
+
+  @override
+  String get changeTransferPassphrase => 'Change passphrase';
+
+  @override
+  String get removeTransferPassphrase => 'Remove passphrase';
+
+  @override
+  String transferPassphraseSheetMessage(int min) {
+    return 'Choose a passphrase you\'ll remember — you type it once, on the new phone. Anyone holding a backup of this phone can try to guess it, so make it a phrase rather than a PIN: at least $min characters.';
+  }
+
+  @override
+  String get transferPassphraseHint => 'Passphrase';
+
+  @override
+  String get transferPassphraseConfirmHint => 'Repeat passphrase';
+
+  @override
+  String transferPassphraseTooShort(int min) {
+    return 'Use at least $min characters.';
+  }
+
+  @override
+  String get transferPassphraseMismatch => 'The two entries don\'t match.';
+
+  @override
+  String get transferPassphraseSaved => 'Transfer passphrase set.';
+
+  @override
+  String get transferPassphraseRemoved => 'Transfer passphrase removed.';
+
+  @override
+  String transferPassphraseFailed(String error) {
+    return 'Couldn\'t save the passphrase: $error';
+  }
+
+  @override
+  String transferPassphraseRemoveFailed(String error) {
+    return 'Couldn\'t remove the passphrase: $error';
+  }
+
+  @override
+  String get transferPassphraseRemoveConfirmTitle =>
+      'Remove the transfer passphrase?';
+
+  @override
+  String get transferPassphraseRemoveConfirmMessage =>
+      'A backup of this phone will no longer be able to open your pottery on a new phone.';
+
+  @override
+  String get remove => 'Remove';
 }

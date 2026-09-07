@@ -15,7 +15,7 @@ and what it unblocks.
 |---|---|---|
 | `applicationId` | `com.potterytracker.pottery_tracker` — **permanent once published** | `android/app/build.gradle.kts` |
 | `minSdk` / `targetSdk` | 24 / 36, inherited from the Flutter SDK | `android/app/build.gradle.kts` |
-| Manifest hardening | `allowBackup="false"`, `usesCleartextTraffic="false"`, network security config | `android/app/src/main/AndroidManifest.xml` |
+| Manifest hardening | `allowBackup="false"` plus `dataExtractionRules` excluding every domain from cloud backup *and* Android 12+ device-to-device transfer (`allowBackup` alone does not stop the latter on every device), `usesCleartextTraffic="false"`, network security config | `android/app/src/main/AndroidManifest.xml`, `res/xml/data_extraction_rules.xml` |
 | Advertising-ID permissions | the three `firebase_analytics` merges in are stripped with `tools:node="remove"`, and runtime collection is off — see "Data Safety" in section 6 | `android/app/src/main/AndroidManifest.xml` |
 | Portrait lock | `userPortrait` + restricted-resizability opt-out | see "Design Constraints" in `AGENTS.md` |
 | Release signing | reads `android/key.properties` if present, falls back to the debug key with a warning | `android/app/build.gradle.kts` |
@@ -363,9 +363,19 @@ first one is the highest-risk unknown in the whole Android launch:
    swap? This changes the underlying native library from `net.zetetic:android-database-sqlcipher:4.5.4`
    to `net.zetetic:sqlcipher-android:4.10.0` — **so this needs re-testing on iOS too, not just
    Android.**
-3. Does the `flutter_secure_storage` encryption key survive kill / relaunch / app upgrade on Android?
+3. Does the `flutter_secure_storage` encryption key survive kill / relaunch / app upgrade on
+   Android, now that it is written under RSA-OAEP + AES-GCM rather than the legacy ciphers? An
+   upgrade has to re-encrypt the value the old build wrote, and a stored value this device
+   cannot decrypt is deliberately read as *no key*, which sends the launch to the recovery
+   screen instead of a retry that would fail the same way forever — see
+   `docs/local-database-key.md`.
 4. Camera capture and photo-picker round-trip on Android 13+.
 5. Google Sign-In end to end, after section 4.
 6. App Check / Play Integrity, only meaningful in a Play track.
 7. In-app review — a no-op outside a Play track, and quota-limited.
 8. Cupertino dialogs vs the Android back gesture.
+9. Does device-to-device transfer actually honour `res/xml/data_extraction_rules.xml`? Nothing
+   of the app's may reach the new phone — `app_flutter/pottery_tracker.db` and
+   `shared_prefs/FlutterSecureStorage.xml` least of all. `allowBackup="false"` alone does not
+   stop it on every manufacturer, which is why the rules file exists; only two real devices can
+   confirm it.

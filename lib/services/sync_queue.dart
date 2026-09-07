@@ -72,7 +72,9 @@ class SyncQueueEntry {
 }
 
 class SyncQueue {
-  static const _key = 'sync_queue';
+  /// The preferences key the queue is persisted under. Public so the database
+  /// bootstrap can drop a queue restored alongside a database it discards.
+  static const storageKey = 'sync_queue';
 
   Future<void> enqueue(SyncQueueEntry entry) async {
     final entries = await getAll();
@@ -87,7 +89,7 @@ class SyncQueue {
 
   Future<List<SyncQueueEntry>> getAll() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_key);
+    final raw = prefs.getStringList(storageKey);
     if (raw == null) return [];
     return raw
         .map(
@@ -105,7 +107,7 @@ class SyncQueue {
 
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
+    await prefs.remove(storageKey);
   }
 
   Future<int> get pendingCount async => (await getAll()).length;
@@ -113,7 +115,7 @@ class SyncQueue {
   Future<void> _save(List<SyncQueueEntry> entries) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
-      _key,
+      storageKey,
       entries.map((e) => json.encode(e.toJson())).toList(),
     );
   }

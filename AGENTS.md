@@ -36,9 +36,9 @@ than re-deriving it.
   `-PrequireReleaseSigning=true` for anything destined for Play and the build fails instead.
 - The SQLCipher guard (`configureSqlCipher` in `lib/database/sqlcipher_guard.dart`) is what stops the
   app writing a plaintext database when SQLCipher is not the library that loaded. Its own behaviour is
-  tested, but its single call site — the `setup:` callback in `AppDatabase.open()` — is not covered by
-  any test, because that path needs a real SQLCipher-backed database. Do not remove or refactor that
-  call away without verifying on a device.
+  tested, but its call site for the real database — the `setup:` callback in
+  `AppDatabase.open(file, key)` — is not covered by any test, because that path needs a real
+  SQLCipher-backed database. Do not remove or refactor that call away without verifying on a device.
 - Major dependency upgrades (Firebase 3->4/5->6, `go_router`, `google_sign_in`, `sign_in_with_apple`,
   `flutter_secure_storage`, Riverpod 3, `sqlite3` 3) are deliberately frozen until Android is on a
   Play track, so an Android regression is never confounded with an upgrade. `drift` is already at its
@@ -49,6 +49,28 @@ than re-deriving it.
   native-assets toolchain (`hooks`, `code_assets`, `native_toolchain_c`). Lifting the pin can only be
   validated by an iOS build, so it stays until the `package:sqlite3` 3.x migration above, which needs
   that toolchain anyway.
+
+### Local database key
+
+The SQLCipher key is stored under options pinned in `EncryptionKeyService` (iOS
+`first_unlock_this_device`, never synchronised; Android KeyStore with RSA-OAEP + AES-GCM) so it never
+enters a phone backup. Consequences, all documented in `docs/local-database-key.md`:
+
+- **Never change those options without a migration.** A key written under different options is
+  unreadable to the next launch on Android and travels in backups again on iOS. The secure-storage
+  marker `db_encryption_key_storage_version` is what says a key was stored under the current options;
+  bump it and extend `hardenStoredKey` if they ever change.
+- **Every launch goes through `LocalDatabaseBootstrap`**, which never creates a key while a database
+  file exists — that would open an empty database over the user's pottery. A file with no key is a
+  backup restore and gets `DatabaseRecoveryScreen` *before* the app runs.
+- **Local-only users move phones with a transfer passphrase, on iOS only** (`TransferKeyBackup`, a
+  second SQLCipher file in `Documents/` wrapping the key). Android opts out of backups *and*
+  Android 12+ device transfer (`allowBackup="false"` plus `dataExtractionRules` excluding every
+  domain — `allowBackup` alone does not stop device transfer), so the Settings section there says
+  plainly that local-only pottery does not move; never show the passphrase on Android. It is a
+  local store: `deleteLocalData` and both recovery discard paths delete it, and `deleteLocalData`
+  also rekeys the emptied database so the passphrase in an old backup unwraps nothing new. Cloud
+  users re-pull; their photo files are kept for the pull to reuse.
 
 ## no-mistakes test step: evidence-agent hang
 

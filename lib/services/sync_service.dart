@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
+import '../database/transfer_key_backup.dart';
+import 'encryption_key_service.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -28,12 +30,49 @@ class LocalPhotoWipeException implements Exception {
       'LocalPhotoWipeException: local photo files were not deleted: $cause';
 }
 
+/// Raised by [SyncService.deleteLocalData] when every local store was
+/// destroyed but the device was not left secured against the user leaving it.
+///
+/// Its own type for the same reason as [LocalPhotoWipeException]: the caller
+/// must not report this as "nothing was deleted". Everything the confirmation
+/// promised to delete is gone — the rows, the photographs, the queue, the
+/// watermarks and the ownership stamp. What did not happen is one of the two
+/// steps that stop the leaving user reaching what the next person makes here:
+/// replacing the database key, or deleting the transfer backup that wraps it.
+/// One outcome rather than two because they are the same thing to the reader
+/// and want the same thing from them — the erase stays owed, and its retry
+/// does both again.
+///
+/// The transfer backup is reported even when the rotation worked and the key
+/// the surviving copy wraps opens nothing here: that file is what Settings
+/// reads to decide a passphrase is set, and nothing else on the device ever
+/// removes it, so leaving it would tell the next person they have a
+/// passphrase they never chose. [causes] carries every step that failed, so a
+/// report never drops one in favour of another.
+class LocalDeviceNotSecuredException implements Exception {
+  /// What stopped the device from being secured, in the order it happened.
+  final List<Object> causes;
+
+  LocalDeviceNotSecuredException(this.causes);
+
+  @override
+  String toString() =>
+      'LocalDeviceNotSecuredException: local data was erased but the device '
+      'was not secured for its next user: ${causes.join('; ')}';
+}
+
 class SyncService {
   final AppDatabase _db;
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
+  final EncryptionKeyService _keys;
 
-  SyncService(this._db, this._firestore, this._storage);
+  SyncService(
+    this._db,
+    this._firestore,
+    this._storage, {
+    EncryptionKeyService? keys,
+  }) : _keys = keys ?? EncryptionKeyService();
 
   DocumentReference _userDoc(String uid) => _firestore.doc('users/$uid');
 
@@ -42,8 +81,9 @@ class SyncService {
 
   /// Prefix of the per-uid "last successful pull" watermarks written by
   /// [_saveLastPulledAt]. Shared with [deleteLocalData], which has to clear
-  /// every one of them.
-  static const _lastPulledAtPrefix = 'lastPulledAt_';
+  /// every one of them, and with the database bootstrap, which clears them
+  /// when it discards a restored database before any `SyncService` exists.
+  static const lastPulledAtPrefix = 'lastPulledAt_';
 
   /// The uid whose data this device's local database holds.
   ///
@@ -153,9 +193,9 @@ class SyncService {
   /// cosmetic bug. That is also why this runs on sign-out — see
   /// `SyncNotifier.signOutAndWipeLocalData`.
   ///
-  /// The SQLCipher key in secure storage is deliberately left alone: it stays
-  /// paired with the (now empty) database file. Rotating it would risk leaving
-  /// a key that no longer opens the file, which bricks the app permanently.
+  /// The SQLCipher key is rotated here too — see [_rotateDatabaseKey] — so
+  /// the leaving user's transfer passphrase, whose backup file a phone backup
+  /// may have kept, unwraps nothing the next person on this device makes.
   Future<void> deleteLocalData() async {
     debugPrint('SyncService: deleting all local data');
 
@@ -178,8 +218,11 @@ class SyncService {
       debugPrint('SyncService: VACUUM after wipe failed: $e');
     }
 
+    final rotationFailure = await _rotateDatabaseKey();
+
     final photoFailure = await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
+    final transferFailure = await _deleteTransferKeyBackup();
 
     // The data is gone, so nobody owns this device any more: the next account
     // to sign in starts from a clean slate rather than inheriting the claim,
@@ -196,6 +239,84 @@ class SyncService {
     if (photoFailure != null) {
       throw LocalPhotoWipeException(photoFailure);
     }
+    final notSecured = [?rotationFailure, ?transferFailure];
+    if (notSecured.isNotEmpty) {
+      throw LocalDeviceNotSecuredException(notSecured);
+    }
+  }
+
+  /// Deletes the transfer backup, returning what stopped it or null.
+  ///
+  /// The transfer passphrase was the leaving user's: the next person on this
+  /// device must not inherit a backup that a passphrase they do not know can
+  /// open. Returned rather than thrown for the same reason as the rotation —
+  /// the ownership stamp this device is refused over is cleared after it, and
+  /// a stamp left standing on an emptied device refuses the next account for
+  /// nothing.
+  Future<Object?> _deleteTransferKeyBackup() async {
+    try {
+      await TransferKeyBackup.deleteIn(
+        await getApplicationDocumentsDirectory(),
+      );
+      return null;
+    } catch (e) {
+      debugPrint('SyncService: the transfer backup was not deleted: $e');
+      return e;
+    }
+  }
+
+  /// Re-encrypts the emptied database under a fresh key and stores it.
+  ///
+  /// The database is rekeyed first and the new key stored second. If storing
+  /// fails, the file is keyed back and the old key stored again. A process
+  /// that dies in between leaves the file at the new key: once the store's
+  /// migrating copy has landed, the next launch finds the stored key does
+  /// not open the file, probes the copy and finishes the store
+  /// (`LocalDatabaseBootstrap`); before that instant it is a key mismatch
+  /// over an empty database, where starting fresh costs nothing.
+  ///
+  /// Every way this can end with the old key still on the file — a key store
+  /// that cannot be read, a rekey that sqlite3 refuses, a key-back after a
+  /// store that failed, whether that key-back succeeded or not — leaves the
+  /// same state and is returned the same way, so none of them can be the one
+  /// that passes for a rotation that happened. A key-back that works is the
+  /// likeliest of them: it is the designed fallback, not a refusal.
+  /// Returned rather than thrown because the photographs the user was
+  /// promised must be deleted first, so [deleteLocalData] raises what comes
+  /// back here as a [LocalDeviceNotSecuredException] once the rest of the
+  /// wipe has run. The erase stays owed, and its retry rotates again. No
+  /// error from here quotes a key (`AppDatabase.rekey`).
+  Future<Object?> _rotateDatabaseKey() async {
+    final String? oldKey;
+    try {
+      oldKey = await _keys.readKey();
+    } catch (e) {
+      debugPrint('SyncService: database key rotation could not read a key: $e');
+      return e;
+    }
+    if (oldKey == null) return null;
+    final newKey = EncryptionKeyService.generateKey();
+    try {
+      await _db.rekey(newKey);
+    } catch (e) {
+      debugPrint('SyncService: the database was not rekeyed: $e');
+      return e;
+    }
+    try {
+      await _keys.storeKey(newKey);
+    } catch (e) {
+      debugPrint(
+        'SyncService: rotated key not stored, keying the database back: $e',
+      );
+      try {
+        await _db.rekey(oldKey);
+        await _keys.storeKey(oldKey);
+      } catch (keyBack) {
+        return keyBack;
+      }
+      return e;
+    }
+    return null;
   }
 
   /// Deletes the photo files, returning what stopped it or null if nothing did.
@@ -271,7 +392,7 @@ class SyncService {
     final prefs = await SharedPreferences.getInstance();
     final stale = prefs
         .getKeys()
-        .where((k) => k.startsWith(_lastPulledAtPrefix))
+        .where((k) => k.startsWith(lastPulledAtPrefix))
         .toList();
     for (final key in stale) {
       await prefs.remove(key);
@@ -610,7 +731,7 @@ class SyncService {
 
   Future<DateTime?> getLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    final ms = prefs.getInt('$_lastPulledAtPrefix$uid');
+    final ms = prefs.getInt('$lastPulledAtPrefix$uid');
     if (ms == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(ms);
   }
@@ -618,7 +739,7 @@ class SyncService {
   Future<void> _saveLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(
-      '$_lastPulledAtPrefix$uid',
+      '$lastPulledAtPrefix$uid',
       DateTime.now().millisecondsSinceEpoch,
     );
   }
