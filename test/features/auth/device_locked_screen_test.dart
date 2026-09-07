@@ -234,15 +234,14 @@ void main() {
     expect(find.text('Erase This Device'), findsOneWidget);
   });
 
-  testWidgets('an erase that could not replace the key never says "nothing"', (
+  testWidgets('an erase that left the device unsecured never says "nothing"', (
     tester,
   ) async {
     // Everything the confirmation promised is gone by the time this is
-    // thrown; what is owed is the rotation that secures the device for
-    // whoever uses it next.
-    when(
-      () => syncService.deleteLocalData(),
-    ).thenThrow(LocalKeyRotationException(Exception('the key store is full')));
+    // thrown; what is owed is securing the device for whoever uses it next.
+    when(() => syncService.deleteLocalData()).thenThrow(
+      LocalDeviceNotSecuredException(Exception('the key store is full')),
+    );
     await pumpLocked(tester);
 
     await tester.tap(find.text('Erase This Device'));
@@ -252,11 +251,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
     }
 
-    expect(find.textContaining('could not be replaced'), findsOneWidget);
+    expect(find.textContaining('could not be fully secured'), findsOneWidget);
     expect(
       find.textContaining('Nothing was deleted'),
       findsNothing,
-      reason: 'everything really was erased; only the re-keying was not done',
+      reason: 'everything really was erased; only the securing was not done',
     );
 
     await tester.pump();

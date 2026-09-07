@@ -932,11 +932,11 @@ void main() {
     });
 
     test(
-      'an erase that could not replace the key never says "nothing"',
+      'an erase that left the device unsecured never says "nothing"',
       () async {
         await refuseB();
 
-        syncService.keyRotationFails = true;
+        syncService.securingFails = true;
         expect(
           await notifier.eraseLocalDataNow(),
           EraseLocalDataResult.erasedButNotSecured,
@@ -950,7 +950,7 @@ void main() {
         expect(
           container.read(deviceLockReasonProvider),
           DeviceLockReason.pendingWipe,
-          reason: 'the erase stays owed until the key can be replaced',
+          reason: 'the erase stays owed until the device can be secured',
         );
       },
     );
@@ -1485,8 +1485,8 @@ void main() {
       },
     );
 
-    test('that could not replace the key says so, never "nothing"', () async {
-      syncService.keyRotationFails = true;
+    test('that left the device unsecured says so, never "nothing"', () async {
+      syncService.securingFails = true;
 
       expect(
         await notifier.deleteAllData(),
@@ -1506,7 +1506,7 @@ void main() {
       );
 
       // And the retry is what finishes it, once the key store takes a key.
-      syncService.keyRotationFails = false;
+      syncService.securingFails = false;
       expect(
         await notifier.retryOwedWipe(),
         EraseLocalDataResult.erased,
@@ -1607,10 +1607,11 @@ class _FlakyWipeSyncService extends SyncService {
   /// gone, so here too the rows really are deleted before it is thrown.
   bool photoWipeFails = false;
 
-  /// Stands in for a key store that will not take the rotated key. Like the
-  /// photo failure, the real wipe raises this only once everything it
-  /// promised to delete is gone — nothing local survives it.
-  bool keyRotationFails = false;
+  /// Stands in for a key store that will not take the rotated key, or a
+  /// transfer backup that will not delete. Like the photo failure, the real
+  /// wipe raises this only once everything it promised to delete is gone —
+  /// nothing local survives it.
+  bool securingFails = false;
 
   /// Every uid `pushAllLocal` has run for. Only [SyncNotifier.syncNow] takes
   /// that branch, so it is how a test tells which of the two push paths did an
@@ -1639,8 +1640,10 @@ class _FlakyWipeSyncService extends SyncService {
         Exception('simulated photos directory failure'),
       );
     }
-    if (keyRotationFails) {
-      throw LocalKeyRotationException(Exception('simulated key store failure'));
+    if (securingFails) {
+      throw LocalDeviceNotSecuredException(
+        Exception('simulated key store failure'),
+      );
     }
   }
 

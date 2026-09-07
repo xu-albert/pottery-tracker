@@ -80,10 +80,11 @@ enum EraseLocalDataResult {
   /// a retry available on the lock screen that finishes it.
   photosSurvived,
 
-  /// Every local store is gone, but the database key could not be replaced,
-  /// so the device is erased and not yet secured for whoever uses it next.
-  /// Reported separately for the same reason as [photosSurvived]: "nothing
-  /// was deleted" is false here, and the retry rotates the key again.
+  /// Every local store is gone, but the device was not left secured against
+  /// the user leaving it — the database key was not replaced, or the transfer
+  /// backup that wraps it was not deleted. Reported separately for the same
+  /// reason as [photosSurvived]: "nothing was deleted" is false here, and the
+  /// retry does both again.
   erasedButNotSecured,
 }
 
@@ -126,10 +127,10 @@ enum DeleteAllDataResult {
   /// from [localDataSurvived] because there is no cloud side to speak of.
   localPhotosSurvived,
 
-  /// The local wipe removed everything it promised to, but could not replace
-  /// this device's database key. Separate from [failed] because nothing
-  /// survived, and from [localDataSurvived] because the local copy is gone —
-  /// only the rotation is still owed.
+  /// The local wipe removed everything it promised to, but could not leave
+  /// the device secured against the account leaving it. Separate from
+  /// [failed] because nothing survived, and from [localDataSurvived] because
+  /// the local copy is gone — only the securing is still owed.
   localErasedButNotSecured,
 }
 
@@ -498,7 +499,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } on LocalPhotoWipeException catch (e) {
       await _recordFailedWipe('explicit erase', e);
       return EraseLocalDataResult.photosSurvived;
-    } on LocalKeyRotationException catch (e) {
+    } on LocalDeviceNotSecuredException catch (e) {
       await _recordFailedWipe('explicit erase', e);
       return EraseLocalDataResult.erasedButNotSecured;
     } catch (e) {
@@ -731,7 +732,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } on LocalPhotoWipeException catch (e) {
       await _reportResumedWipeFailure(e);
       return EraseLocalDataResult.photosSurvived;
-    } on LocalKeyRotationException catch (e) {
+    } on LocalDeviceNotSecuredException catch (e) {
       await _reportResumedWipeFailure(e);
       return EraseLocalDataResult.erasedButNotSecured;
     } catch (e) {
@@ -765,7 +766,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     var cloudDeleted = false;
     var accountSurvived = false;
     var localWiped = false;
-    var keyNotRotated = false;
+    var notSecured = false;
     var sessionEnded = false;
 
     try {
@@ -808,12 +809,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       } on LocalPhotoWipeException catch (e) {
         await _recordFailedWipe('deleteAllData local wipe', e);
         if (!cloudDeleted) return DeleteAllDataResult.localPhotosSurvived;
-      } on LocalKeyRotationException catch (e) {
+      } on LocalDeviceNotSecuredException catch (e) {
         // Nothing local survived this one, so it is not a local copy that is
         // still standing: every row, photograph, watermark and stamp is gone
-        // and only the key rotation is owed.
+        // and only the securing is owed.
         localWiped = true;
-        keyNotRotated = true;
+        notSecured = true;
         await _recordFailedWipe('deleteAllData local wipe', e);
       } catch (e) {
         await _recordFailedWipe('deleteAllData local wipe', e);
@@ -839,11 +840,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       await _ref.read(authProvider.notifier).signOut();
       sessionEnded = true;
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
-      // A surviving account outranks an unrotated key: it is the outcome the
-      // user has to act on, and the lock screen keeps offering the retry that
-      // rotates the key either way.
+      // A surviving account outranks an unsecured device: it is the outcome
+      // the user has to act on, and the lock screen keeps offering the retry
+      // that secures the device either way.
       if (accountSurvived) return DeleteAllDataResult.accountSurvived;
-      return keyNotRotated
+      return notSecured
           ? DeleteAllDataResult.localErasedButNotSecured
           : DeleteAllDataResult.deleted;
     } catch (e) {

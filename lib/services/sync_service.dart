@@ -31,25 +31,27 @@ class LocalPhotoWipeException implements Exception {
 }
 
 /// Raised by [SyncService.deleteLocalData] when every local store was
-/// destroyed but the database key could not be replaced.
+/// destroyed but the device was not left secured against the user leaving it.
 ///
 /// Its own type for the same reason as [LocalPhotoWipeException]: the caller
 /// must not report this as "nothing was deleted". Everything the confirmation
 /// promised to delete is gone — the rows, the photographs, the queue, the
-/// watermarks, the transfer backup and the ownership stamp. What did not
-/// happen is the rotation that stops a key an old phone backup may still
-/// carry from opening what the next person on this device makes, so the erase
-/// stays owed and its retry rotates again.
-class LocalKeyRotationException implements Exception {
-  /// What stopped the key from being replaced.
+/// watermarks and the ownership stamp. What did not happen is one of the two
+/// steps that stop the leaving user reaching what the next person makes here:
+/// replacing the database key, or deleting the transfer backup that wraps it.
+/// One outcome rather than two because they are the same thing to the reader
+/// and want the same thing from them — the erase stays owed, and its retry
+/// does both again.
+class LocalDeviceNotSecuredException implements Exception {
+  /// What stopped the device from being secured.
   final Object cause;
 
-  LocalKeyRotationException(this.cause);
+  LocalDeviceNotSecuredException(this.cause);
 
   @override
   String toString() =>
-      'LocalKeyRotationException: local data was erased but the database key '
-      'was not replaced: $cause';
+      'LocalDeviceNotSecuredException: local data was erased but the device '
+      'was not secured for its next user: $cause';
 }
 
 class SyncService {
@@ -213,10 +215,7 @@ class SyncService {
 
     final photoFailure = await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
-    // The transfer passphrase was the leaving user's: the next person on this
-    // device must not inherit a backup that a passphrase they do not know can
-    // open.
-    await TransferKeyBackup.deleteIn(await getApplicationDocumentsDirectory());
+    final transferFailure = await _deleteTransferKeyBackup();
 
     // The data is gone, so nobody owns this device any more: the next account
     // to sign in starts from a clean slate rather than inheriting the claim,
@@ -233,8 +232,29 @@ class SyncService {
     if (photoFailure != null) {
       throw LocalPhotoWipeException(photoFailure);
     }
-    if (rotationFailure != null) {
-      throw LocalKeyRotationException(rotationFailure);
+    final notSecured = transferFailure ?? rotationFailure;
+    if (notSecured != null) {
+      throw LocalDeviceNotSecuredException(notSecured);
+    }
+  }
+
+  /// Deletes the transfer backup, returning what stopped it or null.
+  ///
+  /// The transfer passphrase was the leaving user's: the next person on this
+  /// device must not inherit a backup that a passphrase they do not know can
+  /// open. Returned rather than thrown for the same reason as the rotation —
+  /// the ownership stamp this device is refused over is cleared after it, and
+  /// a stamp left standing on an emptied device refuses the next account for
+  /// nothing.
+  Future<Object?> _deleteTransferKeyBackup() async {
+    try {
+      await TransferKeyBackup.deleteIn(
+        await getApplicationDocumentsDirectory(),
+      );
+      return null;
+    } catch (e) {
+      debugPrint('SyncService: the transfer backup was not deleted: $e');
+      return e;
     }
   }
 
@@ -246,16 +266,17 @@ class SyncService {
   /// migrating copy has landed, the next launch finds the stored key does
   /// not open the file, probes the copy and finishes the store
   /// (`LocalDatabaseBootstrap`); before that instant it is a key mismatch
-  /// over an empty database, where starting fresh costs nothing. A rekey
-  /// that fails is logged and skipped — its error never quotes a key
-  /// (`AppDatabase.rekey`): the erase's promise is the data, and it is
-  /// already gone.
+  /// over an empty database, where starting fresh costs nothing.
   ///
-  /// A key store that cannot be read, and a key-back that fails, are returned
-  /// rather than thrown: the photographs the user was promised must be
-  /// deleted before any of this is reported, so [deleteLocalData] raises what
-  /// comes back here as a [LocalKeyRotationException] once the rest of the
-  /// wipe has run. The erase still stays owed, and its retry rotates again.
+  /// Every way this can end without a new key on the file — a key store that
+  /// cannot be read, a rekey that sqlite3 refuses, a key-back after a store
+  /// that failed — leaves the same state and is returned the same way, so
+  /// none of them can be the one that passes for a rotation that happened.
+  /// Returned rather than thrown because the photographs the user was
+  /// promised must be deleted first, so [deleteLocalData] raises what comes
+  /// back here as a [LocalDeviceNotSecuredException] once the rest of the
+  /// wipe has run. The erase stays owed, and its retry rotates again. No
+  /// error from here quotes a key (`AppDatabase.rekey`).
   Future<Object?> _rotateDatabaseKey() async {
     final String? oldKey;
     try {
@@ -269,8 +290,8 @@ class SyncService {
     try {
       await _db.rekey(newKey);
     } catch (e) {
-      debugPrint('SyncService: database key rotation skipped: $e');
-      return null;
+      debugPrint('SyncService: the database was not rekeyed: $e');
+      return e;
     }
     try {
       await _keys.storeKey(newKey);

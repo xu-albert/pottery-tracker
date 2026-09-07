@@ -471,7 +471,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get eraseLocalDataNotSecured =>
-      'Everything on this device was erased, but its database key could not be replaced, so the device is not yet secured for whoever uses it next. The erase is still owed, so try again to finish it.';
+      'Everything on this device was erased, but it could not be fully secured for whoever uses it next. The erase is still owed, so try again to finish it.';
 
   @override
   String get deleteAccountTitle => 'Delete Account & Data';

@@ -772,7 +772,7 @@ void main() {
 
         await expectLater(
           service.deleteLocalData(),
-          throwsA(isA<LocalKeyRotationException>()),
+          throwsA(isA<LocalDeviceNotSecuredException>()),
           reason:
               'its own type, so no caller can report a complete wipe as '
               '"nothing was deleted"',
@@ -789,6 +789,24 @@ void main() {
         expect(transferBackup.existsSync(), isFalse);
         expect(await service.getLastPulledAt(_uid), isNull);
         expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
+      },
+    );
+
+    test(
+      'a rekey the database refuses is reported, not passed off as rotated',
+      () async {
+        rekeys.failure = Exception('the database refused the rekey');
+
+        await expectLater(
+          service.deleteLocalData(),
+          throwsA(isA<LocalDeviceNotSecuredException>()),
+          reason:
+              'the file is still on the old key and the store still holds '
+              'it — the state a failed key-back leaves, and the same report',
+        );
+
+        expect(platform.values[_keyName], _oldKey);
+        expect(await keyed.piecesDao.countPieces(), 0);
       },
     );
 
@@ -900,6 +918,47 @@ void main() {
     });
   });
 
+  group('deleteLocalData reports a transfer backup it could not delete', () {
+    test(
+      'the ownership stamp still goes, and it is never "nothing was deleted"',
+      () async {
+        await insertPiece(id: 'piece-a', title: 'Mug');
+        TransferKeyBackup.fileFor(docsDir).writeAsBytesSync([1, 2, 3]);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(SyncService.localDataOwnerKey, _uid);
+
+        // Take away the parent's write permission so the backup cannot be
+        // unlinked. Root ignores the mode bits, so check the setup bites.
+        Process.runSync('chmod', ['500', docsDir.path]);
+        addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+        var deletionIsBlocked = false;
+        try {
+          TransferKeyBackup.fileFor(docsDir).deleteSync();
+        } catch (_) {
+          deletionIsBlocked = true;
+        }
+        if (!deletionIsBlocked) {
+          markTestSkipped('the filesystem here does not enforce the mode bits');
+          return;
+        }
+
+        await expectLater(
+          syncService.deleteLocalData(),
+          throwsA(isA<LocalDeviceNotSecuredException>()),
+          reason:
+              'the leaving user can still unwrap this device with their own '
+              'passphrase, which is exactly what the erase promised to end',
+        );
+
+        // Raised last, so the clears after it ran: an ownership stamp left on
+        // an emptied device refuses the next account for nothing.
+        expect(await db.select(db.pieces).get(), isEmpty);
+        expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
+        expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
+      },
+    );
+  });
+
   group('deleteLocalData reports a photo wipe it could not finish', () {
     test(
       'an undeletable photo directory fails the wipe instead of passing',
@@ -983,6 +1042,11 @@ void main() {
 class _RekeyLog extends QueryInterceptor {
   final List<String> keys = [];
 
+  /// When set, every `PRAGMA rekey` fails the way a database refusing one
+  /// would — the case plain sqlite3 cannot produce, because it ignores the
+  /// pragma outright.
+  Object? failure;
+
   @override
   Future<void> runCustom(
     QueryExecutor executor,
@@ -990,7 +1054,11 @@ class _RekeyLog extends QueryInterceptor {
     List<Object?> args,
   ) {
     final match = RegExp(r"^PRAGMA rekey = '(.*)'$").firstMatch(statement);
-    if (match != null) keys.add(match.group(1)!);
+    if (match != null) {
+      keys.add(match.group(1)!);
+      final failure = this.failure;
+      if (failure != null) return Future<void>.error(failure);
+    }
     return super.runCustom(executor, statement, args);
   }
 }

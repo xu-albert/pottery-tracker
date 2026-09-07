@@ -513,7 +513,13 @@ void main() {
           // Ownership and the sign-in flag are untouched: nothing was lost.
           expect(prefs.getString(SyncService.localDataOwnerKey), 'uid-old');
           expect(prefs.getBool(AuthNotifier.onboardingKey), isTrue);
-          expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+          expect(
+            prefs.getBool(SyncNotifier.pendingWipeKey),
+            isNull,
+            reason:
+                'an erase owed on the old phone would send this journal '
+                'straight to the lock screen, which retries it without asking',
+          );
         },
       );
 
@@ -554,8 +560,8 @@ void main() {
 
     test(
       'redownloadFromCloud discards the database but keeps the photo files, '
-      'clears ownership and watermarks, leaves an owed wipe owed, and sends '
-      'the user to sign-in',
+      'clears ownership, watermarks and the owed wipe, and sends the user to '
+      'sign-in',
       () async {
         await backup.write(
           databaseKey: _oldPhoneKey,
@@ -578,7 +584,13 @@ void main() {
         );
         expect(prefs.getStringList(SyncQueue.storageKey), isNull);
         expect(prefs.getBool(AuthNotifier.onboardingKey), isFalse);
-        expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
+        expect(
+          prefs.getBool(SyncNotifier.pendingWipeKey),
+          isNull,
+          reason:
+              'the retry would delete the photo files this branch kept on '
+              'purpose, and the re-pull would download every one again',
+        );
         expect(platform.values[_keyName], isNotNull);
         expect(platform.values[_markerName], '2');
       },

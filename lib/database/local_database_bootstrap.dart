@@ -217,11 +217,25 @@ class LocalDatabaseBootstrap {
 
   Future<AppDatabase> _unlockWithPassphrase(String passphrase) async {
     final key = await _transferBackup.read(passphrase);
+    final AppDatabase db;
     try {
-      return await _openAndAdoptKey(key);
+      db = await _openAndAdoptKey(key);
     } on _NotADatabaseException {
       throw const TransferKeyMismatchException();
     }
+    await _clearOwedWipe();
+    return db;
+  }
+
+  /// An erase owed on the old phone does not survive recovery on this one.
+  ///
+  /// The flag rides along in the restored preferences, and the lock screen
+  /// retries it without asking anything — over the journal the passphrase
+  /// just unlocked, or over the photo files [_discard] deliberately kept for
+  /// the re-download. Every exit from recovery leaves the user with a
+  /// database they chose, so none of them may leave that behind.
+  Future<void> _clearOwedWipe() async {
+    await _prefs.remove(SyncNotifier.pendingWipeKey);
   }
 
   Future<AppDatabase> _discard({required bool deletePhotoFiles}) async {
@@ -243,8 +257,9 @@ class LocalDatabaseBootstrap {
           }
         }
       }
-      await _prefs.remove(SyncNotifier.pendingWipeKey);
     }
+
+    await _clearOwedWipe();
 
     // Nobody owns an empty device, nothing on it can be refused over, and a
     // restored pull watermark would make the next sync incremental — skipping

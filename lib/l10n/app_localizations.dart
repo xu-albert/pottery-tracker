@@ -940,10 +940,10 @@ abstract class AppLocalizations {
   /// **'Pieces and materials were erased, but some photo files on this device could not be removed. The erase is still owed, so try again to finish it.'**
   String get eraseLocalDataPhotosSurvived;
 
-  /// Shown when an erase removed every row, photo, watermark and stamp but could not rotate the database key, including a Delete Account & Data from a session with no account. Says what is true — nothing was left behind, the re-keying is what is owed — and points at the retry the lock screen keeps offering
+  /// Shown when an erase removed every row, photo, watermark and stamp but could not replace the database key or delete the transfer backup that wraps it, including a Delete Account & Data from a session with no account. Says what is true — nothing was left behind, the securing is what is owed — and points at the retry the lock screen keeps offering
   ///
   /// In en, this message translates to:
-  /// **'Everything on this device was erased, but its database key could not be replaced, so the device is not yet secured for whoever uses it next. The erase is still owed, so try again to finish it.'**
+  /// **'Everything on this device was erased, but it could not be fully secured for whoever uses it next. The erase is still owed, so try again to finish it.'**
   String get eraseLocalDataNotSecured;
 
   /// Settings tile that deletes the account and everything with it
