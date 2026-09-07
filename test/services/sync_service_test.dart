@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
+import 'package:pottery_tracker/database/transfer_key_backup.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -727,39 +728,47 @@ void main() {
 
     tearDown(() => keyed.close());
 
-    test('rekeys the open database to a fresh key and stores that key', () async {
-      await service.deleteLocalData();
-
-      final stored = platform.values[_keyName];
-      expect(stored, isNot(_oldKey));
-      expect(stored, matches(RegExp(r'^[A-Za-z0-9]{32}$')));
-      expect(platform.values[_markerName], '2');
-      expect(rekeys.keys, [stored]);
-      expect(await keyed.piecesDao.countPieces(), 0);
-    });
-
     test(
-      'when the fresh key cannot be stored, the file is keyed back to the '
-      'old key and the erase still completes',
+      'rekeys the open database to a fresh key and stores that key',
       () async {
-        platform.rejectWrite = (key, value) =>
-            key == _keyName && value != _oldKey;
-
         await service.deleteLocalData();
 
-        expect(platform.values[_keyName], _oldKey);
-        expect(rekeys.keys, hasLength(2));
-        expect(rekeys.keys.first, isNot(_oldKey));
-        expect(rekeys.keys.last, _oldKey);
+        final stored = platform.values[_keyName];
+        expect(stored, isNot(_oldKey));
+        expect(stored, matches(RegExp(r'^[A-Za-z0-9]{32}$')));
+        expect(platform.values[_markerName], '2');
+        expect(rekeys.keys, [stored]);
         expect(await keyed.piecesDao.countPieces(), 0);
       },
     );
+
+    test('when the fresh key cannot be stored, the file is keyed back to the '
+        'old key and the erase still completes', () async {
+      platform.rejectWrite = (key, value) =>
+          key == _keyName && value != _oldKey;
+
+      await service.deleteLocalData();
+
+      expect(platform.values[_keyName], _oldKey);
+      expect(rekeys.keys, hasLength(2));
+      expect(rekeys.keys.first, isNot(_oldKey));
+      expect(rekeys.keys.last, _oldKey);
+      expect(await keyed.piecesDao.countPieces(), 0);
+    });
 
     test(
       'when no key can be stored at all, the file is keyed back and the '
       'erase is reported as failed rather than left with the keys disagreeing',
       () async {
         platform.writeFailure = PlatformException(code: 'full');
+        final photosDir = Directory('${docsDir.path}/photos')
+          ..createSync(recursive: true);
+        File('${photosDir.path}/piece-a.jpg').writeAsBytesSync([1, 2, 3]);
+        final transferBackup = TransferKeyBackup.fileFor(docsDir)
+          ..writeAsBytesSync([4, 5, 6]);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(SyncService.localDataOwnerKey, _uid);
+        await prefs.setInt('${SyncService.lastPulledAtPrefix}$_uid', 1);
 
         await expectLater(
           service.deleteLocalData(),
@@ -768,6 +777,15 @@ void main() {
 
         expect(platform.values[_keyName], _oldKey);
         expect(rekeys.keys.last, _oldKey);
+
+        // The report comes last. A key store that cannot be written must not
+        // strand the photographs the confirmation promised to delete, nor the
+        // ownership stamp that decides whether the next account is refused —
+        // the retry would hit the same broken key store and skip them again.
+        expect(photosDir.existsSync(), isFalse);
+        expect(transferBackup.existsSync(), isFalse);
+        expect(await service.getLastPulledAt(_uid), isNull);
+        expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
       },
     );
 

@@ -101,7 +101,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/services/review_prompt_service_test.dart` | In-app-review gating (§6.12 mirrors this manually) | 9 |
 | `test/services/sync_queue_entry_test.dart` | `SyncQueueEntry` (de)serialization | 14 |
 | `test/services/sync_queue_test.dart` | Queue enqueue/drain/backoff | 9 |
-| `test/services/sync_service_test.dart` | Push/pull, `pushAllLocal`, `deleteLocalData` (§11 gap: new local stores must be added here) including the key rotation at erase: `PRAGMA rekey` then store, keyed back when the store fails | 37 |
+| `test/services/sync_service_test.dart` | Push/pull, `pushAllLocal`, `deleteLocalData` (§11 gap: new local stores must be added here) including the key rotation at erase: `PRAGMA rekey` then store, keyed back when the store fails, and a key store that fails outright reported only once the photos, watermarks, transfer backup and ownership stamp are gone | 37 |
 | `test/android/data_extraction_rules_test.dart` | Android backup configuration as the backup agent parses it: `allowBackup` off, every domain excluded from both cloud backup and Android 12+ device transfer, nothing included | 2 |
 | `test/services/sync_trigger_test.dart` | DAO-write → queue-enqueue wiring (`AGENTS.md`'s "every write path" rule) | 13 |
 | `test/widgets/vase_logo_test.dart` | `buildVasePath` pure path geometry | 5 |

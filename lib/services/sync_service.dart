@@ -187,7 +187,7 @@ class SyncService {
       debugPrint('SyncService: VACUUM after wipe failed: $e');
     }
 
-    await _rotateDatabaseKey();
+    final rotationFailure = await _rotateDatabaseKey();
 
     final photoFailure = await _deleteLocalPhotoFiles();
     await _clearSyncWatermarks();
@@ -211,6 +211,9 @@ class SyncService {
     if (photoFailure != null) {
       throw LocalPhotoWipeException(photoFailure);
     }
+    if (rotationFailure != null) {
+      throw rotationFailure;
+    }
   }
 
   /// Re-encrypts the emptied database under a fresh key and stores it.
@@ -224,17 +227,28 @@ class SyncService {
   /// over an empty database, where starting fresh costs nothing. A rekey
   /// that fails is logged and skipped — its error never quotes a key
   /// (`AppDatabase.rekey`): the erase's promise is the data, and it is
-  /// already gone. A key-back that fails propagates, so the erase stays owed
-  /// and its retry rotates again.
-  Future<void> _rotateDatabaseKey() async {
-    final oldKey = await _keys.readKey();
-    if (oldKey == null) return;
+  /// already gone.
+  ///
+  /// A key store that cannot be read, and a key-back that fails, are returned
+  /// rather than thrown: the photographs the user was promised must be
+  /// deleted before any of this is reported, so [deleteLocalData] raises what
+  /// comes back here once the rest of the wipe has run. The erase still stays
+  /// owed, and its retry rotates again.
+  Future<Object?> _rotateDatabaseKey() async {
+    final String? oldKey;
+    try {
+      oldKey = await _keys.readKey();
+    } catch (e) {
+      debugPrint('SyncService: database key rotation could not read a key: $e');
+      return e;
+    }
+    if (oldKey == null) return null;
     final newKey = EncryptionKeyService.generateKey();
     try {
       await _db.rekey(newKey);
     } catch (e) {
       debugPrint('SyncService: database key rotation skipped: $e');
-      return;
+      return null;
     }
     try {
       await _keys.storeKey(newKey);
@@ -242,9 +256,14 @@ class SyncService {
       debugPrint(
         'SyncService: rotated key not stored, keying the database back: $e',
       );
-      await _db.rekey(oldKey);
-      await _keys.storeKey(oldKey);
+      try {
+        await _db.rekey(oldKey);
+        await _keys.storeKey(oldKey);
+      } catch (keyBack) {
+        return keyBack;
+      }
     }
+    return null;
   }
 
   /// Deletes the photo files, returning what stopped it or null if nothing did.
