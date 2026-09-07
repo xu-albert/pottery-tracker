@@ -93,10 +93,6 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('PRAGMA rekey = ${sqlKeyLiteral(key)}');
     } on SqliteException catch (error) {
       throw keyingFailure(error, key);
-    } on DriftWrappedException catch (error) {
-      final cause = error.cause;
-      if (cause is SqliteException) throw keyingFailure(cause, key);
-      rethrow;
     }
   }
 

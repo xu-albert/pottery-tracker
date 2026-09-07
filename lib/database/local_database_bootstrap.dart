@@ -168,8 +168,13 @@ class LocalDatabaseBootstrap {
     } on _NotADatabaseException {
       final staged = await _keys.readMigratingCopy();
       if (staged != null && staged != key) {
+        // A rotation at erase rekeys the file and then stores the new key,
+        // via a migrating copy first. A process that died between the copy
+        // landing and the item being replaced left the file keyed to the
+        // copy; opening with it and finishing the store is that launch's
+        // ordinary continuation.
         try {
-          return LocalDatabaseReady(await _openWithStagedKey(staged));
+          return LocalDatabaseReady(await _openAndAdoptKey(staged));
         } on _NotADatabaseException {
           // Not the rotation's key either.
         }
@@ -180,14 +185,14 @@ class LocalDatabaseBootstrap {
     }
   }
 
-  /// A rotation at erase rekeys the file and then stores the new key, via a
-  /// migrating copy first. A process that died between the copy landing and
-  /// the item being replaced left the file keyed to the copy; opening with it
-  /// and finishing the store is that launch's ordinary continuation.
-  Future<AppDatabase> _openWithStagedKey(String staged) async {
-    final db = await _openAndProbe(staged);
+  /// Opens the database with [key] and makes [key] this device's, in that
+  /// order: a key that did not open the file would have replaced whatever
+  /// this device held for nothing, and a store that fails must not leave the
+  /// connection it opened behind.
+  Future<AppDatabase> _openAndAdoptKey(String key) async {
+    final db = await _openAndProbe(key);
     try {
-      await _keys.storeKey(staged);
+      await _keys.storeKey(key);
     } catch (_) {
       await db.close();
       rethrow;
@@ -212,16 +217,11 @@ class LocalDatabaseBootstrap {
 
   Future<AppDatabase> _unlockWithPassphrase(String passphrase) async {
     final key = await _transferBackup.read(passphrase);
-    final AppDatabase db;
     try {
-      db = await _openAndProbe(key);
+      return await _openAndAdoptKey(key);
     } on _NotADatabaseException {
       throw const TransferKeyMismatchException();
     }
-    // Stored only once the key is known to open the file: a key that did not
-    // would have replaced whatever this device held for nothing.
-    await _keys.storeKey(key);
-    return db;
   }
 
   Future<AppDatabase> _discard({required bool deletePhotoFiles}) async {

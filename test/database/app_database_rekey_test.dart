@@ -9,10 +9,6 @@ const _key = 'rotatedKey0123456789abcdefghijkl';
 /// Fails the rekey the way sqlite3 does: with the statement — which quotes
 /// the key — attached to the exception, and the key in its explanation.
 class _FailsRekey extends QueryInterceptor {
-  _FailsRekey({required this.wrappedByDrift});
-
-  final bool wrappedByDrift;
-
   @override
   Future<void> runCustom(
     QueryExecutor executor,
@@ -22,52 +18,36 @@ class _FailsRekey extends QueryInterceptor {
     if (!statement.startsWith('PRAGMA rekey')) {
       return super.runCustom(executor, statement, args);
     }
-    final error = SqliteException(
+    throw SqliteException(
       26,
       'file is not a database',
       'could not rekey with $_key',
       statement,
     );
-    if (wrappedByDrift) {
-      throw DriftWrappedException(
-        message: 'Could not run $statement',
-        cause: error,
-        trace: StackTrace.current,
-      );
-    }
-    throw error;
   }
 }
 
 void main() {
-  for (final wrapped in const [false, true]) {
-    test(
-      'a failed rekey never reports the key '
-      '(${wrapped ? "wrapped by drift" : "raw sqlite3"})',
-      () async {
-        final db = AppDatabase.forTesting(
-          NativeDatabase.memory().interceptWith(
-            _FailsRekey(wrappedByDrift: wrapped),
-          ),
-        );
-        addTearDown(db.close);
-
-        Object? thrown;
-        try {
-          await db.rekey(_key);
-        } catch (e) {
-          thrown = e;
-        }
-
-        expect(thrown, isA<SqlCipherKeyingException>());
-        final keying = thrown as SqlCipherKeyingException;
-        expect(keying.extendedResultCode, 26);
-        expect(keying.message, contains('<redacted>'));
-        expect(keying.toString(), isNot(contains(_key)));
-        expect(keying.toString(), isNot(contains(_key.substring(4, 12))));
-      },
+  test('a failed rekey never reports the key', () async {
+    final db = AppDatabase.forTesting(
+      NativeDatabase.memory().interceptWith(_FailsRekey()),
     );
-  }
+    addTearDown(db.close);
+
+    Object? thrown;
+    try {
+      await db.rekey(_key);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown, isA<SqlCipherKeyingException>());
+    final keying = thrown as SqlCipherKeyingException;
+    expect(keying.extendedResultCode, 26);
+    expect(keying.message, contains('<redacted>'));
+    expect(keying.toString(), isNot(contains(_key)));
+    expect(keying.toString(), isNot(contains(_key.substring(4, 12))));
+  });
 
   test('a rekey that sqlite3 accepts runs the statement as given', () async {
     final seen = <String>[];

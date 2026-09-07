@@ -715,6 +715,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String transferPassphraseRemoveFailed(String error) {
+    return 'Couldn\'t remove the passphrase: $error';
+  }
+
+  @override
   String get transferPassphraseRemoveConfirmTitle =>
       'Remove the transfer passphrase?';
 

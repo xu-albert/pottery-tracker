@@ -130,7 +130,7 @@ class _TransferPassphraseSheetState
       setState(() => _busy = false);
       AppSnackbar.show(
         context,
-        message: l10n.transferPassphraseFailed(e.toString()),
+        message: l10n.transferPassphraseRemoveFailed(e.toString()),
         duration: const Duration(seconds: 6),
       );
     }

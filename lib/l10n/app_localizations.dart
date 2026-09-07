@@ -1366,6 +1366,12 @@ abstract class AppLocalizations {
   /// **'Couldn\'t save the passphrase: {error}'**
   String transferPassphraseFailed(String error);
 
+  /// Toast when deleting the transfer backup fails; the passphrase is still set
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove the passphrase: {error}'**
+  String transferPassphraseRemoveFailed(String error);
+
   /// Confirmation title before deleting the transfer backup
   ///
   /// In en, this message translates to:

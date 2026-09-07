@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show DriftWrappedException;
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart' show sqlite3;
@@ -115,11 +114,12 @@ class TransferKeyBackup {
       db.execute('INSERT INTO transfer_key (id, database_key) VALUES (1, ?)', [
         databaseKey,
       ]);
-    } catch (_) {
+    } catch (error) {
       // A half-written backup would read as "you have a passphrase" and then
       // fail to open on the new phone, which is worse than having none.
       db.dispose();
       if (staging.existsSync()) staging.deleteSync();
+      if (error is SqliteException) throw _withoutBoundParameters(error);
       rethrow;
     }
     db.dispose();
@@ -162,20 +162,32 @@ class TransferKeyBackup {
   }
 }
 
+/// The same sqlite3 failure without the statement that caused it.
+///
+/// sqlite3 attaches a failing statement's bound parameters to its exception
+/// and prints them, and the one statement here that binds anything binds the
+/// database key. This error is rethrown to a caller that shows it, so the key
+/// is stripped for the same reason [SqlCipherKeyingException] exists.
+SqliteException _withoutBoundParameters(SqliteException error) =>
+    SqliteException(
+      error.extendedResultCode,
+      error.message,
+      error.explanation,
+      null,
+      null,
+      error.operation,
+    );
+
 /// Whether [error] is sqlite3 reporting `SQLITE_NOTADB` (26): the file is
 /// not a database — or, under SQLCipher, not one this key opens.
 ///
-/// Drift surfaces the executor's exception either as-is or wrapped, so both
-/// shapes are unwrapped here.
+/// Drift's same-isolate `NativeDatabase` lets the executor's exception
+/// through as sqlite3 raised it, so that is the only shape to recognise.
 bool isNotADatabase(Object error) {
   const sqliteNotADb = 26;
   if (error is SqliteException) {
     return error.extendedResultCode == sqliteNotADb ||
         error.resultCode == sqliteNotADb;
-  }
-  if (error is DriftWrappedException) {
-    final cause = error.cause;
-    return cause != null && isNotADatabase(cause);
   }
   return false;
 }

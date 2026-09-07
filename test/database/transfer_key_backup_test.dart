@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show DriftWrappedException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/sqlcipher_guard.dart';
 import 'package:pottery_tracker/database/transfer_key_backup.dart';
@@ -82,24 +81,52 @@ void main() {
     expect(docs.listSync(), isEmpty);
   });
 
-  test('a change that fails partway keeps the previous passphrase working', () async {
-    await backup.write(databaseKey: _dbKey, passphrase: 'first phrase');
-    final refusing = TransferKeyBackup(
+  test('a write that sqlite3 refuses never reports the key it was '
+      'binding', () async {
+    // sqlite3 attaches a failing statement and its bound parameters to the
+    // exception and prints both, and the sheet shows whatever comes out of
+    // here — so the key must not survive the trip.
+    final failing = TransferKeyBackup(
       documentsDir: docs,
-      keyDatabase: (_, _) => throw const SqlCipherUnavailableException(),
+      openSqlite: (_) => _FullDisk(),
+      keyDatabase: (_, _) {},
     );
 
-    await expectLater(
-      refusing.write(databaseKey: _dbKey, passphrase: 'second phrase'),
-      throwsA(isA<SqlCipherUnavailableException>()),
-    );
+    Object? thrown;
+    try {
+      await failing.write(databaseKey: _dbKey, passphrase: 'correct horse');
+    } catch (e) {
+      thrown = e;
+    }
 
-    expect(backup.exists(), isTrue);
-    expect(await backup.read('first phrase'), _dbKey);
-    expect(docs.listSync().map((f) => f.path.split('/').last), [
-      TransferKeyBackup.fileName,
-    ]);
+    expect(thrown, isA<SqliteException>());
+    expect((thrown! as SqliteException).extendedResultCode, 13);
+    expect(thrown.toString(), contains('database or disk is full'));
+    expect(thrown.toString(), isNot(contains(_dbKey)));
+    expect(docs.listSync(), isEmpty);
   });
+
+  test(
+    'a change that fails partway keeps the previous passphrase working',
+    () async {
+      await backup.write(databaseKey: _dbKey, passphrase: 'first phrase');
+      final refusing = TransferKeyBackup(
+        documentsDir: docs,
+        keyDatabase: (_, _) => throw const SqlCipherUnavailableException(),
+      );
+
+      await expectLater(
+        refusing.write(databaseKey: _dbKey, passphrase: 'second phrase'),
+        throwsA(isA<SqlCipherUnavailableException>()),
+      );
+
+      expect(backup.exists(), isTrue);
+      expect(await backup.read('first phrase'), _dbKey);
+      expect(docs.listSync().map((f) => f.path.split('/').last), [
+        TransferKeyBackup.fileName,
+      ]);
+    },
+  );
 
   test('a replacement only takes the old backup\'s place once it holds the '
       'key', () async {
@@ -156,10 +183,14 @@ void main() {
       expect(backup.exists(), isFalse);
 
       // A replacement that never finished goes with them.
-      File('${TransferKeyBackup.fileFor(docs).path}.tmp').writeAsStringSync('x');
+      File(
+        '${TransferKeyBackup.fileFor(docs).path}.tmp',
+      ).writeAsStringSync('x');
       await backup.delete();
       expect(docs.listSync(), isEmpty);
-      File('${TransferKeyBackup.fileFor(docs).path}.tmp').writeAsStringSync('x');
+      File(
+        '${TransferKeyBackup.fileFor(docs).path}.tmp',
+      ).writeAsStringSync('x');
       await TransferKeyBackup.deleteIn(docs);
       expect(docs.listSync(), isEmpty);
     },
@@ -184,21 +215,15 @@ void main() {
   );
 
   group('isNotADatabase', () {
-    test('recognises SQLITE_NOTADB directly and wrapped by drift', () {
-      final notADb = SqliteException(26, 'file is not a database');
-      expect(isNotADatabase(notADb), isTrue);
+    test('recognises SQLITE_NOTADB as sqlite3 raises it', () {
       expect(
-        isNotADatabase(DriftWrappedException(message: 'x', cause: notADb)),
+        isNotADatabase(SqliteException(26, 'file is not a database')),
         isTrue,
       );
     });
 
     test('is false for other sqlite errors and unrelated exceptions', () {
       expect(isNotADatabase(SqliteException(1, 'generic')), isFalse);
-      expect(
-        isNotADatabase(DriftWrappedException(message: 'x', cause: 'no')),
-        isFalse,
-      );
       expect(isNotADatabase(StateError('nope')), isFalse);
     });
 
@@ -250,4 +275,26 @@ void main() {
     await spy.write(databaseKey: _dbKey, passphrase: 'correct horse');
     expect(seen, isNotNull);
   });
+}
+
+/// A database that fails the one statement binding the key, the way sqlite3
+/// reports a full disk: with the statement and its parameters attached.
+class _FullDisk implements CommonDatabase {
+  @override
+  void execute(String sql, [List<Object?> parameters = const []]) {
+    if (!sql.startsWith('INSERT')) return;
+    throw SqliteException(
+      13,
+      'database or disk is full',
+      null,
+      sql,
+      parameters,
+    );
+  }
+
+  @override
+  void dispose() {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

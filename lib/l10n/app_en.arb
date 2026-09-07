@@ -456,6 +456,8 @@
   "@transferPassphraseRemoved": { "description": "Toast after the transfer backup is deleted" },
   "transferPassphraseFailed": "Couldn't save the passphrase: {error}",
   "@transferPassphraseFailed": { "description": "Toast when writing the transfer backup fails", "placeholders": { "error": { "type": "String" } } },
+  "transferPassphraseRemoveFailed": "Couldn't remove the passphrase: {error}",
+  "@transferPassphraseRemoveFailed": { "description": "Toast when deleting the transfer backup fails; the passphrase is still set", "placeholders": { "error": { "type": "String" } } },
   "transferPassphraseRemoveConfirmTitle": "Remove the transfer passphrase?",
   "@transferPassphraseRemoveConfirmTitle": { "description": "Confirmation title before deleting the transfer backup" },
   "transferPassphraseRemoveConfirmMessage": "A backup of this phone will no longer be able to open your pottery on a new phone.",
