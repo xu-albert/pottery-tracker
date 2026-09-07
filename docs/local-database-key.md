@@ -137,9 +137,9 @@ owed erase. Every way the rotation can end with the old key still on the file �
 store, a rekey sqlite3 refuses, a key-back after a store that failed, whether or not that key-back
 itself worked — is reported the same way, because they leave the same state. The data is gone
 either way, so it is never "nothing was deleted": the erase stays owed as *erased but not
-secured*, and its retry rotates again. A transfer backup that will not delete is reported with
-them, and only with them: once the file has been rekeyed, the copy that outlived the wipe unwraps
-a key that opens nothing here. No error from that path quotes a key (`keyingFailure`,
+secured*, and its retry rotates again. A transfer backup that will not delete is reported the same
+way, even when the rotation worked and the copy that outlived the wipe unwraps nothing: that file
+is what Settings reads to decide a passphrase is set, and only the erase ever removes it. No error from that path quotes a key (`keyingFailure`,
 shared with `configureSqlCipher`), and neither key ever enters a backup.
 
 Settings › *Moving to a new phone* › **Transfer passphrase** (iOS): set / change / remove, with

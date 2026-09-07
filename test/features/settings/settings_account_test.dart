@@ -190,6 +190,32 @@ void main() {
       verify(() => queue.clear()).called(greaterThanOrEqualTo(1));
     });
 
+    testWidgets('a wipe that left the device unsecured never says data '
+        'survived', (tester) async {
+      // Every row, photograph, watermark and stamp is gone by the time this
+      // is thrown; only the securing is owed. The lock screen words the same
+      // exception that way, and the two surfaces must not disagree.
+      when(() => syncService.deleteLocalData()).thenThrow(
+        LocalDeviceNotSecuredException([Exception('the key store is full')]),
+      );
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(authService.signOutCalls, 1);
+      expect(find.textContaining('could not be fully secured'), findsOneWidget);
+      expect(
+        find.textContaining('could not be deleted'),
+        findsNothing,
+        reason: 'nothing of theirs is left on this device to be deleted',
+      );
+    });
+
     testWidgets('a failed wipe is reported instead of passing silently', (
       tester,
     ) async {

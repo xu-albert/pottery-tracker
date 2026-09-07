@@ -10,6 +10,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/sync_service.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../providers/transfer_provider.dart';
 import '../../../widgets/app_snackbar.dart';
@@ -168,6 +169,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref
           .read(syncStateProvider.notifier)
           .signOutAndWipeLocalData(_authService.signOut);
+    } on LocalDeviceNotSecuredException catch (e) {
+      // Nothing of theirs is left here, so "some data could not be deleted"
+      // would be false: what is owed is the securing, which is what the lock
+      // screen's retry does — and it says the same thing there.
+      debugPrint('SettingsScreen: sign-out left the device unsecured: $e');
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: l10n.eraseLocalDataNotSecured,
+          duration: _partialOutcomeDuration,
+        );
+      }
     } catch (e) {
       // The session is already gone and the wipe is still flagged pending, so
       // the lock screen takes over and retries it. Say so rather than implying

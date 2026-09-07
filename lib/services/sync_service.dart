@@ -31,21 +31,24 @@ class LocalPhotoWipeException implements Exception {
 }
 
 /// Raised by [SyncService.deleteLocalData] when every local store was
-/// destroyed but the database is still on the key the leaving user's transfer
-/// backup wraps.
+/// destroyed but the device was not left secured against the user leaving it.
 ///
 /// Its own type for the same reason as [LocalPhotoWipeException]: the caller
 /// must not report this as "nothing was deleted". Everything the confirmation
 /// promised to delete is gone — the rows, the photographs, the queue, the
-/// watermarks and the ownership stamp. What did not happen is the rotation
-/// that puts what the next person makes here beyond a passphrase the leaving
-/// user still holds a backup of, so the erase stays owed and its retry
-/// rotates again.
+/// watermarks and the ownership stamp. What did not happen is one of the two
+/// steps that stop the leaving user reaching what the next person makes here:
+/// replacing the database key, or deleting the transfer backup that wraps it.
+/// One outcome rather than two because they are the same thing to the reader
+/// and want the same thing from them — the erase stays owed, and its retry
+/// does both again.
 ///
-/// A transfer backup that would not delete belongs here only while that is
-/// also true: once the file has been rekeyed, the copy that outlived the wipe
-/// unwraps a key that opens nothing on this device. [causes] carries every
-/// step that failed, so a report never drops one in favour of another.
+/// The transfer backup is reported even when the rotation worked and the key
+/// the surviving copy wraps opens nothing here: that file is what Settings
+/// reads to decide a passphrase is set, and nothing else on the device ever
+/// removes it, so leaving it would tell the next person they have a
+/// passphrase they never chose. [causes] carries every step that failed, so a
+/// report never drops one in favour of another.
 class LocalDeviceNotSecuredException implements Exception {
   /// What stopped the device from being secured, in the order it happened.
   final List<Object> causes;
@@ -236,14 +239,9 @@ class SyncService {
     if (photoFailure != null) {
       throw LocalPhotoWipeException(photoFailure);
     }
-    // The transfer backup only endangers the next person while the key it
-    // wraps is still the key on this file, so it is reported with the
-    // rotation that would have retired it and never on its own.
-    if (rotationFailure != null) {
-      throw LocalDeviceNotSecuredException([
-        rotationFailure,
-        ?transferFailure,
-      ]);
+    final notSecured = [?rotationFailure, ?transferFailure];
+    if (notSecured.isNotEmpty) {
+      throw LocalDeviceNotSecuredException(notSecured);
     }
   }
 

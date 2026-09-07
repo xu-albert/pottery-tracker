@@ -966,46 +966,55 @@ void main() {
     });
   });
 
-  group('deleteLocalData and a transfer backup it could not delete', () {
-    test('once the file is rekeyed the surviving copy unwraps nothing, so the '
-        'erase completes and still clears the ownership stamp', () async {
-      final platform = FakeSecureStoragePlatform();
-      FlutterSecureStoragePlatform.instance = platform;
-      platform.values[_keyName] = _oldKey;
-      platform.values[_markerName] = '2';
-      await insertPiece(id: 'piece-a', title: 'Mug');
-      TransferKeyBackup.fileFor(docsDir).writeAsBytesSync([1, 2, 3]);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(SyncService.localDataOwnerKey, _uid);
+  group('deleteLocalData reports a transfer backup it could not delete', () {
+    test(
+      'even with the file rekeyed, because that copy is what Settings '
+      'reads to claim a passphrase is set — and the stamp still goes',
+      () async {
+        final platform = FakeSecureStoragePlatform();
+        FlutterSecureStoragePlatform.instance = platform;
+        platform.values[_keyName] = _oldKey;
+        platform.values[_markerName] = '2';
+        await insertPiece(id: 'piece-a', title: 'Mug');
+        TransferKeyBackup.fileFor(docsDir).writeAsBytesSync([1, 2, 3]);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(SyncService.localDataOwnerKey, _uid);
 
-      // Take away the parent's write permission so the backup cannot be
-      // unlinked. Root ignores the mode bits, so check the setup bites.
-      Process.runSync('chmod', ['500', docsDir.path]);
-      addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
-      var deletionIsBlocked = false;
-      try {
-        TransferKeyBackup.fileFor(docsDir).deleteSync();
-      } catch (_) {
-        deletionIsBlocked = true;
-      }
-      if (!deletionIsBlocked) {
-        markTestSkipped('the filesystem here does not enforce the mode bits');
-        return;
-      }
+        // Take away the parent's write permission so the backup cannot be
+        // unlinked. Root ignores the mode bits, so check the setup bites.
+        Process.runSync('chmod', ['500', docsDir.path]);
+        addTearDown(() => Process.runSync('chmod', ['700', docsDir.path]));
+        var deletionIsBlocked = false;
+        try {
+          TransferKeyBackup.fileFor(docsDir).deleteSync();
+        } catch (_) {
+          deletionIsBlocked = true;
+        }
+        if (!deletionIsBlocked) {
+          markTestSkipped('the filesystem here does not enforce the mode bits');
+          return;
+        }
 
-      await syncService.deleteLocalData();
+        await expectLater(
+          syncService.deleteLocalData(),
+          throwsA(isA<LocalDeviceNotSecuredException>()),
+          reason:
+              'the next person would be shown a transfer passphrase they never '
+              'chose, over a file only the erase ever removes',
+        );
 
-      expect(
-        platform.values[_keyName],
-        isNot(_oldKey),
-        reason: 'the rotation is what makes the surviving copy harmless',
-      );
-      // The clears after the delete still ran: an ownership stamp left on
-      // an emptied device refuses the next account for nothing.
-      expect(await db.select(db.pieces).get(), isEmpty);
-      expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
-      expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
-    });
+        expect(
+          platform.values[_keyName],
+          isNot(_oldKey),
+          reason: 'the rotation itself worked; only the file outlived it',
+        );
+        // Raised last, so the clears after it ran: an ownership stamp left on
+        // an emptied device refuses the next account for nothing.
+        expect(await db.select(db.pieces).get(), isEmpty);
+        expect(prefs.getString(SyncService.localDataOwnerKey), isNull);
+        expect(prefs.getBool(SyncService.deviceContestedKey), isNull);
+      },
+    );
   });
 
   group('deleteLocalData reports a photo wipe it could not finish', () {
