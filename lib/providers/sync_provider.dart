@@ -195,6 +195,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// scheduled 500ms after any edit.
   bool _syncOwed = false;
   bool _owedSyncForcesFull = false;
+  bool _queueProcessOwed = false;
   Timer? _processTimer;
   Future<EraseLocalDataResult?>? _wipeInFlight;
 
@@ -266,7 +267,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   Future<void> _pushQueue() async {
-    if (_syncing || _wiping) return;
+    if (_wiping) return;
+    if (_syncing) {
+      _queueProcessOwed = true;
+      return;
+    }
     final auth = _ref.read(authProvider);
     if (!auth.isSignedIn || auth.uid == null) return;
 
@@ -295,8 +300,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _staleSyncInFlight = false;
       _publishStaleSyncBlockingWipe(false);
       _syncing = false;
+      _rescheduleOwedQueue();
     }
     await _payOwedSync();
+  }
+
+  void _rescheduleOwedQueue() {
+    if (!_queueProcessOwed) return;
+    _queueProcessOwed = false;
+    // Only repay a debounce that actually fired while busy. Retained failures
+    // alone must not start an endless retry loop while the device is offline.
+    if (mounted && !_wiping) scheduleProcessQueue();
   }
 
   /// Runs a sync that stood down earlier, in the mode it asked for.
@@ -336,6 +350,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (lastPulled == null) {
         // First sync on this device (or forced) — push local data first, then pull
         await _syncService.pushAllLocal(uid);
+        // Drain explicitly so only acknowledged entries leave the queue. A
+        // bulk upload does not acknowledge queued deletions or concurrent edits.
+        await _processQueueInternal(uid);
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
@@ -346,10 +363,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // Retry uploading photos that have local files but no cloudUrl
       await _syncService.retryMissingUploads(uid);
 
-      await _queue.clear();
       state = SyncState(
         status: SyncStatus.idle,
-        pendingCount: 0,
+        pendingCount: await _queue.pendingCount,
         lastSyncedAt: _clock.now(),
       );
     } catch (e) {
@@ -363,6 +379,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _staleSyncInFlight = false;
       _publishStaleSyncBlockingWipe(false);
       _syncing = false;
+      _rescheduleOwedQueue();
     }
     await _payOwedSync();
   }
