@@ -44,6 +44,10 @@ _setup({AuthState auth = _signedOut}) {
   when(() => queue.getAll()).thenAnswer((_) async => []);
   when(() => queue.clear()).thenAnswer((_) async {});
   when(() => queue.remove(any())).thenAnswer((_) async {});
+  // Nothing edits an entity mid-push in these tests, so every entry keeps the
+  // revision the drain captured. The concurrent-edit case is pinned against a
+  // real queue in sync_queue_durability_test.dart.
+  when(() => queue.revisionOf(any())).thenReturn(0);
 
   when(() => syncService.getLastPulledAt(any())).thenAnswer((_) async => null);
   when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});
@@ -245,15 +249,23 @@ void main() {
       verifyNever(() => s.syncService.pullChangedSince(any(), any()));
     });
 
-    test('clears queue after successful sync', () async {
+    test('full sync acknowledges only the entries it pushes', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
 
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'p1',
+      );
+      when(() => s.queue.getAll()).thenAnswer((_) async => [entry]);
       await s.notifier.syncNow();
 
-      // called(2): once from the constructor's auto-sync, once from this test
-      verify(() => s.queue.clear()).called(2);
+      verifyInOrder([
+        () => s.syncService.pushPiece('user-1', 'p1'),
+        () => s.queue.remove(entry),
+      ]);
+      verifyNever(() => s.queue.clear());
     });
 
     test('sets error state when sync fails', () async {
@@ -569,8 +581,8 @@ void main() {
 
       verify(() => s.syncService.deleteCloudData('user-1')).called(1);
       verify(() => s.syncService.deleteLocalData()).called(1);
-      // called(2): once from the constructor's auto-sync, once from deleteAllData
-      verify(() => s.queue.clear()).called(2);
+      // Only the explicit deletion may clear the whole queue.
+      verify(() => s.queue.clear()).called(1);
 
       final state = s.container.read(syncStateProvider);
       expect(state.status, SyncStatus.disabled);
