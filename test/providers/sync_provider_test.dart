@@ -44,6 +44,10 @@ _setup({AuthState auth = _signedOut}) {
   when(() => queue.getAll()).thenAnswer((_) async => []);
   when(() => queue.clear()).thenAnswer((_) async {});
   when(() => queue.remove(any())).thenAnswer((_) async {});
+  // Nothing edits an entity mid-push in these tests, so every entry keeps the
+  // revision the drain captured. The concurrent-edit case is pinned against a
+  // real queue in sync_queue_durability_test.dart.
+  when(() => queue.revisionOf(any())).thenReturn(0);
 
   when(() => syncService.getLastPulledAt(any())).thenAnswer((_) async => null);
   when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});

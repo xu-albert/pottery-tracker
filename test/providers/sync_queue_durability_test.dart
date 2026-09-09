@@ -22,6 +22,14 @@ class _Images extends Mock implements ImageService {}
 class _Clock extends SyncClock {
   _Timer? timer;
 
+  /// The instant a completed sync stamps itself with, so a test can wait for
+  /// the exact `lastSyncedAt` it publishes rather than for a count that only
+  /// appears once the behaviour under test is right.
+  DateTime instant = DateTime(2026);
+
+  @override
+  DateTime now() => instant;
+
   @override
   Timer runAfter(Duration delay, void Function() callback) {
     expect(delay, debounceDelay);
@@ -237,6 +245,54 @@ void main() {
     await drained;
     expect(pushedTitles, ['first drain', 'second drain']);
     expect(await queue.pendingCount, 0);
+  });
+
+  test('an edit during the in-flight push of the same entity is not '
+      'acknowledged by that push', () async {
+    signIn();
+    await waitForState(
+      (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+    );
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    when(() => service.pushPiece('user-1', 'p1')).thenAnswer((_) async {
+      pushedTitles.add((await db.piecesDao.getPieceById('p1'))!.title);
+      if (release.isCompleted) return;
+      entered.complete();
+      await release.future;
+    });
+
+    await writer.updateFields('p1', title: 'read by the push');
+    clock.fire();
+    await entered.future;
+
+    // Merges into the entry the drain is holding — the two are `==`, both
+    // carry null changedFields, and nothing about the row distinguishes them.
+    await writer.updateFields('p1', title: 'edited mid-push');
+    expect(await queue.pendingCount, 1);
+
+    clock.instant = DateTime(2026, 6);
+    final finished = waitForState((s) => s.lastSyncedAt == clock.instant);
+    release.complete();
+    await finished;
+
+    expect(
+      (await SyncQueue().getAll()).single.entityId,
+      'p1',
+      reason: 'the revision the push never sent must survive on disk',
+    );
+    expect(
+      container.read(syncStateProvider).pendingCount,
+      1,
+      reason: 'the mid-push edit was never uploaded, so it is still pending',
+    );
+
+    final drained = waitForState((s) => s.pendingCount == 0);
+    clock.fire();
+    await drained;
+    expect(pushedTitles, ['read by the push', 'edited mid-push']);
+    expect(await queue.pendingCount, 0);
+    expect(clock.timer!.isActive, isFalse);
   });
 
   test(

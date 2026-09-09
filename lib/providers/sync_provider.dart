@@ -402,7 +402,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
 
       var success = false;
+      // Captured before each attempt reads the row it is about to upload, so
+      // a write that lands while the push is in flight leaves the entry
+      // holding a revision this drain never sent.
+      var revision = 0;
       for (var attempt = 0; attempt < 3; attempt++) {
+        revision = _queue.revisionOf(entry);
         try {
           await _processEntry(uid, entry);
           success = true;
@@ -414,7 +419,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
           }
         }
       }
-      if (success) {
+      // Acknowledge only what was actually pushed. A newer revision stays
+      // queued, counts as pending, and is sent by the drain the edit
+      // scheduled.
+      if (success && _queue.revisionOf(entry) == revision) {
         await _queue.remove(entry);
       }
     }
