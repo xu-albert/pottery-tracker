@@ -349,10 +349,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       if (lastPulled == null) {
         // First sync on this device (or forced) — push local data first, then pull
+        final queuedEntries = await _queue.getAll();
+        final queuedRevisions = {
+          for (final entry in queuedEntries) entry: _queue.revisionOf(entry),
+        };
         await _syncService.pushAllLocal(uid);
-        // Drain explicitly so only acknowledged entries leave the queue. A
-        // bulk upload does not acknowledge queued deletions or concurrent edits.
-        await _processQueueInternal(uid);
+        // The bulk upload delivered the snapshot above. Retire only entries
+        // that still hold the revision it saw; writes made while it was in
+        // flight stay queued for the drain their debounce scheduled.
+        for (final entry in queuedEntries) {
+          if (_queue.revisionOf(entry) == queuedRevisions[entry]) {
+            await _queue.remove(entry);
+          }
+        }
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes

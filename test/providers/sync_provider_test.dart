@@ -253,18 +253,25 @@ void main() {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
+      clearInteractions(s.syncService);
+      clearInteractions(s.queue);
 
       const entry = SyncQueueEntry(
         operation: SyncOperation.pushPiece,
         entityId: 'p1',
       );
       when(() => s.queue.getAll()).thenAnswer((_) async => [entry]);
+      when(() => s.queue.revisionOf(entry)).thenReturn(7);
       await s.notifier.syncNow();
 
       verifyInOrder([
-        () => s.syncService.pushPiece('user-1', 'p1'),
+        () => s.queue.getAll(),
+        () => s.queue.revisionOf(entry),
+        () => s.syncService.pushAllLocal('user-1'),
+        () => s.queue.revisionOf(entry),
         () => s.queue.remove(entry),
       ]);
+      verifyNever(() => s.syncService.pushPiece(any(), any()));
       verifyNever(() => s.queue.clear());
     });
 

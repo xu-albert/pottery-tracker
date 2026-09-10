@@ -205,12 +205,68 @@ void main() {
         final drained = waitForState((s) => s.pendingCount == 0);
         clock.fire();
         await drained;
-        expect(pushedTitles, ['before sync', 'edited during sync']);
+        expect(
+          pushedTitles,
+          fullSync
+              ? ['edited during sync']
+              : ['before sync', 'edited during sync'],
+          reason: 'pushAllLocal already delivered the full-sync snapshot',
+        );
         expect(await queue.pendingCount, 0);
         expect(clock.timer!.isActive, isFalse);
       });
     }
   }
+
+  test(
+    'first sign-in retires its queue snapshot without re-uploading photos',
+    () async {
+      when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
+      for (var i = 0; i < 12; i++) {
+        await queue.enqueue(
+          SyncQueueEntry(
+            operation: SyncOperation.pushPiece,
+            entityId: 'piece-$i',
+          ),
+        );
+        await queue.enqueue(
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhoto,
+            entityId: 'photo-$i',
+          ),
+        );
+        await queue.enqueue(
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: 'photo-$i',
+          ),
+        );
+      }
+
+      expect(await queue.pendingCount, 36);
+      signIn();
+      await waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+
+      expect(await queue.pendingCount, 0);
+      expect(container.read(syncStateProvider).pendingCount, 0);
+      verify(() => service.pushAllLocal('user-1')).called(1);
+      verifyNever(() => service.uploadPhotoFile(any(), any()));
+
+      when(
+        () => service.getLastPulledAt('user-1'),
+      ).thenAnswer((_) async => DateTime(2026));
+      await writer.updateFields('p1', title: 'one later edit');
+      clock.instant = DateTime(2026, 6);
+      final drained = waitForState((s) => s.lastSyncedAt == clock.instant);
+      clock.fire();
+      await drained;
+
+      expect(pushedTitles, ['one later edit']);
+      verifyNever(() => service.uploadPhotoFile(any(), any()));
+    },
+  );
 
   test('an edit during a queue drain gets a subsequent drain', () async {
     signIn();
