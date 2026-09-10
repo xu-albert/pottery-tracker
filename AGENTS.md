@@ -57,8 +57,9 @@ so a step that creates a table already gets the columns added in later versions.
 such a table must therefore be bounded on both sides, the way the clay `sort_order` and tag `color`
 steps are; unbounded, the upgrade throws `duplicate column name` and the app cannot open at all.
 When you bump `schemaVersion`, add a `test/database/fixtures/schema_v<previous>.sql` fixture:
-`test/database/migration_test.dart` walks every fixture to the current version and compares the
-result against a fresh install.
+`test/database/migration_test.dart` discovers every fixture, walks it to the current version and
+compares the result against a fresh install, and fails if the fixture set is not exactly every
+version below `schemaVersion`.
 
 ### Local database key
 
