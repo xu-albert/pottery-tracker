@@ -279,10 +279,11 @@ void main() {
     ) async {
       calls.add('pushPieceDeletion');
     });
-    when(() => service.pushDeletion('user-1', 'photos', 'gone-photo'))
-        .thenAnswer((_) async {
-          calls.add('pushDeletion');
-        });
+    when(
+      () => service.pushDeletion('user-1', 'photos', 'gone-photo'),
+    ).thenAnswer((_) async {
+      calls.add('pushDeletion');
+    });
     when(() => service.pullAll(any())).thenAnswer((_) async {
       calls.add('pullAll');
     });
