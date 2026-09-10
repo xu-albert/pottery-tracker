@@ -591,7 +591,7 @@ agent/computer-use variant, current as of writing.
 - [ ] TagOptions table: id, name (unique), color (nullable), sortOrder, createdAt
 - [ ] PieceTags junction table: id, pieceId, tagOptionId
 - [ ] Photos sorted by sortOrder DESC (newest first) everywhere
-- [ ] Migration chain exercises cleanly on an old on-disk database. Every version from 1 to the current `schemaVersion` is covered automatically by `test/database/migration_test.dart`, so this manual step is confirmation on a real SQLCipher file, not the primary net; the suite fails if a fixture is missing for any version below `schemaVersion`
+- [ ] Migration chain exercises cleanly on an old on-disk database. Every version below the current `schemaVersion` has a checked-in fixture walked to the current schema by `test/database/migration_test.dart`, so this manual step is confirmation on a real SQLCipher file, not the primary net; the suite fails if that fixture set is not exactly every version below `schemaVersion`
 
 ### 6.9 Cross-Cutting Concerns
 
