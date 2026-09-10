@@ -268,6 +268,76 @@ void main() {
     },
   );
 
+  test('first sign-in tombstones a queued deletion before it pulls', () async {
+    when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
+    final calls = <String>[];
+    when(() => service.pushAllLocal(any())).thenAnswer((_) async {
+      calls.add('pushAllLocal');
+    });
+    when(() => service.pushPieceDeletion('user-1', 'gone')).thenAnswer((
+      _,
+    ) async {
+      calls.add('pushPieceDeletion');
+    });
+    when(() => service.pushDeletion('user-1', 'photos', 'gone-photo'))
+        .thenAnswer((_) async {
+          calls.add('pushDeletion');
+        });
+    when(() => service.pullAll(any())).thenAnswer((_) async {
+      calls.add('pullAll');
+    });
+    await queue.enqueue(
+      const SyncQueueEntry(
+        operation: SyncOperation.deletePhoto,
+        entityId: 'gone-photo',
+      ),
+    );
+    await queue.enqueue(
+      const SyncQueueEntry(
+        operation: SyncOperation.deletePiece,
+        entityId: 'gone',
+      ),
+    );
+
+    signIn();
+    await waitForState(
+      (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+    );
+
+    expect(calls, [
+      'pushAllLocal',
+      'pushDeletion',
+      'pushPieceDeletion',
+      'pullAll',
+    ], reason: 'a bulk upload of existing rows delivers no tombstone');
+    expect(await queue.pendingCount, 0);
+  });
+
+  test('a deletion whose tombstone fails stays queued', () async {
+    when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
+    when(
+      () => service.pushPieceDeletion('user-1', 'gone'),
+    ).thenThrow(Exception('offline'));
+    await queue.enqueue(
+      const SyncQueueEntry(
+        operation: SyncOperation.deletePiece,
+        entityId: 'gone',
+      ),
+    );
+
+    signIn();
+    await waitForState(
+      (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+    );
+
+    expect(
+      (await SyncQueue().getAll()).single.operation,
+      SyncOperation.deletePiece,
+      reason: 'an unsent tombstone must survive in persisted storage',
+    );
+    expect(container.read(syncStateProvider).pendingCount, 1);
+  });
+
   test('an edit during a queue drain gets a subsequent drain', () async {
     signIn();
     await waitForState(

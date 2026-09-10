@@ -349,19 +349,26 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       if (lastPulled == null) {
         // First sync on this device (or forced) — push local data first, then pull
-        final queuedEntries = await _queue.getAll();
+        final delivered = [
+          for (final entry in await _queue.getAll())
+            if (_deliveredByBulkUpload(entry.operation)) entry,
+        ];
         final queuedRevisions = {
-          for (final entry in queuedEntries) entry: _queue.revisionOf(entry),
+          for (final entry in delivered) entry: _queue.revisionOf(entry),
         };
         await _syncService.pushAllLocal(uid);
         // The bulk upload delivered the snapshot above. Retire only entries
-        // that still hold the revision it saw; writes made while it was in
-        // flight stay queued for the drain their debounce scheduled.
-        for (final entry in queuedEntries) {
+        // that still hold the revision it saw.
+        for (final entry in delivered) {
           if (_queue.revisionOf(entry) == queuedRevisions[entry]) {
             await _queue.remove(entry);
           }
         }
+        // What is left is what the upload could not deliver — deletions, and
+        // writes made while it was in flight. They have to reach the cloud
+        // before the pull, which would otherwise bring the deleted rows back
+        // and overwrite the concurrent edits.
+        await _processQueueInternal(uid);
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
@@ -392,6 +399,25 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
     await _payOwedSync();
   }
+
+  /// Whether [SyncService.pushAllLocal] delivers this operation on its own.
+  ///
+  /// It uploads the rows that exist locally, so a deletion — whose row is
+  /// already gone — is not among them and still has to be pushed, or the pull
+  /// that follows resurrects it.
+  bool _deliveredByBulkUpload(SyncOperation operation) => switch (operation) {
+    SyncOperation.pushPiece ||
+    SyncOperation.pushPhoto ||
+    SyncOperation.pushPhotoFile ||
+    SyncOperation.pushClay ||
+    SyncOperation.pushGlaze ||
+    SyncOperation.pushTag ||
+    SyncOperation.pushPieceGlazes ||
+    SyncOperation.pushPieceTags => true,
+    SyncOperation.deletePiece ||
+    SyncOperation.deletePhoto ||
+    SyncOperation.deleteMaterial => false,
+  };
 
   Future<void> _processQueueInternal(String uid) async {
     final entries = await _queue.getAll();

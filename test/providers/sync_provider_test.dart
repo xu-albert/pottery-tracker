@@ -260,7 +260,11 @@ void main() {
         operation: SyncOperation.pushPiece,
         entityId: 'p1',
       );
-      when(() => s.queue.getAll()).thenAnswer((_) async => [entry]);
+      final queued = <SyncQueueEntry>[entry];
+      when(() => s.queue.getAll()).thenAnswer((_) async => [...queued]);
+      when(() => s.queue.remove(entry)).thenAnswer((_) async {
+        queued.remove(entry);
+      });
       when(() => s.queue.revisionOf(entry)).thenReturn(7);
       await s.notifier.syncNow();
 
@@ -273,6 +277,32 @@ void main() {
       ]);
       verifyNever(() => s.syncService.pushPiece(any(), any()));
       verifyNever(() => s.queue.clear());
+    });
+
+    test('full sync sends a queued deletion before it pulls', () async {
+      final s = _setup(auth: _signedIn);
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+      clearInteractions(s.syncService);
+      clearInteractions(s.queue);
+
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.deletePiece,
+        entityId: 'gone',
+      );
+      final queued = <SyncQueueEntry>[entry];
+      when(() => s.queue.getAll()).thenAnswer((_) async => [...queued]);
+      when(() => s.queue.remove(entry)).thenAnswer((_) async {
+        queued.remove(entry);
+      });
+      await s.notifier.syncNow();
+
+      verifyInOrder([
+        () => s.syncService.pushAllLocal('user-1'),
+        () => s.syncService.pushPieceDeletion('user-1', 'gone'),
+        () => s.queue.remove(entry),
+        () => s.syncService.pullAll('user-1'),
+      ]);
     });
 
     test('sets error state when sync fails', () async {
