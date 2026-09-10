@@ -61,6 +61,14 @@ When you bump `schemaVersion`, add a `test/database/fixtures/schema_v<previous>.
 compares the result against a fresh install, and fails if the fixture set is not exactly every
 version below `schemaVersion`.
 
+drift runs `onUpgrade` outside a transaction and writes the new `user_version` only after it
+returns, and no step here is idempotent, so a migration that throws part-way cannot be resumed: the
+work it already committed stays, the version does not move, and the next launch re-enters at the
+same `from` and dies on whichever non-idempotent step had applied — the glaze backfill's `INSERT`
+against a unique `name`, or an `addColumn`, which is a bare `ALTER TABLE ... ADD COLUMN`
+(`createTable` is `IF NOT EXISTS` and survives). Recovery for a half-applied migration is tracked
+outside this repo as `pt-migration-half-applied-recovery`.
+
 ### Local database key
 
 The SQLCipher key is stored under options pinned in `EncryptionKeyService` (iOS

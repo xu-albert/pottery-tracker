@@ -91,8 +91,9 @@ void main() {
   });
 
   for (final version in _historicalVersions) {
-    group('upgrading from schema version $version', () {
-      test('completes and lands on the current schema', () async {
+    test(
+      'upgrading from schema version $version lands on the current schema',
+      () async {
         final db = _openAt(version);
         addTearDown(db.close);
 
@@ -108,20 +109,8 @@ void main() {
             reason: 'table $table differs from a fresh install',
           );
         }
-      });
-
-      test('gives tag_options exactly one color column', () async {
-        final db = _openAt(version);
-        addTearDown(db.close);
-        await db.customSelect('SELECT 1').get();
-
-        final colors = (await _columnsOf(
-          db,
-          'tag_options',
-        )).where((c) => c == 'color');
-        expect(colors, hasLength(1));
-      });
-    });
+      },
+    );
   }
 
   test('a version 1 piece survives the whole upgrade', () async {
