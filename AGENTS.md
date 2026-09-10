@@ -50,6 +50,16 @@ than re-deriving it.
   validated by an iOS build, so it stays until the `package:sqlite3` 3.x migration above, which needs
   that toolchain anyway.
 
+### Schema migrations
+
+`onUpgrade` in `lib/database/database.dart` creates every table from the *current* Dart definition,
+so a step that creates a table already gets the columns added in later versions. An `addColumn` on
+such a table must therefore be bounded on both sides, the way the clay `sort_order` and tag `color`
+steps are; unbounded, the upgrade throws `duplicate column name` and the app cannot open at all.
+When you bump `schemaVersion`, add a `test/database/fixtures/schema_v<previous>.sql` fixture:
+`test/database/migration_test.dart` walks every fixture to the current version and compares the
+result against a fresh install.
+
 ### Local database key
 
 The SQLCipher key is stored under options pinned in `EncryptionKeyService` (iOS

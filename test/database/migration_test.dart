@@ -1,0 +1,143 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pottery_tracker/database/database.dart';
+import 'package:sqlite3/sqlite3.dart';
+
+/// The schema versions a device can still be sitting on. Version 9 is the
+/// current one and is covered by every other database test.
+const _historicalVersions = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/// Reads the checked-in DDL for a historical schema version.
+///
+/// The fixtures live in the repository rather than being reconstructed from
+/// `git show`, so a shallow CI clone still runs these tests.
+String _fixtureSql(int version) =>
+    File('test/database/fixtures/schema_v$version.sql').readAsStringSync();
+
+/// Opens an in-memory database seeded with [version]'s schema, then hands it to
+/// [AppDatabase] so the real [MigrationStrategy] upgrades it on first query.
+Database _seed(int version) {
+  final raw = sqlite3.openInMemory();
+  raw.execute(_fixtureSql(version));
+  raw.userVersion = version;
+  return raw;
+}
+
+AppDatabase _openAt(int version) =>
+    AppDatabase.forTesting(NativeDatabase.opened(_seed(version)));
+
+/// Column names of [table], in `pragma table_info` order.
+Future<List<String>> _columnsOf(AppDatabase db, String table) async {
+  final rows = await db.customSelect('PRAGMA table_info($table)').get();
+  return rows.map((r) => r.read<String>('name')).toList();
+}
+
+Future<Set<String>> _tablesOf(AppDatabase db) async {
+  final rows = await db
+      .customSelect(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name NOT LIKE 'sqlite_%'",
+      )
+      .get();
+  return rows.map((r) => r.read<String>('name')).toSet();
+}
+
+void main() {
+  // What a device that installed the current version fresh ends up with. Every
+  // upgrade path has to arrive at the same place.
+  late Set<String> currentTables;
+  late Map<String, Set<String>> currentColumns;
+
+  setUpAll(() async {
+    final fresh = AppDatabase.forTesting(NativeDatabase.memory());
+    currentTables = await _tablesOf(fresh);
+    currentColumns = {
+      for (final table in currentTables)
+        table: (await _columnsOf(fresh, table)).toSet(),
+    };
+    await fresh.close();
+  });
+
+  for (final version in _historicalVersions) {
+    group('upgrading from schema version $version', () {
+      test('completes and lands on the current schema', () async {
+        final db = _openAt(version);
+        addTearDown(db.close);
+
+        // The first query is what drives onUpgrade. Before the `color` guard
+        // this threw `duplicate column name: color` for versions 1 through 5.
+        await db.customSelect('SELECT 1').get();
+
+        expect(await _tablesOf(db), currentTables);
+        for (final table in currentTables) {
+          expect(
+            (await _columnsOf(db, table)).toSet(),
+            currentColumns[table],
+            reason: 'table $table differs from a fresh install',
+          );
+        }
+      });
+
+      test('gives tag_options exactly one color column', () async {
+        final db = _openAt(version);
+        addTearDown(db.close);
+        await db.customSelect('SELECT 1').get();
+
+        final colors = (await _columnsOf(
+          db,
+          'tag_options',
+        )).where((c) => c == 'color');
+        expect(colors, hasLength(1));
+      });
+    });
+  }
+
+  test('a version 1 piece survives the whole upgrade', () async {
+    final raw = _seed(1);
+    raw.execute(
+      'INSERT INTO pieces (id, title, clay_type, glazes, created_at, updated_at) '
+      "VALUES ('p1', 'First bowl', 'Stoneware', 'Celadon, Tenmoku', 0, 0)",
+    );
+    final db = AppDatabase.forTesting(NativeDatabase.opened(raw));
+    addTearDown(db.close);
+
+    final piece = await db.piecesDao.getPieceById('p1');
+    expect(piece, isNotNull);
+    expect(piece!.title, 'First bowl');
+    expect(piece.isArchived, isFalse);
+    expect(piece.displayDate, isNull);
+
+    // The version 3 and 5 steps backfill the clay and glaze libraries from the
+    // free-text columns they replaced.
+    final clays = await db.select(db.clayOptions).get();
+    expect(clays.map((c) => c.name), ['Stoneware']);
+    final glazes = await db.select(db.glazeOptions).get();
+    expect(glazes.map((g) => g.name), containsAll(['Celadon', 'Tenmoku']));
+    expect(await db.select(db.pieceGlazes).get(), hasLength(2));
+  });
+
+  test('the migrated database is writable through the DAOs', () async {
+    final db = _openAt(5);
+    addTearDown(db.close);
+
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p2'),
+        title: const Value('Mug'),
+        displayDate: Value(DateTime(2026, 1, 1)),
+        createdAt: Value(DateTime(2026, 1, 1)),
+        updatedAt: Value(DateTime(2026, 1, 1)),
+      ),
+    );
+    final (tag, created) = await db.materialsDao.findOrCreateTag('kiln 3');
+    expect(created, isTrue);
+    await db.materialsDao.updateTagColor(tag.id, '#FF8800');
+
+    final tags = await db.select(db.tagOptions).get();
+    expect(tags.single.color, '#FF8800');
+    expect((await db.piecesDao.getPieceById('p2'))!.title, 'Mug');
+  });
+}

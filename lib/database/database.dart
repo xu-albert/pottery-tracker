@@ -211,7 +211,10 @@ class AppDatabase extends _$AppDatabase {
         await migrator.createTable(pieceTags);
         await migrator.addColumn(pieces, pieces.tags);
       }
-      if (from < 7) {
+      // `from < 6` builds tag_options from the current Dart definition, which
+      // already carries `color`, so this step must only run for databases that
+      // arrived at 6 the long way — same shape as the clay sort_order step.
+      if (from >= 6 && from < 7) {
         await migrator.addColumn(tagOptions, tagOptions.color);
       }
       if (from < 8) {
