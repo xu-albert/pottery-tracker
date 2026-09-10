@@ -573,6 +573,10 @@ class SyncService {
   // Push all local data (first sync)
   // ════════════════════════════════════════════
 
+  /// Uploads every row that exists locally. A deletion has no row left to
+  /// upload, so this sends no tombstone: `SyncNotifier` mirrors what this
+  /// delivers to decide which queue entries it retires, and that list has to
+  /// change with this method.
   Future<void> pushAllLocal(String uid) async {
     debugPrint('SyncService: pushing all local data');
 
