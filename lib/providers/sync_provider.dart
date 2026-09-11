@@ -194,6 +194,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// re-upload-everything affordance in the app, and it races a drain
   /// scheduled 500ms after any edit.
   bool _syncOwed = false;
+
+  /// Set when a full sync failed, and cleared by the next one that succeeds.
+  ///
+  /// Unlike [_syncOwed] this is not a debt token and never schedules
+  /// anything — it only says that no pull has completed since the last
+  /// failure, so a drain that empties the queue may neither call the device
+  /// backed up nor clear the error that failure latched: the push half is
+  /// fine, but remote edits are still missing and Sync Now is what fetches
+  /// them.
+  /// Session-scoped on purpose; a relaunch runs a fresh sign-in sync anyway.
+  bool _pullOwed = false;
   bool _owedSyncForcesFull = false;
   bool _queueProcessOwed = false;
   Timer? _processTimer;
@@ -280,23 +291,25 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (await _claimOrBlock(auth.uid!)) return;
       final drainFailure = await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
-      if (drainFailure != null) {
-        state = state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: drainFailure.toString(),
-        );
-      } else if (!_syncOwed) {
+      if (drainFailure == null && !_syncOwed && !_pullOwed) {
         // Only a completed sync may claim the device is backed up. A drain
         // empties the queue but never pulls, so saying "backed up" while a
-        // full sync is still owed would name a backup that has not happened.
+        // full sync is still owed — or while the last one failed half way and
+        // no pull has landed since — would name a backup that has not
+        // happened.
         //
-        // The question asked is whether *this* drain failed, never what
-        // [SyncState.status] happens to hold: the status is what the previous
-        // run latched, so reading it kept a device that had already pushed
-        // everything showing "Sync error" — with the stale message, and
-        // without advancing [SyncState.lastSyncedAt] — until the user found
-        // the Sync Now button. `copyWith` drops [SyncState.errorMessage] when
-        // it is not passed, which is what clears that caption here.
+        // The question asked is whether *this* drain pushed everything, never
+        // what [SyncState.status] happens to hold: the status is what the
+        // previous run latched, so reading it kept a device that had already
+        // pushed everything showing "Sync error" — with the stale message,
+        // and without advancing [SyncState.lastSyncedAt] — until the user
+        // found the Sync Now button. `copyWith` drops
+        // [SyncState.errorMessage] when it is not passed, which is what
+        // clears that caption here.
+        //
+        // A drain that could not push says so the way it always has: the
+        // entries stay queued and the refreshed `pendingCount` above is what
+        // the tile reports, exactly as [syncNow] reports the same failure.
         state = state.copyWith(
           status: SyncStatus.idle,
           lastSyncedAt: _clock.now(),
@@ -396,6 +409,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // Retry uploading photos that have local files but no cloudUrl
       await _syncService.retryMissingUploads(uid);
 
+      _pullOwed = false;
       state = SyncState(
         status: SyncStatus.idle,
         pendingCount: await _queue.pendingCount,
@@ -404,6 +418,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
       await _refreshPendingCount();
+      // A full sync is the only run that pulls, so its failure is the only
+      // one a later drain cannot make good on. Remember it, or the next
+      // successful drain would clear this error and caption the device
+      // "backed up" with remote edits still missing.
+      _pullOwed = true;
       state = state.copyWith(
         status: SyncStatus.error,
         errorMessage: e.toString(),
@@ -440,7 +459,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   ///
   /// Returns `null` when every entry it was responsible for reached the
   /// cloud, and otherwise the error from the last entry that exhausted its
-  /// retries — which [_pushQueue] both reports and captions the failure with.
+  /// retries. That answer is what lets [_pushQueue] decide whether the run it
+  /// just finished is entitled to call the device backed up; the failure
+  /// itself is reported by the entries staying queued, not by a status.
   ///
   /// Two outcomes deliberately do not count as a failed drain, because the
   /// work is not lost and nothing is owed to the user about it: a photo file
