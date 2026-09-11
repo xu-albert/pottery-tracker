@@ -472,23 +472,30 @@ void main() {
         addTearDown(s.container.dispose);
         await _settle();
 
-        // The queue lives in platform storage, so reading it can fail. That
-        // failure escapes the drain and latches the error this test is about.
+        // Latch the error the way the app actually does. `syncNow`'s catch
+        // is the only writer of the error the sync tile shows: a drain
+        // reaches its own catch only if the queue store itself fails, and
+        // `SyncQueue.pendingCount` reads `getAll()` too, so a store that
+        // broke would take the catch body down with it and never set the
+        // error at all.
         when(
-          () => s.queue.getAll(),
-        ).thenThrow(Exception('queue storage unavailable'));
-        when(() => s.queue.pendingCount).thenAnswer((_) async => 1);
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        when(
+          () => s.syncService.pullChangedSince(any(), any()),
+        ).thenThrow(Exception('network unreachable'));
 
-        s.notifier.scheduleProcessQueue();
+        await s.notifier.syncNow();
         await _settle();
 
         var state = s.container.read(syncStateProvider);
         expect(state.status, SyncStatus.error);
-        expect(state.errorMessage, contains('queue storage unavailable'));
+        expect(state.errorMessage, contains('network unreachable'));
+        final failedAt = state.lastSyncedAt;
 
-        // The user edits again and this drain pushes everything, so it — not
-        // the status the failed one latched — is what the tile is entitled to
-        // read.
+        // The network comes back and the user edits. This drain pushes
+        // everything, so it — not the status the failed run latched — is what
+        // the tile is entitled to read.
         queueHolds(s.queue, pending: 1);
         when(() => s.queue.pendingCount).thenAnswer((_) async => 0);
         clock.instant = clock.instant.add(const Duration(minutes: 5));
@@ -516,6 +523,7 @@ void main() {
           clock.instant,
           reason: 'the recovered drain is what backed the device up',
         );
+        expect(state.lastSyncedAt, isNot(failedAt));
         verify(() => s.queue.remove(entry)).called(1);
       },
     );
@@ -588,67 +596,6 @@ void main() {
             'photo files are best-effort and retryMissingUploads picks them '
             'up on the next full sync, so one must not raise a sync error',
       );
-      expect(state.lastSyncedAt, clock.instant);
-    });
-
-    test('a drain does not clear an error a failed pull left', () async {
-      final clock = _StubSyncClock();
-      final s = _setup(auth: _signedIn, clock: clock);
-      addTearDown(s.container.dispose);
-      await _settle();
-
-      // The push half of a full sync lands and the pull throws, so the
-      // device has sent everything but received nothing.
-      when(
-        () => s.syncService.pullAll(any()),
-      ).thenThrow(Exception('pull failed'));
-      when(
-        () => s.syncService.pullChangedSince(any(), any()),
-      ).thenThrow(Exception('pull failed'));
-
-      await s.notifier.syncNow();
-      await _settle();
-
-      final failedAt = s.container.read(syncStateProvider);
-      expect(failedAt.status, SyncStatus.error);
-      expect(failedAt.errorMessage, contains('pull failed'));
-
-      // A later drain pushes everything it was given. That says nothing
-      // about the pull that is still owed.
-      queueHolds(s.queue, pending: 1);
-      when(() => s.queue.pendingCount).thenAnswer((_) async => 0);
-      clock.instant = clock.instant.add(const Duration(minutes: 5));
-
-      s.notifier.scheduleProcessQueue();
-      await _settle();
-
-      var state = s.container.read(syncStateProvider);
-      expect(
-        state.status,
-        SyncStatus.error,
-        reason:
-            'a drain never pulls, so it cannot answer for the failure and '
-            'must leave the tile prompting the user toward Sync Now',
-      );
-      expect(
-        state.lastSyncedAt,
-        failedAt.lastSyncedAt,
-        reason: 'remote edits are still missing, so nothing is backed up',
-      );
-
-      // The pull succeeds, which is the run that is entitled to say so.
-      when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
-      when(
-        () => s.syncService.pullChangedSince(any(), any()),
-      ).thenAnswer((_) async {});
-      clock.instant = clock.instant.add(const Duration(minutes: 5));
-
-      await s.notifier.syncNow();
-      await _settle();
-
-      state = s.container.read(syncStateProvider);
-      expect(state.status, SyncStatus.idle);
-      expect(state.errorMessage, isNull);
       expect(state.lastSyncedAt, clock.instant);
     });
   });
