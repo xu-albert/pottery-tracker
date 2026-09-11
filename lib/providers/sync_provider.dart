@@ -278,12 +278,25 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _syncing = true;
     try {
       if (await _claimOrBlock(auth.uid!)) return;
-      await _processQueueInternal(auth.uid!);
+      final drainFailure = await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
-      if (state.status != SyncStatus.error && !_syncOwed) {
+      if (drainFailure != null) {
+        state = state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: drainFailure.toString(),
+        );
+      } else if (!_syncOwed) {
         // Only a completed sync may claim the device is backed up. A drain
         // empties the queue but never pulls, so saying "backed up" while a
         // full sync is still owed would name a backup that has not happened.
+        //
+        // The question asked is whether *this* drain failed, never what
+        // [SyncState.status] happens to hold: the status is what the previous
+        // run latched, so reading it kept a device that had already pushed
+        // everything showing "Sync error" — with the stale message, and
+        // without advancing [SyncState.lastSyncedAt] — until the user found
+        // the Sync Now button. `copyWith` drops [SyncState.errorMessage] when
+        // it is not passed, which is what clears that caption here.
         state = state.copyWith(
           status: SyncStatus.idle,
           lastSyncedAt: _clock.now(),
@@ -368,6 +381,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // writes made while it was in flight. They have to reach the cloud
         // before the pull, which would otherwise bring the deleted rows back
         // and overwrite the concurrent edits.
+        //
+        // A full sync reports on itself rather than on this drain: what the
+        // drain could not push is still queued, and the refreshed
+        // `pendingCount` below is what says so on the tile.
         await _processQueueInternal(uid);
         await _syncService.pullAll(uid);
       } else {
@@ -419,7 +436,21 @@ class SyncNotifier extends StateNotifier<SyncState> {
     SyncOperation.deleteMaterial => false,
   };
 
-  Future<void> _processQueueInternal(String uid) async {
+  /// Drains the push queue, and reports whether it managed to.
+  ///
+  /// Returns `null` when every entry it was responsible for reached the
+  /// cloud, and otherwise the error from the last entry that exhausted its
+  /// retries — which [_pushQueue] both reports and captions the failure with.
+  ///
+  /// Two outcomes deliberately do not count as a failed drain, because the
+  /// work is not lost and nothing is owed to the user about it: a photo file
+  /// upload, which is best-effort and picked up again by
+  /// [SyncService.retryMissingUploads] on the next full sync; and an entry
+  /// that pushed successfully but was edited again while in flight, which
+  /// stays queued at its newer revision and is sent by the drain that edit
+  /// scheduled.
+  Future<Object?> _processQueueInternal(String uid) async {
+    Object? drainFailure;
     final entries = await _queue.getAll();
     for (final entry in entries) {
       // Photo file uploads are best-effort: try once, always remove.
@@ -437,6 +468,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
 
       var success = false;
+      Object? lastError;
       // Captured before each attempt reads the row it is about to upload, so
       // a write that lands while the push is in flight leaves the entry
       // holding a revision this drain never sent.
@@ -449,18 +481,24 @@ class SyncNotifier extends StateNotifier<SyncState> {
           break;
         } catch (e) {
           debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
+          lastError = e;
           if (attempt < 2) {
             await _clock.sleep(Duration(seconds: 1 << attempt));
           }
         }
       }
+      if (!success) {
+        drainFailure = lastError;
+        continue;
+      }
       // Acknowledge only what was actually pushed. A newer revision stays
       // queued, counts as pending, and is sent by the drain the edit
       // scheduled.
-      if (success && _queue.revisionOf(entry) == revision) {
+      if (_queue.revisionOf(entry) == revision) {
         await _queue.remove(entry);
       }
     }
+    return drainFailure;
   }
 
   Future<void> _processEntry(String uid, SyncQueueEntry entry) async {

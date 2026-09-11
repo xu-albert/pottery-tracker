@@ -120,6 +120,9 @@ cd functions && npm ci && npm test
 All data lives in local SQLite first. Writes never block on the network: every DAO write enqueues an entry via `SyncTrigger`, and `SyncNotifier` drains the queue on a short debounce, on sign-in, and on explicit `syncNow()`. Failed operations retry with exponential backoff and are re-attempted on the next full sync, so there is no connectivity listener — offline is just a failed attempt that stays queued. Conflict resolution is last-write-wins based on `updatedAt`.
 
 Every write path must go through `SyncTrigger`; a DAO write without one silently never reaches the cloud.
+
+Every run reports its own outcome, never the latched `SyncState.status`: the status is what the *previous* run left behind, so a recovered drain that read it kept showing "Sync error" with a stale message. `SyncState.copyWith` drops `errorMessage` whenever it is not passed — that is how a healthy state stops carrying a dead failure's caption, and several callers depend on it. The same rule, for the same reason, governs the read-only lock below.
+
 Piece-row and photo writes from screens go through `PieceWriter` (`lib/services/piece_writer.dart`), whose tests pin the enqueue for each operation; the remaining direct piece and photo DAO writes from screens are the glaze and tag setters in `piece_detail_screen.dart` (`setGlazesForPiece` / `setTagsForPiece`, each followed by a hand-enqueued `afterPieceGlazesWrite` / `afterPieceTagsWrite` + `afterPieceWrite` pair) and the album swipe-to-archive in `album_grid.dart`. Material rename/delete in the Manage screens goes straight to `materials_dao`, which also rewrites the denormalized `pieces.glazes` / `pieces.tags` columns.
 
 No account may push another account's data. The *next* account's first sync calls `pushAllLocal`, so

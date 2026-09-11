@@ -35,7 +35,7 @@ const _signedOut = AuthState(status: AuthStatus.unauthenticated);
   MockSyncService syncService,
   MockSyncQueue queue,
 })
-_setup({AuthState auth = _signedOut}) {
+_setup({AuthState auth = _signedOut, SyncClock? clock}) {
   final syncService = MockSyncService();
   final queue = MockSyncQueue();
 
@@ -90,6 +90,10 @@ _setup({AuthState auth = _signedOut}) {
       authProvider.overrideWith((_) => AuthNotifier.withState(auth)),
       syncQueueProvider.overrideWithValue(queue),
       syncServiceProvider.overrideWithValue(syncService),
+      if (clock != null)
+        syncStateProvider.overrideWith(
+          (ref) => SyncNotifier(ref, queue, syncService, clock: clock),
+        ),
     ],
   );
 
@@ -443,6 +447,143 @@ void main() {
       ).called(1);
       // Still removed from queue despite failure
       verify(() => s.queue.remove(entry)).called(1);
+    });
+  });
+
+  group('the debounced drain reports its own outcome', () {
+    /// The entry every test in this group leaves in the queue: one edited
+    /// piece, the shape the 500ms debounce was built for.
+    const entry = SyncQueueEntry(
+      operation: SyncOperation.pushPiece,
+      entityId: 'piece-1',
+    );
+
+    /// Wires the queue to hold [entry] with [pending] entries outstanding.
+    void queueHolds(MockSyncQueue queue, {required int pending}) {
+      when(() => queue.getAll()).thenAnswer((_) async => [entry]);
+      when(() => queue.pendingCount).thenAnswer((_) async => pending);
+    }
+
+    test(
+      'a recovered drain returns the device to idle and backed up',
+      () async {
+        final clock = _StubSyncClock();
+        final s = _setup(auth: _signedIn, clock: clock);
+        addTearDown(s.container.dispose);
+        await _settle();
+
+        // Offline: the push fails every attempt, so the drain exhausts its
+        // three retries and the entry stays queued.
+        queueHolds(s.queue, pending: 1);
+        when(
+          () => s.syncService.pushPiece('user-1', 'piece-1'),
+        ).thenThrow(Exception('network unreachable'));
+
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+
+        var state = s.container.read(syncStateProvider);
+        expect(state.status, SyncStatus.error);
+        expect(state.errorMessage, contains('network unreachable'));
+
+        // The network comes back and the user edits again. This drain pushes
+        // everything, so it — not the status the failed one latched — is what
+        // the tile is entitled to read.
+        when(
+          () => s.syncService.pushPiece('user-1', 'piece-1'),
+        ).thenAnswer((_) async {});
+        when(() => s.queue.pendingCount).thenAnswer((_) async => 0);
+        clock.instant = clock.instant.add(const Duration(minutes: 5));
+
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+
+        state = s.container.read(syncStateProvider);
+        expect(
+          state.status,
+          SyncStatus.idle,
+          reason:
+              'everything queued reached the cloud, so reading the latched '
+              'error here leaves Settings saying "Sync error" about a run '
+              'that is over',
+        );
+        expect(
+          state.errorMessage,
+          isNull,
+          reason: 'the message captions a failure that no longer stands',
+        );
+        expect(state.pendingCount, 0);
+        expect(
+          state.lastSyncedAt,
+          clock.instant,
+          reason: 'the recovered drain is what backed the device up',
+        );
+      },
+    );
+
+    test('a drain that is still failing keeps the error', () async {
+      final clock = _StubSyncClock();
+      final s = _setup(auth: _signedIn, clock: clock);
+      addTearDown(s.container.dispose);
+      await _settle();
+
+      queueHolds(s.queue, pending: 1);
+      when(
+        () => s.syncService.pushPiece('user-1', 'piece-1'),
+      ).thenThrow(Exception('network unreachable'));
+
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+
+      final afterFirstFailure = s.container.read(syncStateProvider);
+      expect(afterFirstFailure.status, SyncStatus.error);
+
+      // Still offline. The second debounce must not talk itself into idle
+      // just because it is a fresh run.
+      clock.instant = clock.instant.add(const Duration(minutes: 5));
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+
+      final state = s.container.read(syncStateProvider);
+      expect(state.status, SyncStatus.error);
+      expect(state.errorMessage, contains('network unreachable'));
+      expect(
+        state.lastSyncedAt,
+        afterFirstFailure.lastSyncedAt,
+        reason: 'nothing was backed up, so the timestamp may not move',
+      );
+      verifyNever(() => s.queue.remove(entry));
+    });
+
+    test('a best-effort photo file failure is not a drain failure', () async {
+      final clock = _StubSyncClock();
+      final s = _setup(auth: _signedIn, clock: clock);
+      addTearDown(s.container.dispose);
+      await _settle();
+
+      const photo = SyncQueueEntry(
+        operation: SyncOperation.pushPhotoFile,
+        entityId: 'photo-1',
+      );
+      when(() => s.queue.getAll()).thenAnswer((_) async => [photo]);
+      when(() => s.queue.pendingCount).thenAnswer((_) async => 0);
+      when(
+        () => s.syncService.uploadPhotoFile('user-1', 'photo-1'),
+      ).thenThrow(Exception('storage unavailable'));
+      clock.instant = clock.instant.add(const Duration(minutes: 5));
+
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+
+      final state = s.container.read(syncStateProvider);
+      expect(
+        state.status,
+        SyncStatus.idle,
+        reason:
+            'photo files are best-effort and retryMissingUploads picks them '
+            'up on the next full sync, so one must not raise a sync error',
+      );
+      expect(state.lastSyncedAt, clock.instant);
     });
   });
 
@@ -888,4 +1029,31 @@ void main() {
       },
     );
   });
+}
+
+/// A clock the drain tests drive by hand: debounced pushes fire on the next
+/// event-loop turn, retry backoff returns immediately, and [now] only moves
+/// when a test moves it — so "the timestamp advanced" is an assertion about
+/// the notifier rather than about how long the test took to run.
+class _StubSyncClock extends SyncClock {
+  DateTime instant = DateTime.utc(2026, 9, 9, 10);
+
+  @override
+  DateTime now() => instant;
+
+  @override
+  Timer runAfter(Duration delay, void Function() callback) =>
+      Timer(Duration.zero, callback);
+
+  @override
+  Future<void> sleep(Duration duration) => Future<void>.value();
+}
+
+/// Lets every zero-delay timer and microtask the notifier scheduled run out.
+/// A drain is several awaits deep behind a debounce, so one turn is not
+/// enough and pumping a fixed number costs nothing on a stubbed clock.
+Future<void> _settle() async {
+  for (var i = 0; i < 30; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
 }
