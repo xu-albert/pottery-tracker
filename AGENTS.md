@@ -50,6 +50,25 @@ than re-deriving it.
   validated by an iOS build, so it stays until the `package:sqlite3` 3.x migration above, which needs
   that toolchain anyway.
 
+### Schema migrations
+
+`onUpgrade` in `lib/database/database.dart` creates every table from the *current* Dart definition,
+so a step that creates a table already gets the columns added in later versions. An `addColumn` on
+such a table must therefore be bounded on both sides, the way the clay `sort_order` and tag `color`
+steps are; unbounded, the upgrade throws `duplicate column name` and the app cannot open at all.
+When you bump `schemaVersion`, add a `test/database/fixtures/schema_v<previous>.sql` fixture:
+`test/database/migration_test.dart` discovers every fixture, walks it to the current version and
+compares the result against a fresh install, and fails if the fixture set is not exactly every
+version below `schemaVersion`.
+
+drift runs `onUpgrade` outside a transaction and writes the new `user_version` only after it
+returns, and no step here is idempotent, so a migration that throws part-way cannot be resumed: the
+work it already committed stays, the version does not move, and the next launch re-enters at the
+same `from` and dies on whichever non-idempotent step had applied — the glaze backfill's `INSERT`
+against a unique `name`, or an `addColumn`, which is a bare `ALTER TABLE ... ADD COLUMN`
+(`createTable` is `IF NOT EXISTS` and survives). Recovery for a half-applied migration is tracked
+outside this repo as `pt-migration-half-applied-recovery`.
+
 ### Local database key
 
 The SQLCipher key is stored under options pinned in `EncryptionKeyService` (iOS

@@ -122,8 +122,14 @@ class AppDatabase extends _$AppDatabase {
           );
         }
       }
-      if (from >= 3 && from < 4) {
-        await migrator.addColumn(clayOptions, clayOptions.sortOrder);
+      if (from < 4) {
+        // Only a database already at 3 has a clay_options without `sort_order`;
+        // below 3 the step above creates the table from the current definition,
+        // which already has it. The backfill runs either way, so both paths
+        // reach 4 numbered alphabetically.
+        if (from >= 3) {
+          await migrator.addColumn(clayOptions, clayOptions.sortOrder);
+        }
         // Backfill existing clays with sort orders in alphabetical order
         final existing = await customSelect(
           'SELECT id FROM clay_options ORDER BY name ASC',
@@ -211,7 +217,11 @@ class AppDatabase extends _$AppDatabase {
         await migrator.createTable(pieceTags);
         await migrator.addColumn(pieces, pieces.tags);
       }
-      if (from < 7) {
+      // Only a database already sitting at 6 has a tag_options built by a v6
+      // binary, whose Dart definition had no `color`; below 6 the step above
+      // creates the table from the current definition, `color` included —
+      // same shape as the clay sort_order step.
+      if (from >= 6 && from < 7) {
         await migrator.addColumn(tagOptions, tagOptions.color);
       }
       if (from < 8) {
