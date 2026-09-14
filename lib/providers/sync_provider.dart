@@ -257,10 +257,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   Future<void> _refreshPendingCount() async {
     final count = await _queue.pendingCount;
+    if (!mounted) return;
     state = state.copyWith(pendingCount: count);
   }
 
   void scheduleProcessQueue() {
+    // Publish the persisted edit before waiting for the debounce or network.
+    // An offline Firestore write can remain in flight until reconnection.
+    unawaited(_refreshPendingCount());
     _processTimer?.cancel();
     _processTimer = _clock.runAfter(_clock.debounceDelay, () {
       _pushQueue();
