@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -137,9 +139,8 @@ void main() {
       }
     });
 
-    testWidgets('keeps the failure reason alongside the pending work', (
-      tester,
-    ) async {
+    testWidgets('shows the failure reason and the pending count together at '
+        'the moment a sync fails', (tester) async {
       pending = 1;
 
       await pumpSettings(tester);
@@ -157,6 +158,42 @@ void main() {
           .data!;
       expect(subtitle, contains('1 change pending'));
       expect(subtitle, contains('unavailable'));
+    });
+
+    testWidgets('reports queued work while a sync is still in progress', (
+      tester,
+    ) async {
+      // An offline push Firestore holds until the device reconnects, so the
+      // tile stays on "Syncing..." with the work still on the device.
+      pending = 1;
+      const queued = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-1',
+      );
+      when(() => queue.getAll()).thenAnswer((_) async => const [queued]);
+      when(() => queue.revisionOf(queued)).thenReturn(0);
+      when(
+        () => syncService.pushPiece(any(), any()),
+      ).thenAnswer((_) => Completer<void>().future);
+
+      await pumpSettings(tester);
+
+      expect(find.text('Syncing...'), findsOneWidget);
+      expect(find.textContaining('1 change pending'), findsOneWidget);
+
+      // A second edit made while that push is still waiting.
+      pending = 2;
+      notifierOf(tester).scheduleProcessQueue();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Syncing...'), findsOneWidget);
+      expect(find.textContaining('2 changes pending'), findsOneWidget);
+
+      // Let the debounce fire; it stands down while the sync holds the lock.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
     });
   });
 }

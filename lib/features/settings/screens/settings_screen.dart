@@ -289,6 +289,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case SyncStatus.syncing:
         icon = Icons.cloud_sync;
         title = l10n.syncSyncing;
+        subtitle = pendingLabel;
         trailing = const SizedBox(
           width: 20,
           height: 20,
