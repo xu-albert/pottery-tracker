@@ -288,7 +288,7 @@
   "@syncBackedUp": { "description": "Sync status when everything is synced" },
   "syncSyncing": "Syncing...",
   "@syncSyncing": { "description": "Sync status while syncing" },
-  "syncPending": "{count} changes pending",
+  "syncPending": "{count, plural, =1{1 change pending} other{{count} changes pending}}",
   "@syncPending": { "description": "Sync status with pending changes", "placeholders": { "count": { "type": "int" } } },
   "syncError": "Sync error",
   "@syncError": { "description": "Sync error status" },

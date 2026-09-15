@@ -865,7 +865,7 @@ abstract class AppLocalizations {
   /// Sync status with pending changes
   ///
   /// In en, this message translates to:
-  /// **'{count} changes pending'**
+  /// **'{count, plural, =1{1 change pending} other{{count} changes pending}}'**
   String syncPending(int count);
 
   /// Sync error status

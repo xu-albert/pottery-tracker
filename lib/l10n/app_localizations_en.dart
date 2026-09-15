@@ -425,7 +425,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String syncPending(int count) {
-    return '$count changes pending';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes pending',
+      one: '1 change pending',
+    );
+    return '$_temp0';
   }
 
   @override
