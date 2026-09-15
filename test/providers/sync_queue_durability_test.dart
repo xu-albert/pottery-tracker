@@ -151,6 +151,44 @@ void main() {
     await db.close();
   });
 
+  for (final startDrain in [false, true]) {
+    test(
+      'offline edit is pending ${startDrain ? 'during upload' : 'before debounce'}',
+      () async {
+        signIn();
+        await waitForState((s) => s.lastSyncedAt == clock.instant);
+        final lastSynced = container.read(syncStateProvider).lastSyncedAt;
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        when(() => service.pushPiece(any(), any())).thenAnswer((_) async {
+          if (!entered.isCompleted) entered.complete();
+          await release.future;
+        });
+
+        await writer.updateFields('p1', title: 'offline edit');
+        // Let the enqueue notification settle without advancing the debounce.
+        await Future<void>.delayed(Duration.zero);
+        if (startDrain) {
+          clock.fire();
+          await entered.future;
+        }
+        expect(await SyncQueue().pendingCount, 1);
+        expect(
+          container.read(syncStateProvider).pendingCount,
+          1,
+          reason: 'Settings must not claim backed up while this edit is unsent',
+        );
+        expect(container.read(syncStateProvider).lastSyncedAt, lastSynced);
+
+        final drained = waitForState((s) => s.pendingCount == 0);
+        release.complete();
+        if (!startDrain) clock.fire();
+        await drained;
+        expect(await queue.pendingCount, 0);
+      },
+    );
+  }
+
   for (final fullSync in [false, true]) {
     for (final duringRetry in [false, true]) {
       test('${fullSync ? 'first' : 'incremental'} sign-in sync preserves '

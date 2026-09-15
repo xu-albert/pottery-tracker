@@ -32,6 +32,11 @@ enum DeviceLockReason {
 }
 
 class SyncState {
+  /// The one failure [errorMessage] carries as a code rather than as the
+  /// exception's own text, because the server being out of reach is the
+  /// routine offline outcome and the tile has words of its own for it.
+  static const unavailableErrorCode = 'unavailable';
+
   final SyncStatus status;
   final int pendingCount;
   final DateTime? lastSyncedAt;
@@ -255,12 +260,23 @@ class SyncNotifier extends StateNotifier<SyncState> {
     await syncNow();
   }
 
+  /// Republishes how much work is waiting, and nothing else.
+  /// [SyncState.errorMessage] is handed back deliberately: `copyWith` drops
+  /// what it is not given, and a count moving is no evidence that the failure
+  /// captioning the tile is over.
   Future<void> _refreshPendingCount() async {
     final count = await _queue.pendingCount;
-    state = state.copyWith(pendingCount: count);
+    if (!mounted) return;
+    state = state.copyWith(
+      pendingCount: count,
+      errorMessage: state.errorMessage,
+    );
   }
 
   void scheduleProcessQueue() {
+    // Publish the persisted edit before waiting for the debounce or network.
+    // An offline Firestore write can remain in flight until reconnection.
+    unawaited(_refreshPendingCount());
     _processTimer?.cancel();
     _processTimer = _clock.runAfter(_clock.debounceDelay, () {
       _pushQueue();
@@ -395,10 +411,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // drain could not push is still queued, and the refreshed
         // `pendingCount` below is what says so on the tile.
         await _processQueueInternal(uid);
+        await _refreshPendingCount();
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
         await _processQueueInternal(uid);
+        await _refreshPendingCount();
         await _syncService.pullChangedSince(uid, lastPulled);
       }
 
@@ -413,9 +431,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
       await _refreshPendingCount();
+      final unreachable =
+          e is FirebaseException && e.code == SyncState.unavailableErrorCode;
       state = state.copyWith(
         status: SyncStatus.error,
-        errorMessage: e.toString(),
+        errorMessage: unreachable
+            ? SyncState.unavailableErrorCode
+            : e.toString(),
       );
     } finally {
       _staleSyncInFlight = false;
