@@ -32,6 +32,11 @@ enum DeviceLockReason {
 }
 
 class SyncState {
+  /// The one failure [errorMessage] carries as a code rather than as the
+  /// exception's own text, because the server being out of reach is the
+  /// routine offline outcome and the tile has words of its own for it.
+  static const unavailableErrorCode = 'unavailable';
+
   final SyncStatus status;
   final int pendingCount;
   final DateTime? lastSyncedAt;
@@ -419,9 +424,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
       await _refreshPendingCount();
+      final unreachable =
+          e is FirebaseException && e.code == SyncState.unavailableErrorCode;
       state = state.copyWith(
         status: SyncStatus.error,
-        errorMessage: e.toString(),
+        errorMessage: unreachable
+            ? SyncState.unavailableErrorCode
+            : e.toString(),
       );
     } finally {
       _staleSyncInFlight = false;

@@ -874,6 +874,12 @@ abstract class AppLocalizations {
   /// **'Sync error'**
   String get syncError;
 
+  /// Caption under the sync error status when the failure was that the server could not be reached, which is the routine outcome of an offline sync
+  ///
+  /// In en, this message translates to:
+  /// **'No connection to the server'**
+  String get syncOffline;
+
   /// Sync disabled status
   ///
   /// In en, this message translates to:

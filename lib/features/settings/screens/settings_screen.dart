@@ -319,7 +319,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case SyncStatus.error:
         icon = Icons.cloud_off;
         title = l10n.syncError;
-        subtitle = [?pendingLabel, ?syncState.errorMessage].join('\n');
+        final reason = syncState.errorMessage == SyncState.unavailableErrorCode
+            ? l10n.syncOffline
+            : syncState.errorMessage;
+        subtitle = [?pendingLabel, ?reason].join('\n');
         trailing = GestureDetector(
           onLongPress: () =>
               ref.read(syncStateProvider.notifier).syncNow(forceFullSync: true),

@@ -438,6 +438,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncError => 'Sync error';
 
   @override
+  String get syncOffline => 'No connection to the server';
+
+  @override
   String get syncDisabled => 'Sign in to enable cloud backup';
 
   @override

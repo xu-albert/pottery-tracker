@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -194,6 +195,40 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
+    });
+
+    testWidgets('says the server is out of reach rather than quoting the SDK', (
+      tester,
+    ) async {
+      pending = 1;
+      when(() => syncService.pullChangedSince(any(), any())).thenThrow(
+        FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'unavailable',
+          message:
+              'Failed to get documents from server. (However, these documents '
+              'may exist in the local cache. To enable offline mode, call '
+              'setPersistenceEnabled(true).)',
+        ),
+      );
+
+      await pumpSettings(tester);
+
+      final subtitle = tester
+          .widget<Text>(
+            find.descendant(
+              of: find.ancestor(
+                of: find.text('Sync error'),
+                matching: find.byType(ListTile),
+              ),
+              matching: find.textContaining('pending'),
+            ),
+          )
+          .data!;
+      expect(subtitle, contains('1 change pending'));
+      expect(subtitle, contains('No connection to the server'));
+      expect(subtitle, isNot(contains('local cache')));
+      expect(subtitle, isNot(contains('setPersistenceEnabled')));
     });
 
     testWidgets('stops reporting work the running sync has already delivered', (

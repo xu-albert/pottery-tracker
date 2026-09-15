@@ -292,6 +292,8 @@
   "@syncPending": { "description": "Sync status with pending changes", "placeholders": { "count": { "type": "int" } } },
   "syncError": "Sync error",
   "@syncError": { "description": "Sync error status" },
+  "syncOffline": "No connection to the server",
+  "@syncOffline": { "description": "Caption under the sync error status when the failure was that the server could not be reached, which is the routine outcome of an offline sync" },
   "syncDisabled": "Sign in to enable cloud backup",
   "@syncDisabled": { "description": "Sync disabled status" },
   "deviceLockedWipeTitle": "This device still has to be erased",
