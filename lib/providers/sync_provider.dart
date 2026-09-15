@@ -260,6 +260,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
     await syncNow();
   }
 
+  /// Republishes how much work is waiting, and nothing else.
+  /// [SyncState.errorMessage] is handed back deliberately: `copyWith` drops
+  /// what it is not given, and a count moving is no evidence that the failure
+  /// captioning the tile is over.
   Future<void> _refreshPendingCount() async {
     final count = await _queue.pendingCount;
     if (!mounted) return;

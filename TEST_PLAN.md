@@ -39,9 +39,9 @@ is manual-only by necessity, not by neglect.
       ╱   ╲
      ╱  E2E ╲  (§5) — none automated; camera/multi-picker require a real device
     ╱───────╲
-   ╱  Widget  ╲ (§2.2) — 16 files, screens/components with branching UI logic
+   ╱  Widget  ╲ (§2.2) — 17 files, screens/components with branching UI logic
   ╱─────────────╲
- ╱   Unit / DAO   ╲ (§2.1) — 27 files: providers, services, DAOs, pure helpers
+ ╱   Unit / DAO   ╲ (§2.1) — 29 files: providers, services, DAOs, pure helpers
 ╱───────────────────╲
 ```
 
