@@ -399,10 +399,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // drain could not push is still queued, and the refreshed
         // `pendingCount` below is what says so on the tile.
         await _processQueueInternal(uid);
+        await _refreshPendingCount();
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
         await _processQueueInternal(uid);
+        await _refreshPendingCount();
         await _syncService.pullChangedSince(uid, lastPulled);
       }
 

@@ -195,5 +195,29 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
     });
+
+    testWidgets('stops reporting work the running sync has already delivered', (
+      tester,
+    ) async {
+      // The push half succeeds and empties the queue; the pull half is still
+      // running, which on a first sync is where most of the time goes.
+      pending = 1;
+      const queued = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-1',
+      );
+      when(() => queue.getAll()).thenAnswer((_) async => const [queued]);
+      when(() => queue.revisionOf(queued)).thenReturn(0);
+      when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
+      when(() => queue.remove(queued)).thenAnswer((_) async => pending = 0);
+      when(
+        () => syncService.pullChangedSince(any(), any()),
+      ).thenAnswer((_) => Completer<void>().future);
+
+      await pumpSettings(tester);
+
+      expect(find.text('Syncing...'), findsOneWidget);
+      expect(find.textContaining('pending'), findsNothing);
+    });
   });
 }
