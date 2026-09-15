@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to coding agents working in this repository. `CLAUDE.md` imports it through an `@AGENTS.md` pointer — edit this file, keep the pointer as a pointer.
+This file provides guidance to coding agents working in this repository. `CLAUDE.md` is a symlink to it — edit this file, never replace the symlink with a second copy.
 
 ## Rules
 
