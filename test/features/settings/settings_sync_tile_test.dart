@@ -231,6 +231,43 @@ void main() {
       expect(subtitle, isNot(contains('setPersistenceEnabled')));
     });
 
+    testWidgets('keeps saying why while a later offline edit moves the count', (
+      tester,
+    ) async {
+      when(() => syncService.pullChangedSince(any(), any())).thenThrow(
+        FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+      );
+
+      await pumpSettings(tester);
+
+      expect(find.text('No connection to the server'), findsOneWidget);
+
+      // The offline edit, whose count refresh runs before any drain.
+      pending = 1;
+      notifierOf(tester).scheduleProcessQueue();
+      await tester.pump();
+      await tester.pump();
+
+      final subtitle = tester
+          .widget<Text>(
+            find.descendant(
+              of: find.ancestor(
+                of: find.text('Sync error'),
+                matching: find.byType(ListTile),
+              ),
+              matching: find.textContaining('pending'),
+            ),
+          )
+          .data!;
+      expect(subtitle, contains('1 change pending'));
+      expect(subtitle, contains('No connection to the server'));
+
+      // Let the debounce fire so no timer outlives the test.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    });
+
     testWidgets('stops reporting work the running sync has already delivered', (
       tester,
     ) async {

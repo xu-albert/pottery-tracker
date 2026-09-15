@@ -263,7 +263,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _refreshPendingCount() async {
     final count = await _queue.pendingCount;
     if (!mounted) return;
-    state = state.copyWith(pendingCount: count);
+    state = state.copyWith(
+      pendingCount: count,
+      errorMessage: state.errorMessage,
+    );
   }
 
   void scheduleProcessQueue() {
