@@ -317,11 +317,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
           status: SyncStatus.idle,
           lastSyncedAt: _clock.now(),
         );
-      } else if (drainFailure != null) {
-        state = state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: _failureReason(drainFailure),
-        );
+      } else if (drainFailure != null && state.status == SyncStatus.error) {
+        state = state.copyWith(errorMessage: _failureReason(drainFailure));
       }
     } catch (e) {
       debugPrint('SyncNotifier: push failed: $e');
@@ -381,7 +378,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
           ? null
           : await _syncService.getLastPulledAt(uid);
 
-      Object? drainFailure;
       if (lastPulled == null) {
         // First sync on this device (or forced) — push local data first, then pull
         final delivered = [
@@ -404,14 +400,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // before the pull, which would otherwise bring the deleted rows back
         // and overwrite the concurrent edits.
         //
-        // Keep the drain's failure for the final result, unless the pull
-        // itself fails and supplies a more recent reason.
-        drainFailure = await _processQueueInternal(uid);
+        // A full sync reports on itself rather than on this drain: what the
+        // drain could not push is still queued, and the refreshed
+        // `pendingCount` below is what says so on the tile.
+        await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
-        drainFailure = await _processQueueInternal(uid);
+        await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullChangedSince(uid, lastPulled);
       }
@@ -420,12 +417,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       await _syncService.retryMissingUploads(uid);
 
       state = SyncState(
-        status: drainFailure == null ? SyncStatus.idle : SyncStatus.error,
+        status: SyncStatus.idle,
         pendingCount: await _pendingCount(),
         lastSyncedAt: _clock.now(),
-        errorMessage: drainFailure == null
-            ? null
-            : _failureReason(drainFailure),
       );
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
@@ -468,7 +462,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// cloud, and otherwise the error from the last entry that exhausted its
   /// retries. That answer is what lets [_pushQueue] decide whether the run it
   /// just finished is entitled to call the device backed up; the failure
-  /// supplies the current reason while the entries remain pending.
+  /// itself is reported by the entries staying queued, not by a status; it
+  /// only replaces the reason of an error that is already showing.
   ///
   /// Two outcomes deliberately do not count as a failed drain, because the
   /// work remains visible as pending: a photo file upload, counted from its

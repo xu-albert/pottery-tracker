@@ -531,7 +531,12 @@ void main() {
         addTearDown(s.container.dispose);
         await _settle();
 
-        // Latch a failed pull, then recover through the debounced push path.
+        // Latch the error the way the app actually does. `syncNow`'s catch
+        // is the only writer of the error the sync tile shows: a drain
+        // reaches its own catch only if the queue store itself fails, and
+        // `SyncQueue.pendingCount` reads `getAll()` too, so a store that
+        // broke would take the catch body down with it and never set the
+        // error at all.
         when(
           () => s.syncService.getLastPulledAt('user-1'),
         ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
@@ -629,8 +634,10 @@ void main() {
       final state = s.container.read(syncStateProvider);
       expect(
         state.status,
-        SyncStatus.error,
-        reason: 'the exhausted attempt reports its own failure',
+        isNot(SyncStatus.error),
+        reason:
+            'a drain that exhausts its retries reports the same way a full '
+            'sync does — the work stays queued, it does not raise an error',
       );
       expect(
         state.pendingCount,

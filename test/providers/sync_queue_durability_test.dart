@@ -369,7 +369,7 @@ void main() {
 
     signIn();
     await waitForState(
-      (s) => s.status == SyncStatus.error && s.lastSyncedAt != null,
+      (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
     );
 
     expect(
