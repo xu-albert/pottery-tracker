@@ -50,6 +50,15 @@ than re-deriving it.
   validated by an iOS build, so it stays until the `package:sqlite3` 3.x migration above, which needs
   that toolchain anyway.
 
+### iOS / Xcode Cloud
+
+- Xcode Cloud archives with Xcode 27, whose toolchain hard-errors on any pod target below
+  iOS 15.0 ("supported deployment target versions is 15.0 to 27.0.x"). CocoaPods seeds each pod
+  target from its podspec, and `flutter_additional_ios_build_settings` only lifts
+  Flutter-dependent pods, so the `post_install` pin to 15.0 in `ios/Podfile` is load-bearing —
+  do not remove it when upgrading Firebase or other pods. Diagnosed in
+  https://github.com/xu-albert/pottery-tracker/pull/31.
+
 ### Schema migrations
 
 `onUpgrade` in `lib/database/database.dart` creates every table from the *current* Dart definition,
