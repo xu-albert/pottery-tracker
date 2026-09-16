@@ -59,6 +59,9 @@ void main() {
     when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
+    when(
+      () => syncService.pendingPhotoUploadIds(),
+    ).thenAnswer((_) async => <String>{});
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   });
 

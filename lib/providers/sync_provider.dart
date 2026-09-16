@@ -49,10 +49,8 @@ class SyncState {
     this.errorMessage,
   });
 
-  /// [errorMessage] deliberately does not survive a `copyWith` that omits it:
-  /// it describes the transition that put the state into [SyncStatus.error],
-  /// and carrying it into the next one would caption a healthy state with a
-  /// stale failure. Several callers rely on that.
+  /// Count updates and an in-flight retry retain the current failure. An
+  /// explicit result replaces it, including clearing it on success or refusal.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
@@ -63,7 +61,11 @@ class SyncState {
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
-      errorMessage: errorMessage,
+      errorMessage:
+          errorMessage ??
+          (status == null || status == SyncStatus.syncing
+              ? this.errorMessage
+              : null),
     );
   }
 }
@@ -260,18 +262,28 @@ class SyncNotifier extends StateNotifier<SyncState> {
     await syncNow();
   }
 
-  /// Republishes how much work is waiting, and nothing else.
-  /// [SyncState.errorMessage] is handed back deliberately: `copyWith` drops
-  /// what it is not given, and a count moving is no evidence that the failure
-  /// captioning the tile is over.
-  Future<void> _refreshPendingCount() async {
-    final count = await _queue.pendingCount;
-    if (!mounted) return;
-    state = state.copyWith(
-      pendingCount: count,
-      errorMessage: state.errorMessage,
-    );
+  /// Photo files can remain unsent after their best-effort queue attempt.
+  /// Count those persisted rows too, once per file even while it is queued.
+  Future<int> _pendingCount() async {
+    final photoIds = await _syncService.pendingPhotoUploadIds();
+    final queued = await _queue.getAll();
+    final queuedPhotoIds = {
+      for (final entry in queued)
+        if (entry.operation == SyncOperation.pushPhotoFile) entry.entityId,
+    };
+    return queued.length + photoIds.difference(queuedPhotoIds).length;
   }
+
+  Future<void> _refreshPendingCount() async {
+    final count = await _pendingCount();
+    if (!mounted) return;
+    state = state.copyWith(pendingCount: count);
+  }
+
+  String _failureReason(Object error) =>
+      error is FirebaseException && error.code == SyncState.unavailableErrorCode
+      ? SyncState.unavailableErrorCode
+      : error.toString();
 
   void scheduleProcessQueue() {
     // Publish the persisted edit before waiting for the debounce or network.
@@ -298,33 +310,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final drainFailure = await _processQueueInternal(auth.uid!);
       await _refreshPendingCount();
       if (drainFailure == null && !_syncOwed) {
-        // Only a completed sync may claim the device is backed up. A drain
-        // empties the queue but never pulls, so saying "backed up" while a
-        // full sync is still owed would name a backup that has not happened.
-        //
-        // The question asked is whether *this* drain pushed everything, never
-        // what [SyncState.status] happens to hold: the status is what the
-        // previous run latched, so reading it kept a device that had already
-        // pushed everything showing "Sync error" — with the stale message,
-        // and without advancing [SyncState.lastSyncedAt] — until the user
-        // found the Sync Now button. `copyWith` drops
-        // [SyncState.errorMessage] when it is not passed, which is what
-        // clears that caption here.
-        //
-        // A drain that could not push says so the way it always has: the
-        // entries stay queued and the refreshed `pendingCount` above is what
-        // the tile reports, exactly as [syncNow] reports the same failure.
-        //
-        // This clears a *sync's* latched error too, and that is deliberate.
-        // [syncNow]'s catch is the only writer of the error the tile ever
-        // shows — a drain cannot reach its own catch without the queue store
-        // itself failing — so withholding the clear until a pull had landed
-        // would leave the stale "Sync error" standing for the rest of the
-        // session, which is the bug this whole change exists to remove. The
-        // cost is that "backed up" here speaks only for the push half.
+        // A successful drain resolves the previous failure. As before, this
+        // speaks only for the push half; a drain neither pulls nor moves the
+        // pull watermark. Pending photo rows still prevent a backed-up claim.
         state = state.copyWith(
           status: SyncStatus.idle,
           lastSyncedAt: _clock.now(),
+        );
+      } else if (drainFailure != null) {
+        state = state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: _failureReason(drainFailure),
         );
       }
     } catch (e) {
@@ -332,7 +328,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       await _refreshPendingCount();
       state = state.copyWith(
         status: SyncStatus.error,
-        errorMessage: e.toString(),
+        errorMessage: _failureReason(e),
       );
     } finally {
       _staleSyncInFlight = false;
@@ -385,6 +381,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           ? null
           : await _syncService.getLastPulledAt(uid);
 
+      Object? drainFailure;
       if (lastPulled == null) {
         // First sync on this device (or forced) — push local data first, then pull
         final delivered = [
@@ -407,15 +404,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // before the pull, which would otherwise bring the deleted rows back
         // and overwrite the concurrent edits.
         //
-        // A full sync reports on itself rather than on this drain: what the
-        // drain could not push is still queued, and the refreshed
-        // `pendingCount` below is what says so on the tile.
-        await _processQueueInternal(uid);
+        // Keep the drain's failure for the final result, unless the pull
+        // itself fails and supplies a more recent reason.
+        drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
-        await _processQueueInternal(uid);
+        drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullChangedSince(uid, lastPulled);
       }
@@ -424,20 +420,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
       await _syncService.retryMissingUploads(uid);
 
       state = SyncState(
-        status: SyncStatus.idle,
-        pendingCount: await _queue.pendingCount,
+        status: drainFailure == null ? SyncStatus.idle : SyncStatus.error,
+        pendingCount: await _pendingCount(),
         lastSyncedAt: _clock.now(),
+        errorMessage: drainFailure == null
+            ? null
+            : _failureReason(drainFailure),
       );
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
       await _refreshPendingCount();
-      final unreachable =
-          e is FirebaseException && e.code == SyncState.unavailableErrorCode;
       state = state.copyWith(
         status: SyncStatus.error,
-        errorMessage: unreachable
-            ? SyncState.unavailableErrorCode
-            : e.toString(),
+        errorMessage: _failureReason(e),
       );
     } finally {
       _staleSyncInFlight = false;
@@ -473,12 +468,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// cloud, and otherwise the error from the last entry that exhausted its
   /// retries. That answer is what lets [_pushQueue] decide whether the run it
   /// just finished is entitled to call the device backed up; the failure
-  /// itself is reported by the entries staying queued, not by a status.
+  /// supplies the current reason while the entries remain pending.
   ///
   /// Two outcomes deliberately do not count as a failed drain, because the
-  /// work is not lost and nothing is owed to the user about it: a photo file
-  /// upload, which is best-effort and picked up again by
-  /// [SyncService.retryMissingUploads] on the next full sync; and an entry
+  /// work remains visible as pending: a photo file upload, counted from its
+  /// local row and picked up by [SyncService.retryMissingUploads]; and an entry
   /// that pushed successfully but was edited again while in flight, which
   /// stays queued at its newer revision and is sent by the drain that edit
   /// scheduled.

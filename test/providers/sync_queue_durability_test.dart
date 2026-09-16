@@ -99,6 +99,9 @@ void main() {
     service = _SyncService();
     clock = _Clock();
     pushedTitles = [];
+    when(
+      () => service.pendingPhotoUploadIds(),
+    ).thenAnswer((_) async => <String>{});
     when(() => service.getLocalDataOwner()).thenAnswer((_) async => null);
     when(() => service.setLocalDataOwner(any())).thenAnswer((_) async {});
     when(() => service.getDeviceContested()).thenAnswer((_) async => false);
@@ -366,7 +369,7 @@ void main() {
 
     signIn();
     await waitForState(
-      (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      (s) => s.status == SyncStatus.error && s.lastSyncedAt != null,
     );
 
     expect(

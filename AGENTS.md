@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to coding agents working in this repository. `CLAUDE.md` is a symlink to it — edit this file, never replace the symlink with a second copy.
+This file provides guidance to coding agents working in this repository. `CLAUDE.md` imports it via `@AGENTS.md` — edit this file, keeping the import pointer intact.
 
 ## Rules
 
@@ -121,7 +121,7 @@ All data lives in local SQLite first. Writes never block on the network: every D
 
 Every write path must go through `SyncTrigger`; a DAO write without one silently never reaches the cloud.
 
-A run decides from its own outcome, never from the latched `SyncState.status` — the status is what the *previous* run left behind, so reading it strands stale errors. `_pushQueue` in `lib/providers/sync_provider.dart` owns the rationale and the limits of what a drain's "backed up" claim covers. `SyncState.copyWith` drops `errorMessage` whenever it is not passed — that is how a healthy state stops carrying a dead failure's caption, and several callers depend on it. The same rule, for the same reason, governs the read-only lock below.
+A run decides from its own outcome, never from the latched `SyncState.status` — the status is what the *previous* run left behind, so reading it strands stale errors. `_pushQueue` in `lib/providers/sync_provider.dart` owns the rationale and the limits of what a drain's "backed up" claim covers. `SyncState.copyWith` preserves the current reason through count updates and an in-flight retry; an explicit result replaces or clears it. Failed photo uploads remain pending through the local photo rows (`SyncService.pendingPhotoUploadIds`), even after the best-effort queue attempt is retired. The read-only lock below is governed by persisted ownership, never the failure caption.
 
 Piece-row and photo writes from screens go through `PieceWriter` (`lib/services/piece_writer.dart`), whose tests pin the enqueue for each operation; the remaining direct piece and photo DAO writes from screens are the glaze and tag setters in `piece_detail_screen.dart` (`setGlazesForPiece` / `setTagsForPiece`, each followed by a hand-enqueued `afterPieceGlazesWrite` / `afterPieceTagsWrite` + `afterPieceWrite` pair) and the album swipe-to-archive in `album_grid.dart`. Material rename/delete in the Manage screens goes straight to `materials_dao`, which also rewrites the denormalized `pieces.glazes` / `pieces.tags` columns.
 

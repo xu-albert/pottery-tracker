@@ -59,6 +59,9 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
   // Unowned by default: the device belongs to whoever signs in first.
+  when(
+    () => syncService.pendingPhotoUploadIds(),
+  ).thenAnswer((_) async => <String>{});
   when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
   // The refusal marker is device-ownership state like the stamp above: the
@@ -115,15 +118,25 @@ void main() {
       errorMessage: 'stale failure',
     );
 
-    test('clears the error message, which describes one transition', () {
+    test('preserves the reason until an attempt resolves or replaces it', () {
       expect(
         failed.copyWith(pendingCount: 3).errorMessage,
-        isNull,
-        reason:
-            'carrying it forward would caption a healthy state with a failure '
-            'that is already over',
+        'stale failure',
+        reason: 'a count update does not resolve the current failure',
       );
       expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
+      expect(
+        failed.copyWith(status: SyncStatus.syncing).errorMessage,
+        'stale failure',
+      );
+      for (final status in [
+        SyncStatus.idle,
+        SyncStatus.disabled,
+        SyncStatus.blocked,
+      ]) {
+        expect(failed.copyWith(status: status).errorMessage, isNull);
+      }
+      expect(failed.copyWith(status: SyncStatus.error).errorMessage, isNull);
     });
 
     test('carries the fields it was not asked to change', () {
@@ -325,6 +338,49 @@ void main() {
       expect(state.errorMessage, contains('network down'));
     });
 
+    test(
+      'retry retains the reason while running and replaces or clears it',
+      () async {
+        final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+        addTearDown(s.container.dispose);
+        await _settle();
+        when(
+          () => s.syncService.pullAll(any()),
+        ).thenThrow(Exception('first failure'));
+        await s.notifier.syncNow();
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        when(() => s.syncService.pullAll(any())).thenAnswer((_) async {
+          entered.complete();
+          await release.future;
+          throw Exception('second failure');
+        });
+        final retry = s.notifier.syncNow();
+        await entered.future;
+        expect(s.container.read(syncStateProvider).status, SyncStatus.syncing);
+        expect(
+          s.container.read(syncStateProvider).errorMessage,
+          contains('first failure'),
+        );
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        expect(
+          s.container.read(syncStateProvider).errorMessage,
+          contains('first failure'),
+        );
+        release.complete();
+        await retry;
+        expect(
+          s.container.read(syncStateProvider).errorMessage,
+          contains('second failure'),
+        );
+        when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
+        await s.notifier.syncNow();
+        await _settle();
+        expect(s.container.read(syncStateProvider).errorMessage, isNull);
+      },
+    );
+
     test('a sync that stands down is replayed, not dropped', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
@@ -462,6 +518,9 @@ void main() {
     void queueHolds(MockSyncQueue queue, {required int pending}) {
       when(() => queue.getAll()).thenAnswer((_) async => [entry]);
       when(() => queue.pendingCount).thenAnswer((_) async => pending);
+      when(() => queue.remove(entry)).thenAnswer((_) async {
+        when(() => queue.getAll()).thenAnswer((_) async => []);
+      });
     }
 
     test(
@@ -472,12 +531,7 @@ void main() {
         addTearDown(s.container.dispose);
         await _settle();
 
-        // Latch the error the way the app actually does. `syncNow`'s catch
-        // is the only writer of the error the sync tile shows: a drain
-        // reaches its own catch only if the queue store itself fails, and
-        // `SyncQueue.pendingCount` reads `getAll()` too, so a store that
-        // broke would take the catch body down with it and never set the
-        // error at all.
+        // Latch a failed pull, then recover through the debounced push path.
         when(
           () => s.syncService.getLastPulledAt('user-1'),
         ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
@@ -528,6 +582,31 @@ void main() {
       },
     );
 
+    test('a new drain failure replaces the previous pull reason', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+      when(
+        () => s.syncService.pullAll(any()),
+      ).thenThrow(Exception('previous pull failure'));
+      await s.notifier.syncNow();
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('previous pull failure'),
+      );
+      queueHolds(s.queue, pending: 1);
+      when(
+        () => s.syncService.pushPiece(any(), any()),
+      ).thenThrow(Exception('current push failure'));
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+      expect(s.container.read(syncStateProvider).status, SyncStatus.error);
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('current push failure'),
+      );
+    });
+
     test('a drain that is still failing claims no backup', () async {
       final clock = _StubSyncClock();
       final s = _setup(auth: _signedIn, clock: clock);
@@ -550,10 +629,8 @@ void main() {
       final state = s.container.read(syncStateProvider);
       expect(
         state.status,
-        isNot(SyncStatus.error),
-        reason:
-            'a drain that exhausts its retries reports the same way a full '
-            'sync does — the work stays queued, it does not raise an error',
+        SyncStatus.error,
+        reason: 'the exhausted attempt reports its own failure',
       );
       expect(
         state.pendingCount,
@@ -843,7 +920,8 @@ void main() {
       s.notifier.scheduleProcessQueue();
       await Future<void>.delayed(const Duration(milliseconds: 600));
 
-      verifyNever(() => s.queue.getAll());
+      verifyNever(() => s.syncService.pushPiece(any(), any()));
+      verifyNever(() => s.syncService.uploadPhotoFile(any(), any()));
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
     });
 
