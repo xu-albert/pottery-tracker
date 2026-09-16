@@ -125,11 +125,8 @@ void main() {
         reason: 'a count update does not resolve the current failure',
       );
       expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
-      expect(
-        failed.copyWith(status: SyncStatus.syncing).errorMessage,
-        'stale failure',
-      );
       for (final status in [
+        SyncStatus.syncing,
         SyncStatus.idle,
         SyncStatus.disabled,
         SyncStatus.blocked,
@@ -338,48 +335,31 @@ void main() {
       expect(state.errorMessage, contains('network down'));
     });
 
-    test(
-      'retry retains the reason while running and replaces or clears it',
-      () async {
-        final s = _setup(auth: _signedIn, clock: _StubSyncClock());
-        addTearDown(s.container.dispose);
-        await _settle();
-        when(
-          () => s.syncService.pullAll(any()),
-        ).thenThrow(Exception('first failure'));
-        await s.notifier.syncNow();
-        final entered = Completer<void>();
-        final release = Completer<void>();
-        when(() => s.syncService.pullAll(any())).thenAnswer((_) async {
-          entered.complete();
-          await release.future;
-          throw Exception('second failure');
-        });
-        final retry = s.notifier.syncNow();
-        await entered.future;
-        expect(s.container.read(syncStateProvider).status, SyncStatus.syncing);
-        expect(
-          s.container.read(syncStateProvider).errorMessage,
-          contains('first failure'),
-        );
-        s.notifier.scheduleProcessQueue();
-        await _settle();
-        expect(
-          s.container.read(syncStateProvider).errorMessage,
-          contains('first failure'),
-        );
-        release.complete();
-        await retry;
-        expect(
-          s.container.read(syncStateProvider).errorMessage,
-          contains('second failure'),
-        );
-        when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
-        await s.notifier.syncNow();
-        await _settle();
-        expect(s.container.read(syncStateProvider).errorMessage, isNull);
-      },
-    );
+    test('a retry replaces or clears the reason', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+      when(
+        () => s.syncService.pullAll(any()),
+      ).thenThrow(Exception('first failure'));
+      await s.notifier.syncNow();
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('first failure'),
+      );
+      when(
+        () => s.syncService.pullAll(any()),
+      ).thenThrow(Exception('second failure'));
+      await s.notifier.syncNow();
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('second failure'),
+      );
+      when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
+      await s.notifier.syncNow();
+      await _settle();
+      expect(s.container.read(syncStateProvider).errorMessage, isNull);
+    });
 
     test('a sync that stands down is replayed, not dropped', () async {
       final s = _setup(auth: _signedIn);

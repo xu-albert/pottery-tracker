@@ -49,8 +49,8 @@ class SyncState {
     this.errorMessage,
   });
 
-  /// Count updates and an in-flight retry retain the current failure. An
-  /// explicit result replaces it, including clearing it on success or refusal.
+  /// Count updates retain the current failure. An explicit result replaces
+  /// it, including clearing it on success or refusal.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
@@ -61,11 +61,7 @@ class SyncState {
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
-      errorMessage:
-          errorMessage ??
-          (status == null || status == SyncStatus.syncing
-              ? this.errorMessage
-              : null),
+      errorMessage: errorMessage ?? (status == null ? this.errorMessage : null),
     );
   }
 }
