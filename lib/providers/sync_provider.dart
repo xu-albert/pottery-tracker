@@ -49,8 +49,9 @@ class SyncState {
     this.errorMessage,
   });
 
-  /// Count updates retain the current failure. An explicit result replaces
-  /// it, including clearing it on success or refusal.
+  /// A count update keeps the current [errorMessage]. Setting a [status]
+  /// clears it unless a new one is passed, so neither a new attempt nor its
+  /// result inherits an earlier failure's reason.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
