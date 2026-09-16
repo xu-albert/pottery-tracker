@@ -1076,6 +1076,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     FirebaseFirestore.instance,
     FirebaseStorage.instance,
     keys: ref.watch(encryptionKeyServiceProvider),
+    queue: ref.watch(syncQueueProvider),
   );
 });
 

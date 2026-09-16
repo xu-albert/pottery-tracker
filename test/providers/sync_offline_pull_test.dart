@@ -33,6 +33,11 @@ class _Metadata extends Mock implements SnapshotMetadata {}
 
 class _Query extends Mock implements Query<Map<String, dynamic>> {}
 
+class _InstantClock extends SyncClock {
+  @override
+  Future<void> sleep(Duration duration) async {}
+}
+
 /// Models the SDK boundary: default reads can return an incomplete offline
 /// cache; server reads fail offline. Both stores execute real query filtering.
 class _Network {
@@ -43,6 +48,7 @@ class _Network {
   DateTime serverTime = DateTime(2024);
   Future<void> Function(String)? afterRead;
   String? boundaryResponse;
+  final rejectedWrites = <String>{};
   final reads = <String>[];
   final returnedCounts = <String, int>{};
 
@@ -103,9 +109,15 @@ class _Network {
       final remote = server.collection('users/user-1/$name');
       final cached = cache.collection('users/user-1/$name');
       when(() => user.collection(name)).thenReturn(collection);
-      when(() => collection.doc(any())).thenAnswer(
-        (call) => remote.doc(call.positionalArguments.single as String),
-      );
+      when(() => collection.doc(any())).thenAnswer((call) {
+        final id = call.positionalArguments.single as String;
+        if (!rejectedWrites.contains(id)) return remote.doc(id);
+        final rejected = _Document();
+        when(() => rejected.set(any(), any())).thenThrow(
+          FirebaseException(plugin: 'cloud_firestore', code: 'aborted'),
+        );
+        return rejected;
+      });
       when(
         () => collection.where('pieceId', isEqualTo: any(named: 'isEqualTo')),
       ).thenAnswer(
@@ -159,7 +171,10 @@ class _Network {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(() => registerFallbackValue(const GetOptions()));
+  setUpAll(() {
+    registerFallbackValue(const GetOptions());
+    registerFallbackValue(SetOptions(merge: true));
+  });
 
   for (final fullPull in [true, false]) {
     test(
@@ -300,6 +315,151 @@ void main() {
       await container.read(syncStateProvider.notifier).syncNow();
       expect(await service.getLastPulledAt('user-1'), network.serverTime);
       expect(network.returnedCounts['clays'], 0);
+    },
+  );
+
+  test('a clay renamed during the migration pull keeps the rename', () async {
+    SharedPreferences.setMockInitialValues({
+      '${SyncService.lastPulledAtPrefix}user-1': DateTime(
+        2099,
+      ).millisecondsSinceEpoch,
+    });
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final network = _Network();
+    final service = SyncService(db, network.firestore, MockFirebaseStorage());
+    final clay = network.server.doc('users/user-1/clays/clay');
+    await clay.set({
+      'createdAt': Timestamp.fromDate(DateTime(2020)),
+      'name': 'Stoneware',
+      'updatedAt': Timestamp.fromDate(DateTime(2020)),
+    });
+    await db
+        .into(db.clayOptions)
+        .insert(
+          ClayOptionsCompanion.insert(
+            id: 'clay',
+            name: 'Stoneware',
+            createdAt: DateTime(2020),
+          ),
+        );
+    final queue = SyncQueue();
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(
+          (_) => AuthNotifier.withState(
+            const AuthState(status: AuthStatus.authenticated, uid: 'user-1'),
+          ),
+        ),
+        syncQueueProvider.overrideWithValue(queue),
+        syncServiceProvider.overrideWithValue(service),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    network.afterRead = (name) async {
+      if (name != 'clays') return;
+      network.afterRead = null;
+      await db.materialsDao.updateClayName('clay', 'Porcelain');
+      await queue.enqueue(
+        const SyncQueueEntry(
+          operation: SyncOperation.pushClay,
+          entityId: 'clay',
+        ),
+      );
+    };
+    final notifier = container.read(syncStateProvider.notifier);
+
+    await notifier.syncNow();
+    expect(container.read(syncStateProvider).status, SyncStatus.idle);
+    expect((await db.materialsDao.getAllClays()).single.name, 'Porcelain');
+
+    await notifier.syncNow();
+    expect((await clay.get()).data()?['name'], 'Porcelain');
+    expect((await db.materialsDao.getAllClays()).single.name, 'Porcelain');
+    expect(await queue.pendingCount, 0);
+  });
+
+  test(
+    'material writes whose push exhausted its retries survive the migration pull',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        '${SyncService.lastPulledAtPrefix}user-1': DateTime(
+          2099,
+        ).millisecondsSinceEpoch,
+      });
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final network = _Network()..rejectedWrites.addAll(['clay', 'glaze']);
+      final service = SyncService(db, network.firestore, MockFirebaseStorage());
+      final clay = network.server.doc('users/user-1/clays/clay');
+      await clay.set({
+        'createdAt': Timestamp.fromDate(DateTime(2020)),
+        'name': 'Stoneware',
+        'updatedAt': Timestamp.fromDate(DateTime(2020)),
+      });
+      final glaze = network.server.doc('users/user-1/glazes/glaze');
+      await glaze.set({
+        'createdAt': Timestamp.fromDate(DateTime(2020)),
+        'name': 'Deleted locally',
+        'updatedAt': Timestamp.fromDate(DateTime(2020)),
+      });
+      await db
+          .into(db.clayOptions)
+          .insert(
+            ClayOptionsCompanion.insert(
+              id: 'clay',
+              name: 'Porcelain',
+              createdAt: DateTime(2020),
+            ),
+          );
+      final queue = SyncQueue();
+      await queue.enqueue(
+        const SyncQueueEntry(
+          operation: SyncOperation.pushClay,
+          entityId: 'clay',
+        ),
+      );
+      await queue.enqueue(
+        const SyncQueueEntry(
+          operation: SyncOperation.deleteMaterial,
+          entityId: 'glaze',
+          extraData: 'glazes',
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (_) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated, uid: 'user-1'),
+            ),
+          ),
+          syncQueueProvider.overrideWithValue(queue),
+          syncServiceProvider.overrideWithValue(service),
+          syncStateProvider.overrideWith(
+            (ref) => SyncNotifier(ref, queue, service, clock: _InstantClock()),
+          ),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+      });
+      final notifier = container.read(syncStateProvider.notifier);
+
+      await notifier.syncNow();
+      expect(await service.getLastPulledAt('user-1'), network.serverTime);
+      expect((await db.materialsDao.getAllClays()).single.name, 'Porcelain');
+      expect(await db.materialsDao.getAllGlazes(), isEmpty);
+      expect(await queue.pendingCount, 2);
+
+      network.rejectedWrites.clear();
+      await notifier.syncNow();
+      expect((await clay.get()).data()?['name'], 'Porcelain');
+      expect((await glaze.get()).data()?['deletedAt'], isNotNull);
+      expect((await db.materialsDao.getAllClays()).single.name, 'Porcelain');
+      expect(await db.materialsDao.getAllGlazes(), isEmpty);
+      expect(await queue.pendingCount, 0);
     },
   );
 

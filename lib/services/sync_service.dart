@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 import '../database/transfer_key_backup.dart';
 import 'encryption_key_service.dart';
+import 'sync_queue.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -66,13 +67,16 @@ class SyncService {
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
   final EncryptionKeyService _keys;
+  final SyncQueue _queue;
 
   SyncService(
     this._db,
     this._firestore,
     this._storage, {
     EncryptionKeyService? keys,
-  }) : _keys = keys ?? EncryptionKeyService();
+    SyncQueue? queue,
+  }) : _keys = keys ?? EncryptionKeyService(),
+       _queue = queue ?? SyncQueue();
 
   DocumentReference _userDoc(String uid) => _firestore.doc('users/$uid');
 
@@ -642,7 +646,7 @@ class SyncService {
       insert: (doc) => _insertPhotoFromRemote(doc),
       update: (doc) => _updatePhotoFromRemote(doc),
       existsLocally: (id) async => await _db.photosDao.getPhotoById(id) != null,
-      isRemoteNewer: (doc, id) async => true,
+      remoteWins: (doc, id) => _hasNoQueuedWrite(id),
     );
 
     await _pullCollection(
@@ -654,7 +658,7 @@ class SyncService {
         final all = await _db.materialsDao.getAllClays();
         return all.any((c) => c.id == id);
       },
-      isRemoteNewer: (doc, id) async => true,
+      remoteWins: (doc, id) => _hasNoQueuedWrite(id),
     );
 
     await _pullCollection(
@@ -666,7 +670,7 @@ class SyncService {
         final all = await _db.materialsDao.getAllGlazes();
         return all.any((g) => g.id == id);
       },
-      isRemoteNewer: (doc, id) async => true,
+      remoteWins: (doc, id) => _hasNoQueuedWrite(id),
     );
 
     await _pullCollection(
@@ -678,7 +682,7 @@ class SyncService {
         final all = await _db.materialsDao.getAllTags();
         return all.any((t) => t.id == id);
       },
-      isRemoteNewer: (doc, id) async => true,
+      remoteWins: (doc, id) => _hasNoQueuedWrite(id),
     );
 
     // Pull junction tables
@@ -788,7 +792,7 @@ class SyncService {
       insert: (doc) => _insertPieceFromRemote(doc),
       update: (doc) => _updatePieceFromRemote(doc),
       existsLocally: (id) async => await _db.piecesDao.getPieceById(id) != null,
-      isRemoteNewer: (doc, id) async {
+      remoteWins: (doc, id) async {
         final local = await _db.piecesDao.getPieceById(id);
         if (local == null) return true;
         final remoteUpdated = (doc['updatedAt'] as Timestamp).toDate();
@@ -808,7 +812,7 @@ class SyncService {
     required Future<void> Function(QueryDocumentSnapshot) update,
     required Future<bool> Function(String id) existsLocally,
     required Future<bool> Function(QueryDocumentSnapshot doc, String id)
-    isRemoteNewer,
+    remoteWins,
   }) async {
     final snap = await _col(
       uid,
@@ -821,15 +825,17 @@ class SyncService {
         await _handleRemoteDeletion(collection, doc.id);
         continue;
       }
+      if (!await remoteWins(doc, doc.id)) continue;
       if (await existsLocally(doc.id)) {
-        if (await isRemoteNewer(doc, doc.id)) {
-          await update(doc);
-        }
+        await update(doc);
       } else {
         await insert(doc);
       }
     }
   }
+
+  Future<bool> _hasNoQueuedWrite(String id) async =>
+      !(await _queue.getAll()).any((entry) => entry.entityId == id);
 
   Future<void> _pullJunctions(
     String uid,

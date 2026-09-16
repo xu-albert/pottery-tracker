@@ -53,7 +53,11 @@ and would bulk-upload potentially stale local material copies before recovery.
 On the first upgraded sync, normal queued writes are processed, then the service
 performs one full pull, including legacy documents without `updatedAt`. Only a
 successful pull replaces the old marker. A failed attempt leaves the legacy value
-in place and retries broadly next time. Subsequent pulls use the new server
+in place and retries broadly next time. Photos and materials have no local edit
+time to compare, so the full pull skips any whose id still has a queued local
+write or deletion, including one whose push exhausted its retries earlier in the
+same sync or was made while the pull ran; the queued push delivers it instead of
+the older cloud copy replacing it. Subsequent pulls use the new server
 boundary and material/photo queries become incremental. A genuinely new device
 with no marker keeps the existing first-sync upload behavior.
 
