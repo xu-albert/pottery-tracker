@@ -31,9 +31,10 @@ and Firestore's finer timestamp precision without accumulating a replay window.
 
 ## Pieces and older clients
 
-Photos and materials have server-written `updatedAt` fields. Pieces instead use
-client edit times for last-write-wins conflict resolution, including edits from
-older installed versions. Filtering pieces by a server-time boundary would still
+Photos and materials have server-written `updatedAt` fields, and every write to
+them moves it, including the `cloudUrl` a finished photo upload adds. Pieces
+instead use client edit times for last-write-wins conflict resolution, including
+edits from older installed versions. Filtering pieces by a server-time boundary would still
 lose edits from a slow client. Every pull therefore reads all pieces, retaining
 the existing full-pull last-write-wins merge so an older remote copy cannot replace
 a newer local edit. A piece missing locally whose deletion is still queued is

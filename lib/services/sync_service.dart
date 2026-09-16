@@ -455,7 +455,10 @@ class SyncService {
     );
 
     // Update Firestore photo doc with URL
-    await _col(uid, 'photos').doc(photoId).update({'cloudUrl': url});
+    await _col(uid, 'photos').doc(photoId).update({
+      'cloudUrl': url,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> pushClay(String uid, String clayId) async {

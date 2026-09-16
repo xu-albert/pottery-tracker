@@ -688,6 +688,44 @@ void main() {
 
       expect(await db.piecesDao.getPieceById('p1'), isNull);
     });
+
+    test('a photo upload finished after another device pulled reaches it on '
+        'its next incremental pull', () async {
+      final file = File('${docsDir.path}/device-x/ph1.jpg')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([1, 2, 3]);
+      await insertPiece(id: 'p1');
+      final now = DateTime.now();
+      await db.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: Value(file.path),
+          dateTaken: Value(now),
+          createdAt: Value(now),
+          sortOrder: const Value(0),
+        ),
+      );
+      await syncService.pushPiece(_uid, 'p1');
+      await syncService.pushPhoto(_uid, 'ph1');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      final otherDb = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(otherDb.close);
+      final otherDevice = SyncService(otherDb, firestore, storage);
+      await otherDevice.pullAll(_uid);
+      expect((await otherDb.photosDao.getPhotoById('ph1'))!.cloudUrl, isNull);
+
+      await syncService.uploadPhotoFile(_uid, 'ph1');
+      final url = (await db.photosDao.getPhotoById('ph1'))!.cloudUrl;
+      expect(url, isNotNull);
+
+      await otherDevice.pullChangedSince(
+        _uid,
+        (await otherDevice.getLastPulledAt(_uid))!,
+      );
+      expect((await otherDb.photosDao.getPhotoById('ph1'))!.cloudUrl, url);
+    });
   });
 
   // ── getLastPulledAt ────────────────────────────
