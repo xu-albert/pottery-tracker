@@ -633,54 +633,47 @@ void main() {
       expect(glazes.map((g) => g.id).toList(), ['g2', 'g1']);
     });
 
-    test('saves lastPulledAt after successful pull', () async {
+    test('saves the server boundary after successful pull', () async {
       await syncService.pullAll(_uid);
 
-      final lastPulled = await syncService.getLastPulledAt(_uid);
-      expect(lastPulled, isNotNull);
+      final server = await col('meta').doc('pullBoundary').get();
+      final boundary = (server.data() as Map)['at'] as Timestamp;
       expect(
-        lastPulled!.difference(DateTime.now()).inSeconds.abs(),
-        lessThan(5),
+        (await syncService.getLastPulledAt(_uid))!.millisecondsSinceEpoch,
+        boundary.millisecondsSinceEpoch,
       );
     });
   });
 
   group('pullChangedSince', () {
-    test('only pulls docs with updatedAt after the given timestamp', () async {
-      final cutoff = DateTime(2025, 3, 1);
-      final before = DateTime(2025, 2, 1);
-      final after = DateTime(2025, 4, 1);
+    test(
+      'filters server-timestamped materials by the given timestamp',
+      () async {
+        final cutoff = DateTime(2025, 3, 1);
+        final before = DateTime(2025, 2, 1);
+        final after = DateTime(2025, 4, 1);
 
-      // Old doc (should NOT be pulled)
-      await col('pieces').doc('old').set({
-        'title': 'Old',
-        'stage': null,
-        'clayType': null,
-        'notes': null,
-        'coverPhotoId': null,
-        'isArchived': false,
-        'createdAt': Timestamp.fromDate(before),
-        'updatedAt': Timestamp.fromDate(before),
-      });
+        // Old doc (should NOT be pulled)
+        await col('clays').doc('old').set({
+          'name': 'Old',
+          'createdAt': Timestamp.fromDate(before),
+          'updatedAt': Timestamp.fromDate(before),
+        });
 
-      // New doc (should be pulled)
-      await col('pieces').doc('new').set({
-        'title': 'New',
-        'stage': null,
-        'clayType': null,
-        'notes': null,
-        'coverPhotoId': null,
-        'isArchived': false,
-        'createdAt': Timestamp.fromDate(after),
-        'updatedAt': Timestamp.fromDate(after),
-      });
+        // New doc (should be pulled)
+        await col('clays').doc('new').set({
+          'name': 'New',
+          'createdAt': Timestamp.fromDate(after),
+          'updatedAt': Timestamp.fromDate(after),
+        });
 
-      await syncService.pullChangedSince(_uid, cutoff);
+        await syncService.pullChangedSince(_uid, cutoff);
 
-      expect(await db.piecesDao.getPieceById('old'), isNull);
-      expect(await db.piecesDao.getPieceById('new'), isNotNull);
-      expect((await db.piecesDao.getPieceById('new'))!.title, 'New');
-    });
+        final clays = await db.materialsDao.getAllClays();
+        expect(clays.map((c) => c.id), ['new']);
+        expect(clays.single.name, 'New');
+      },
+    );
 
     test('handles remote deletions in incremental pull', () async {
       await insertPiece(id: 'p1');
@@ -694,6 +687,44 @@ void main() {
       await syncService.pullChangedSince(_uid, DateTime(2025, 3, 1));
 
       expect(await db.piecesDao.getPieceById('p1'), isNull);
+    });
+
+    test('a photo upload finished after another device pulled reaches it on '
+        'its next incremental pull', () async {
+      final file = File('${docsDir.path}/device-x/ph1.jpg')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([1, 2, 3]);
+      await insertPiece(id: 'p1');
+      final now = DateTime.now();
+      await db.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: Value(file.path),
+          dateTaken: Value(now),
+          createdAt: Value(now),
+          sortOrder: const Value(0),
+        ),
+      );
+      await syncService.pushPiece(_uid, 'p1');
+      await syncService.pushPhoto(_uid, 'ph1');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      final otherDb = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(otherDb.close);
+      final otherDevice = SyncService(otherDb, firestore, storage);
+      await otherDevice.pullAll(_uid);
+      expect((await otherDb.photosDao.getPhotoById('ph1'))!.cloudUrl, isNull);
+
+      await syncService.uploadPhotoFile(_uid, 'ph1');
+      final url = (await db.photosDao.getPhotoById('ph1'))!.cloudUrl;
+      expect(url, isNotNull);
+
+      await otherDevice.pullChangedSince(
+        _uid,
+        (await otherDevice.getLastPulledAt(_uid))!,
+      );
+      expect((await otherDb.photosDao.getPhotoById('ph1'))!.cloudUrl, url);
     });
   });
 

@@ -263,8 +263,9 @@ class LocalDatabaseBootstrap {
 
     // Nobody owns an empty device, nothing on it can be refused over, and a
     // restored pull watermark would make the next sync incremental — skipping
-    // exactly the pieces this just deleted. The sign-in flag goes down so the
-    // router puts the user on the sign-in screen, where re-downloading starts.
+    // the unchanged photos and materials this just deleted. The sign-in flag
+    // goes down so the router puts the user on the sign-in screen, where
+    // re-downloading starts.
     await _prefs.remove(SyncService.localDataOwnerKey);
     await _prefs.remove(SyncService.deviceContestedKey);
     await _prefs.remove(SyncQueue.storageKey);
