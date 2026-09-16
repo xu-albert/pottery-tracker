@@ -794,7 +794,7 @@ class SyncService {
       existsLocally: (id) async => await _db.piecesDao.getPieceById(id) != null,
       remoteWins: (doc, id) async {
         final local = await _db.piecesDao.getPieceById(id);
-        if (local == null) return true;
+        if (local == null) return _hasNoQueuedWrite(id);
         final remoteUpdated = (doc['updatedAt'] as Timestamp).toDate();
         return remoteUpdated.isAfter(local.updatedAt);
       },

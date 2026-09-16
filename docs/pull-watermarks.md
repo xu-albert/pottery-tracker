@@ -36,7 +36,9 @@ client edit times for last-write-wins conflict resolution, including edits from
 older installed versions. Filtering pieces by a server-time boundary would still
 lose edits from a slow client. Every pull therefore reads all pieces, retaining
 the existing full-pull last-write-wins merge so an older remote copy cannot replace
-a newer local edit. Junctions already use full reads.
+a newer local edit. A piece missing locally whose deletion is still queued is
+not inserted again; the queued tombstone reaches the cloud instead. Junctions
+already use full reads.
 
 This increases piece document reads per incremental sync. It avoids changing the
 existing conflict-resolution clock or requiring every device to upgrade at once.

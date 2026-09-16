@@ -14,8 +14,11 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
+import 'package:pottery_tracker/services/image_service.dart';
+import 'package:pottery_tracker/services/piece_writer.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:pottery_tracker/services/sync_trigger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Firestore extends Mock implements FirebaseFirestore {}
@@ -32,6 +35,8 @@ class _Snapshot extends Mock
 class _Metadata extends Mock implements SnapshotMetadata {}
 
 class _Query extends Mock implements Query<Map<String, dynamic>> {}
+
+class _Images extends Mock implements ImageService {}
 
 class _InstantClock extends SyncClock {
   @override
@@ -537,6 +542,45 @@ void main() {
       );
     },
   );
+
+  test('a piece deleted during an incremental pull stays deleted', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final network = _Network();
+    final service = SyncService(db, network.firestore, MockFirebaseStorage());
+    await network.server.doc('users/user-1/pieces/piece').set({
+      'title': 'Deleted here',
+      'createdAt': Timestamp.fromDate(DateTime(2020)),
+      'updatedAt': Timestamp.fromDate(DateTime(2020)),
+    });
+    await service.pullAll('user-1');
+    expect(await db.piecesDao.getPieceById('piece'), isNotNull);
+    final images = _Images();
+    when(() => images.deletePhotos(any())).thenAnswer((_) async {});
+    final queue = SyncQueue();
+    final writer = PieceWriter(
+      piecesDao: db.piecesDao,
+      photosDao: db.photosDao,
+      imageService: images,
+      syncTrigger: SyncTrigger(queue),
+    );
+    network.afterRead = (name) async {
+      if (name != 'pieces') return;
+      network.afterRead = null;
+      await writer.deletePiece('piece');
+    };
+
+    await service.pullChangedSince(
+      'user-1',
+      (await service.getLastPulledAt('user-1'))!,
+    );
+
+    expect(await db.piecesDao.getPieceById('piece'), isNull);
+    expect((await queue.getAll()).map((e) => (e.operation, e.entityId)), [
+      (SyncOperation.deletePiece, 'piece'),
+    ]);
+  });
 
   for (final response in ['unavailable', 'cache', 'pending', 'missing']) {
     test(
