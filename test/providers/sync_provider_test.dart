@@ -905,6 +905,15 @@ void main() {
       ).thenThrow(Exception('disk error'));
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      when(() => s.queue.getAll()).thenAnswer(
+        (_) async => const [
+          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: 'photo-1',
+          ),
+        ],
+      );
       clearInteractions(s.queue);
 
       s.notifier.scheduleProcessQueue();
@@ -912,6 +921,7 @@ void main() {
 
       verifyNever(() => s.syncService.pushPiece(any(), any()));
       verifyNever(() => s.syncService.uploadPhotoFile(any(), any()));
+      verifyNever(() => s.queue.remove(any()));
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
     });
 
