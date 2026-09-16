@@ -390,8 +390,8 @@ class SyncService {
   /// Clears every per-uid pull watermark.
   ///
   /// Leaving one behind is not just untidy: the same account signing back in
-  /// would take the *incremental* pull branch and never re-download the pieces
-  /// this wipe just deleted.
+  /// would take the *incremental* pull branch, which re-reads every piece but
+  /// never re-downloads the unchanged photos and materials this wipe deleted.
   Future<void> _clearSyncWatermarks() async {
     final prefs = await SharedPreferences.getInstance();
     final stale = prefs

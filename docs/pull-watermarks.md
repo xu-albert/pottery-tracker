@@ -75,14 +75,10 @@ No database schema migration is needed.
 ## Validation and scope
 
 `test/providers/sync_offline_pull_test.dart` uses real Drift and query filtering
-behind a controlled Firestore boundary. The two slow-pull cases, the device-clock
-case, and the legacy-future-marker case failed against the original service:
-late edits were absent or stale. Additional cases cover equality/precision,
-client-timed pieces, newer local edits, boundary failures, interrupted migration,
-and unavailable collections. Its fake Firestore lets an offline plain `set` hang
-as the SDK does; the offline Sync Now case with an empty queue timed out against
-a plain boundary `set`. The migration test also checks that the next pull
-returns zero old clay documents, rather than repeatedly doing a full pull.
+behind a controlled Firestore boundary whose fake lets an offline plain `set`
+hang as the SDK does. The guarding cases, and which of them failed before the
+fix, are catalogued under `fix(sync): anchor pull watermarks before server reads`
+in `TEST_PLAN.md`'s regression table.
 
 The pending queue and Settings backup claims remain covered by their existing
 regressions. Upload-only failure timestamps and indefinite offline waits on
