@@ -744,7 +744,9 @@ class SyncService {
   /// past an edit that arrived after an earlier collection was read.
   Future<Timestamp> _readPullBoundary(String uid) async {
     final ref = _col(uid, 'meta').doc('pullBoundary');
-    await ref.set({'at': FieldValue.serverTimestamp()});
+    await _firestore.runTransaction<void>((transaction) async {
+      transaction.set(ref, {'at': FieldValue.serverTimestamp()});
+    });
     final snapshot = await ref.get(const GetOptions(source: Source.server));
     final at = (snapshot.data() as Map<String, dynamic>?)?['at'];
     if (snapshot.metadata.isFromCache ||

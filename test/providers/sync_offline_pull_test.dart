@@ -36,6 +36,8 @@ class _Metadata extends Mock implements SnapshotMetadata {}
 
 class _Query extends Mock implements Query<Map<String, dynamic>> {}
 
+class _Transaction extends Mock implements Transaction {}
+
 class _Images extends Mock implements ImageService {}
 
 class _InstantClock extends SyncClock {
@@ -44,7 +46,8 @@ class _InstantClock extends SyncClock {
 }
 
 /// Models the SDK boundary: default reads can return an incomplete offline
-/// cache; server reads fail offline. Both stores execute real query filtering.
+/// cache; server reads and transactions fail offline, while a plain write
+/// waits for the server. Both stores execute real query filtering.
 class _Network {
   final firestore = _Firestore();
   final server = FakeFirebaseFirestore();
@@ -64,22 +67,40 @@ class _Network {
     final barrier = _Document();
     when(() => user.collection('meta')).thenReturn(meta);
     when(() => meta.doc('pullBoundary')).thenReturn(barrier);
-    when(() => barrier.set(any())).thenAnswer((call) async {
-      final fields = call.positionalArguments.first as Map<String, dynamic>;
-      expect(fields['at'], isA<FieldValue>());
-      if (unavailableCollection == 'meta') {
-        throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
-      }
+    Future<void> commitBoundary(Object? fields) async {
+      expect((fields as Map<String, dynamic>)['at'], isA<FieldValue>());
       await server.doc('users/user-1/meta/pullBoundary').set({
         'at': Timestamp.fromDate(serverTime),
       });
+    }
+
+    when(() => barrier.set(any())).thenAnswer((call) {
+      if (unavailableCollection == 'meta') return Completer<void>().future;
+      return commitBoundary(call.positionalArguments.first);
+    });
+    when(() => firestore.runTransaction<void>(any())).thenAnswer((call) async {
+      final transaction = _Transaction();
+      final writes = <Object?>[];
+      when(() => transaction.set<Object?>(barrier, any())).thenAnswer((call) {
+        writes.add(call.positionalArguments[1]);
+        return transaction;
+      });
+      final handler = call.positionalArguments.single;
+      await (handler as TransactionHandler<void>)(transaction);
+      if (unavailableCollection == 'meta') {
+        throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+      }
+      for (final fields in writes) {
+        await commitBoundary(fields);
+      }
     });
     when(() => barrier.get(any())).thenAnswer((call) async {
       expect(
         (call.positionalArguments.single as GetOptions).source,
         Source.server,
       );
-      if (boundaryResponse == 'unavailable') {
+      if (unavailableCollection == 'meta' ||
+          boundaryResponse == 'unavailable') {
         throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
       }
       if (boundaryResponse != null) {
@@ -179,6 +200,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const GetOptions());
     registerFallbackValue(SetOptions(merge: true));
+    registerFallbackValue((Transaction _) async {});
   });
 
   for (final fullPull in [true, false]) {
@@ -614,6 +636,48 @@ void main() {
       },
     );
   }
+
+  test(
+    'offline Sync Now with nothing queued reports unavailable instead of waiting on the boundary',
+    () async {
+      final previous = DateTime(2020);
+      SharedPreferences.setMockInitialValues({
+        '${SyncService.lastPulledAtPrefix}user-1':
+            'server-v1:${previous.millisecondsSinceEpoch}',
+      });
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final network = _Network()..unavailableCollection = 'meta';
+      final service = SyncService(db, network.firestore, MockFirebaseStorage());
+      final queue = SyncQueue();
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (_) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated, uid: 'user-1'),
+            ),
+          ),
+          syncQueueProvider.overrideWithValue(queue),
+          syncServiceProvider.overrideWithValue(service),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+      });
+      expect(await queue.pendingCount, 0);
+
+      await container
+          .read(syncStateProvider.notifier)
+          .syncNow()
+          .timeout(const Duration(seconds: 5));
+
+      final state = container.read(syncStateProvider);
+      expect(state.status, SyncStatus.error);
+      expect(state.errorMessage, SyncState.unavailableErrorCode);
+      expect(network.reads, isEmpty);
+      expect(await service.getLastPulledAt('user-1'), previous);
+    },
+  );
 
   test(
     'failed legacy migration retries broadly and replaces the marker only after success',

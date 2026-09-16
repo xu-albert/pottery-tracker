@@ -8,11 +8,14 @@ pull, even when junction reads or photo downloads take seconds.
 ## Why a pre-query server boundary
 
 Each pull writes `FieldValue.serverTimestamp()` to the account's
-`meta/pullBoundary` document, then reads it with `Source.server`. A cached,
-unresolved or pending-write value fails the pull. All collection reads still
-require the server. The boundary costs one small write and one document read per
-pull; it needs no new collection rules or index, and existing account deletion
-already removes `meta`.
+`meta/pullBoundary` document in a transaction, then reads it with
+`Source.server`. The transaction matters: a plain `set` does not complete
+offline until the server acknowledges it, so Sync Now with nothing queued would
+sit in "Syncing..." instead of reporting no connection. A transaction fails
+offline the way the server reads do. A cached, unresolved or pending-write value
+fails the pull. All collection reads still require the server. The boundary
+costs one small write and one document read per pull; it needs no new collection
+rules or index, and existing account deletion already removes `meta`.
 
 The maximum timestamp merged across collections would be unsafe: the queries
 run sequentially, so a late collection could advance that maximum past an unseen
@@ -76,9 +79,11 @@ behind a controlled Firestore boundary. The two slow-pull cases, the device-cloc
 case, and the legacy-future-marker case failed against the original service:
 late edits were absent or stale. Additional cases cover equality/precision,
 client-timed pieces, newer local edits, boundary failures, interrupted migration,
-and unavailable collections. The migration test also checks that the next pull
+and unavailable collections. Its fake Firestore lets an offline plain `set` hang
+as the SDK does; the offline Sync Now case with an empty queue timed out against
+a plain boundary `set`. The migration test also checks that the next pull
 returns zero old clay documents, rather than repeatedly doing a full pull.
 
 The pending queue and Settings backup claims remain covered by their existing
-regressions. Upload-only failure timestamps and indefinite offline waits are
-unchanged by this work.
+regressions. Upload-only failure timestamps and indefinite offline waits on
+queued pushes are unchanged by this work.
