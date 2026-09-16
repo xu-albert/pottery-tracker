@@ -118,23 +118,26 @@ void main() {
       errorMessage: 'stale failure',
     );
 
-    test('preserves the reason until an attempt resolves or replaces it', () {
-      expect(
-        failed.copyWith(pendingCount: 3).errorMessage,
-        'stale failure',
-        reason: 'a count update does not resolve the current failure',
-      );
-      expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
-      for (final status in [
-        SyncStatus.syncing,
-        SyncStatus.idle,
-        SyncStatus.disabled,
-        SyncStatus.blocked,
-      ]) {
-        expect(failed.copyWith(status: status).errorMessage, isNull);
-      }
-      expect(failed.copyWith(status: SyncStatus.error).errorMessage, isNull);
-    });
+    test(
+      'a count update keeps the reason; a status or new reason replaces it',
+      () {
+        expect(
+          failed.copyWith(pendingCount: 3).errorMessage,
+          'stale failure',
+          reason: 'a count update does not resolve the current failure',
+        );
+        expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
+        for (final status in [
+          SyncStatus.syncing,
+          SyncStatus.idle,
+          SyncStatus.disabled,
+          SyncStatus.blocked,
+        ]) {
+          expect(failed.copyWith(status: status).errorMessage, isNull);
+        }
+        expect(failed.copyWith(status: SyncStatus.error).errorMessage, isNull);
+      },
+    );
 
     test('carries the fields it was not asked to change', () {
       final next = failed.copyWith(status: SyncStatus.idle);
