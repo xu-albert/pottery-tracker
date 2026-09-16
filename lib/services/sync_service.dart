@@ -627,6 +627,9 @@ class SyncService {
   // Pull methods
   // ════════════════════════════════════════════
 
+  // Pulls must reach the server for every collection, including junctions.
+  // A cache fallback can omit another device's edits; saving a successful
+  // pull watermark after it would skip those edits on the next online sync.
   Future<void> pullAll(String uid) async {
     debugPrint('SyncService: full pull (first sync on this device)');
 
@@ -705,10 +708,9 @@ class SyncService {
     final sinceTs = Timestamp.fromDate(since);
 
     for (final collection in ['pieces', 'photos', 'clays', 'glazes', 'tags']) {
-      final snap = await _col(
-        uid,
-        collection,
-      ).where('updatedAt', isGreaterThan: sinceTs).get();
+      final snap = await _col(uid, collection)
+          .where('updatedAt', isGreaterThan: sinceTs)
+          .get(const GetOptions(source: Source.server));
 
       for (final doc in snap.docs) {
         final data = doc.data() as Map<String, dynamic>?;
@@ -761,7 +763,10 @@ class SyncService {
     required Future<bool> Function(QueryDocumentSnapshot doc, String id)
     isRemoteNewer,
   }) async {
-    final snap = await _col(uid, collection).get();
+    final snap = await _col(
+      uid,
+      collection,
+    ).get(const GetOptions(source: Source.server));
     for (final doc in snap.docs) {
       final data = doc.data() as Map<String, dynamic>?;
       if (data == null) continue;
@@ -785,7 +790,10 @@ class SyncService {
     Future<void> Function(String pieceId, List<QueryDocumentSnapshot> docs)
     mergeFn,
   ) async {
-    final snap = await _col(uid, collection).get();
+    final snap = await _col(
+      uid,
+      collection,
+    ).get(const GetOptions(source: Source.server));
     final byPiece = <String, List<QueryDocumentSnapshot>>{};
     for (final doc in snap.docs) {
       final data = doc.data() as Map<String, dynamic>?;

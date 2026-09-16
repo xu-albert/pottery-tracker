@@ -276,6 +276,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     final syncState = ref.watch(syncStateProvider);
 
+    final pendingLabel = syncState.pendingCount > 0
+        ? l10n.syncPending(syncState.pendingCount)
+        : null;
+
     final IconData icon;
     final String title;
     String? subtitle;
@@ -285,15 +289,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case SyncStatus.syncing:
         icon = Icons.cloud_sync;
         title = l10n.syncSyncing;
+        subtitle = pendingLabel;
         trailing = const SizedBox(
           width: 20,
           height: 20,
           child: CircularProgressIndicator(strokeWidth: 2),
         );
       case SyncStatus.idle:
-        if (syncState.pendingCount > 0) {
+        if (pendingLabel != null) {
           icon = Icons.cloud_upload;
-          title = l10n.syncPending(syncState.pendingCount);
+          title = pendingLabel;
         } else {
           icon = Icons.cloud_done;
           title = l10n.syncBackedUp;
@@ -314,7 +319,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case SyncStatus.error:
         icon = Icons.cloud_off;
         title = l10n.syncError;
-        subtitle = syncState.errorMessage;
+        final reason = syncState.errorMessage == SyncState.unavailableErrorCode
+            ? l10n.syncOffline
+            : syncState.errorMessage;
+        subtitle = [?pendingLabel, ?reason].join('\n');
         trailing = GestureDetector(
           onLongPress: () =>
               ref.read(syncStateProvider.notifier).syncNow(forceFullSync: true),
@@ -337,9 +345,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
-      subtitle: subtitle != null
-          ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
-          : null,
+      subtitle: subtitle == null || subtitle.isEmpty
+          ? null
+          : Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis),
       trailing: trailing,
     );
   }
