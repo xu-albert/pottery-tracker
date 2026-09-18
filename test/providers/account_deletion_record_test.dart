@@ -44,6 +44,9 @@ void main() {
     when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
     when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
     when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
+    when(
+      () => syncService.pendingPhotoUploadIds(),
+    ).thenAnswer((_) async => <String>{});
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);

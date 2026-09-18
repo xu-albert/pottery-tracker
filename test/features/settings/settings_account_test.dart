@@ -74,6 +74,9 @@ void main() {
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
     // Unowned by default: Settings is only reachable on a device this account
     // owns, since a contested one is locked read-only at the router.
+    when(
+      () => syncService.pendingPhotoUploadIds(),
+    ).thenAnswer((_) async => <String>{});
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   });
 

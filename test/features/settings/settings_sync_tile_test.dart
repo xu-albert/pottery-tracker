@@ -33,7 +33,12 @@ class _FakeAuthNotifier extends AuthNotifier {
 }
 
 void main() {
-  setUpAll(setupFirebaseCoreMocks);
+  setUpAll(() {
+    setupFirebaseCoreMocks();
+    registerFallbackValue(
+      const SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: ''),
+    );
+  });
 
   late _MockSyncService syncService;
   late _MockSyncQueue queue;
@@ -47,9 +52,23 @@ void main() {
     syncService = _MockSyncService();
     queue = _MockSyncQueue();
     pending = 0;
+    when(() => queue.revisionOf(any())).thenReturn(0);
+    when(() => queue.remove(any())).thenAnswer((_) async {});
 
     when(() => queue.pendingCount).thenAnswer((_) async => pending);
-    when(() => queue.getAll()).thenAnswer((_) async => <SyncQueueEntry>[]);
+    when(() => queue.getAll()).thenAnswer(
+      (_) async => [
+        for (var i = 0; i < pending; i++)
+          SyncQueueEntry(
+            operation: SyncOperation.pushPiece,
+            entityId: 'piece-$i',
+          ),
+      ],
+    );
+    when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
+    when(
+      () => syncService.pendingPhotoUploadIds(),
+    ).thenAnswer((_) async => <String>{});
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
@@ -107,6 +126,30 @@ void main() {
   ).read(syncStateProvider.notifier);
 
   group('sync tile', () {
+    testWidgets('an unuploaded photo prevents the all-backed-up label', (
+      tester,
+    ) async {
+      when(
+        () => syncService.pullChangedSince(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => syncService.pendingPhotoUploadIds(),
+      ).thenAnswer((_) async => {'photo'});
+      await pumpSettings(tester);
+      expect(find.text('1 change pending'), findsOneWidget);
+      expect(find.text('All data backed up'), findsNothing);
+
+      when(
+        () => syncService.pendingPhotoUploadIds(),
+      ).thenAnswer((_) async => <String>{});
+      final sync = notifierOf(tester).syncNow();
+      await tester.pump();
+      await sync;
+      await tester.pump();
+      expect(find.text('All data backed up'), findsOneWidget);
+      expect(find.textContaining('pending'), findsNothing);
+    });
+
     testWidgets('reports work that has not left the device even while the '
         'sync is failing', (tester) async {
       pending = 2;
@@ -171,7 +214,9 @@ void main() {
         operation: SyncOperation.pushPiece,
         entityId: 'piece-1',
       );
-      when(() => queue.getAll()).thenAnswer((_) async => const [queued]);
+      when(
+        () => queue.getAll(),
+      ).thenAnswer((_) async => List.filled(pending, queued));
       when(() => queue.revisionOf(queued)).thenReturn(0);
       when(
         () => syncService.pushPiece(any(), any()),
@@ -278,7 +323,9 @@ void main() {
         operation: SyncOperation.pushPiece,
         entityId: 'piece-1',
       );
-      when(() => queue.getAll()).thenAnswer((_) async => const [queued]);
+      when(
+        () => queue.getAll(),
+      ).thenAnswer((_) async => List.filled(pending, queued));
       when(() => queue.revisionOf(queued)).thenReturn(0);
       when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
       when(() => queue.remove(queued)).thenAnswer((_) async => pending = 0);

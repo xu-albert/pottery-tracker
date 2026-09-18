@@ -46,6 +46,9 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     syncService = _MockSyncService();
+    when(
+      () => syncService.pendingPhotoUploadIds(),
+    ).thenAnswer((_) async => <String>{});
     queue = _MockSyncQueue();
     authService = _FakeAuthService();
     when(() => queue.clear()).thenAnswer((_) async {});

@@ -445,13 +445,12 @@ class SyncService {
     await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
     final url = await ref.getDownloadURL();
 
-    // Update local DB with cloud URL
+    // A file is backed up only once its remote metadata can locate it.
+    // Keep the local row pending if publishing the URL fails.
+    await _col(uid, 'photos').doc(photoId).update({'cloudUrl': url});
     await _db.photosDao.updatePhoto(
       PhotosCompanion(id: Value(photoId), cloudUrl: Value(url)),
     );
-
-    // Update Firestore photo doc with URL
-    await _col(uid, 'photos').doc(photoId).update({'cloudUrl': url});
   }
 
   Future<void> pushClay(String uid, String clayId) async {
@@ -1042,6 +1041,17 @@ class SyncService {
   // ════════════════════════════════════════════
   // Photo upload retry (for photos with local files but null cloudUrl)
   // ════════════════════════════════════════════
+
+  /// Durable upload work, including files whose queue attempt already ended.
+  /// The same eligibility as retryMissingUploads excludes remote-only photos.
+  Future<Set<String>> pendingPhotoUploadIds() async {
+    final photos = await _db.select(_db.photos).get();
+    return {
+      for (final photo in photos)
+        if (photo.cloudUrl == null && File(photo.localPath).existsSync())
+          photo.id,
+    };
+  }
 
   Future<void> retryMissingUploads(String uid) async {
     final allPhotos = await _db.select(_db.photos).get();

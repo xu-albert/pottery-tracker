@@ -109,6 +109,9 @@ class _StubSyncService implements SyncService {
   final bool contested;
 
   @override
+  Future<Set<String>> pendingPhotoUploadIds() async => {};
+
+  @override
   Future<String?> getLocalDataOwner() async => owner;
 
   @override

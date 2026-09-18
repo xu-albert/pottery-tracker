@@ -59,6 +59,9 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
   // Unowned by default: the device belongs to whoever signs in first.
+  when(
+    () => syncService.pendingPhotoUploadIds(),
+  ).thenAnswer((_) async => <String>{});
   when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
   when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
   // The refusal marker is device-ownership state like the stamp above: the
@@ -115,16 +118,26 @@ void main() {
       errorMessage: 'stale failure',
     );
 
-    test('clears the error message, which describes one transition', () {
-      expect(
-        failed.copyWith(pendingCount: 3).errorMessage,
-        isNull,
-        reason:
-            'carrying it forward would caption a healthy state with a failure '
-            'that is already over',
-      );
-      expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
-    });
+    test(
+      'a count update keeps the reason; a status or new reason replaces it',
+      () {
+        expect(
+          failed.copyWith(pendingCount: 3).errorMessage,
+          'stale failure',
+          reason: 'a count update does not resolve the current failure',
+        );
+        expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
+        for (final status in [
+          SyncStatus.syncing,
+          SyncStatus.idle,
+          SyncStatus.disabled,
+          SyncStatus.blocked,
+        ]) {
+          expect(failed.copyWith(status: status).errorMessage, isNull);
+        }
+        expect(failed.copyWith(status: SyncStatus.error).errorMessage, isNull);
+      },
+    );
 
     test('carries the fields it was not asked to change', () {
       final next = failed.copyWith(status: SyncStatus.idle);
@@ -325,6 +338,32 @@ void main() {
       expect(state.errorMessage, contains('network down'));
     });
 
+    test('a retry replaces or clears the reason', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+      when(
+        () => s.syncService.pullAll(any()),
+      ).thenThrow(Exception('first failure'));
+      await s.notifier.syncNow();
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('first failure'),
+      );
+      when(
+        () => s.syncService.pullAll(any()),
+      ).thenThrow(Exception('second failure'));
+      await s.notifier.syncNow();
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('second failure'),
+      );
+      when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
+      await s.notifier.syncNow();
+      await _settle();
+      expect(s.container.read(syncStateProvider).errorMessage, isNull);
+    });
+
     test('a sync that stands down is replayed, not dropped', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
@@ -462,6 +501,9 @@ void main() {
     void queueHolds(MockSyncQueue queue, {required int pending}) {
       when(() => queue.getAll()).thenAnswer((_) async => [entry]);
       when(() => queue.pendingCount).thenAnswer((_) async => pending);
+      when(() => queue.remove(entry)).thenAnswer((_) async {
+        when(() => queue.getAll()).thenAnswer((_) async => []);
+      });
     }
 
     test(
@@ -527,6 +569,31 @@ void main() {
         verify(() => s.queue.remove(entry)).called(1);
       },
     );
+
+    test('a new drain failure replaces the previous pull reason', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+      when(
+        () => s.syncService.pullAll(any()),
+      ).thenThrow(Exception('previous pull failure'));
+      await s.notifier.syncNow();
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('previous pull failure'),
+      );
+      queueHolds(s.queue, pending: 1);
+      when(
+        () => s.syncService.pushPiece(any(), any()),
+      ).thenThrow(Exception('current push failure'));
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+      expect(s.container.read(syncStateProvider).status, SyncStatus.error);
+      expect(
+        s.container.read(syncStateProvider).errorMessage,
+        contains('current push failure'),
+      );
+    });
 
     test('a drain that is still failing claims no backup', () async {
       final clock = _StubSyncClock();
@@ -838,12 +905,23 @@ void main() {
       ).thenThrow(Exception('disk error'));
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(SyncNotifier.pendingWipeKey, true);
+      when(() => s.queue.getAll()).thenAnswer(
+        (_) async => const [
+          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: 'photo-1',
+          ),
+        ],
+      );
       clearInteractions(s.queue);
 
       s.notifier.scheduleProcessQueue();
       await Future<void>.delayed(const Duration(milliseconds: 600));
 
-      verifyNever(() => s.queue.getAll());
+      verifyNever(() => s.syncService.pushPiece(any(), any()));
+      verifyNever(() => s.syncService.uploadPhotoFile(any(), any()));
+      verifyNever(() => s.queue.remove(any()));
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
     });
 

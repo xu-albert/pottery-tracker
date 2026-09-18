@@ -130,6 +130,9 @@ void main() {
     storage = MockFirebaseStorage();
     syncService = _FlakyWipeSyncService(db, firestore, storage);
     queue = _StallableSyncQueue();
+    syncService.beforePendingPhotos = () async {
+      await queue.pendingCount;
+    };
     auth = _TestAuthNotifier(signedInAs(uidA));
     accountDeleteSucceeds = false;
 
@@ -1616,6 +1619,15 @@ void main() {
 /// device owing a wipe it could not perform.
 class _FlakyWipeSyncService extends SyncService {
   _FlakyWipeSyncService(super.db, super.firestore, super.storage);
+
+  // Keep the count-refresh gate at the notifier's combined pending-work read.
+  Future<void> Function()? beforePendingPhotos;
+
+  @override
+  Future<Set<String>> pendingPhotoUploadIds() async {
+    await beforePendingPhotos?.call();
+    return super.pendingPhotoUploadIds();
+  }
 
   bool wipeFails = false;
 
