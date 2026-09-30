@@ -775,13 +775,18 @@ void main() {
     // and left unacknowledged when the link drops, so the glazes wait.
     final gate = Completer<void>();
     syncService.pushPieceGate = gate;
-    await queue.enqueueAll(const [
-      SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'piece-a'),
-      SyncQueueEntry(
+    await queue.enqueue(
+      const SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-a',
+      ),
+    );
+    await queue.enqueue(
+      const SyncQueueEntry(
         operation: SyncOperation.pushPieceGlazes,
         entityId: 'piece-a',
       ),
-    ]);
+    );
     notifier.scheduleProcessQueue();
     await pumpUntil(() => syncService.pushPieceIsStalled);
     expect(syncService.pushPieceIsStalled, isTrue);

@@ -249,6 +249,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// holds up the new session or starts another push.
   int _generation = 0;
 
+  /// The session whose full snapshot is staged and still awaits its full
+  /// pull. Until that pull, a repeated or forced tap in the same session is
+  /// already covered by it: it attaches to the snapshot's flights instead of
+  /// staging it again, and a forced request owed meanwhile is answered by that
+  /// pull rather than replayed. A new generation makes it stale by itself.
+  _Session? _unpulledSnapshot;
+
   /// Every dispatched drain whose writes have not all settled. The pull waits
   /// for its own session's, because it would read an unacknowledged write's
   /// pending server timestamps as missing; an ended session's writes may never
@@ -461,11 +468,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
           ? null
           : await _syncService.getLastPulledAt(uid);
 
-      if (lastPulled == null) {
+      if (lastPulled == null && _unpulledSnapshot != session) {
         // Building and persisting the snapshot is local work. Do it before the
         // reachability read so a first sync attempted offline still shows all
         // work waiting and survives process death.
-        await _queue.enqueueAll(await _syncService.fullUploadEntries(uid));
+        await _queue.enqueueMissing(await _syncService.fullUploadEntries(uid));
+        _unpulledSnapshot = session;
         await _refreshPendingCount();
       }
 
@@ -524,7 +532,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (!_isCurrent(session)) return;
     if (_syncing || _wiping) {
       _syncOwed = true;
-      _owedSyncForcesFull = _owedSyncForcesFull || forceFullSync;
+      _owedSyncForcesFull =
+          _owedSyncForcesFull ||
+          (forceFullSync && _unpulledSnapshot == session);
       return;
     }
     _syncing = true;
@@ -534,6 +544,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(status: SyncStatus.syncing);
       if (lastPulled == null) {
         await _syncService.pullAll(session.uid);
+        if (_unpulledSnapshot == session) {
+          _unpulledSnapshot = null;
+          _owedSyncForcesFull = false;
+        }
       } else {
         await _syncService.pullChangedSince(session.uid, lastPulled);
       }

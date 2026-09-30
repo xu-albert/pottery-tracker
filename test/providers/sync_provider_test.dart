@@ -44,7 +44,7 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
   when(() => queue.pendingCount).thenAnswer((_) async => 0);
   when(() => queue.getAll()).thenAnswer((_) async => []);
   when(() => queue.clear()).thenAnswer((_) async {});
-  when(() => queue.enqueueAll(any())).thenAnswer((_) async {});
+  when(() => queue.enqueueMissing(any())).thenAnswer((_) async {});
   when(() => queue.acknowledgeAll(any())).thenAnswer((_) async {});
   // Nothing edits an entity mid-push in these tests, so every entry keeps the
   // revision the drain captured. The concurrent-edit case is pinned against a
@@ -221,7 +221,7 @@ void main() {
 
         verifyInOrder([
           () => s.syncService.fullUploadEntries('user-1'),
-          () => s.queue.enqueueAll(any()),
+          () => s.queue.enqueueMissing(any()),
           () => s.syncService.checkServerReachability('user-1'),
           () => s.syncService.pullAll('user-1'),
         ]);
@@ -709,9 +709,13 @@ void main() {
         when(
           () => s.syncService.fullUploadEntries('user-1'),
         ).thenAnswer((_) async => [junction]);
+        DateTime? pulledAt;
         when(
           () => s.syncService.getLastPulledAt('user-1'),
-        ).thenAnswer((_) async => null);
+        ).thenAnswer((_) async => pulledAt);
+        when(() => s.syncService.pullAll('user-1')).thenAnswer((_) async {
+          pulledAt = DateTime.utc(2026, 9, 1);
+        });
         final entered = Completer<void>();
         final release = Completer<void>();
         var running = 0;
@@ -737,11 +741,14 @@ void main() {
         verify(
           () => s.syncService.pushPieceGlazes('user-1', 'piece-1'),
         ).called(1);
+        verify(() => s.syncService.fullUploadEntries('user-1')).called(1);
         verifyNever(() => s.syncService.pullAll(any()));
         release.complete();
         await Future.wait([first, second]);
         expect(maxRunning, 1);
         expect(entries, isEmpty);
+        verifyNever(() => s.syncService.pushPieceGlazes('user-1', 'piece-1'));
+        verifyNever(() => s.syncService.fullUploadEntries(any()));
       },
     );
 
@@ -1521,22 +1528,28 @@ class _StubSyncClock extends SyncClock {
 }
 
 /// Backs [queue] with [entries] the way the persisted queue behaves: a staged
-/// snapshot merges in, and an acknowledgement retires only an entry still at
-/// the revision its push captured — [revisions], or 0 for one never stamped.
+/// snapshot adds only what is missing, stamping each addition with a fresh
+/// revision and leaving a queued entry's alone, and an acknowledgement retires
+/// only an entry still at the revision its push captured — [revisions], or 0
+/// for one never stamped.
 void _persistInto(
   MockSyncQueue queue,
   List<SyncQueueEntry> entries, {
-  Map<SyncQueueEntry, int> revisions = const {},
+  Map<SyncQueueEntry, int>? revisions,
 }) {
+  final stamps = revisions ?? <SyncQueueEntry, int>{};
+  var lastStamp = 100;
   when(() => queue.getAll()).thenAnswer((_) async => [...entries]);
   when(() => queue.pendingCount).thenAnswer((_) async => entries.length);
   when(
     () => queue.revisionOf(any()),
-  ).thenAnswer((call) => revisions[call.positionalArguments.single] ?? 0);
-  when(() => queue.enqueueAll(any())).thenAnswer((call) async {
+  ).thenAnswer((call) => stamps[call.positionalArguments.single] ?? 0);
+  when(() => queue.enqueueMissing(any())).thenAnswer((call) async {
     final staged = call.positionalArguments.single as List<SyncQueueEntry>;
     for (final entry in staged) {
-      if (!entries.contains(entry)) entries.add(entry);
+      if (entries.contains(entry)) continue;
+      stamps[entry] = ++lastStamp;
+      entries.add(entry);
     }
   });
   when(() => queue.acknowledgeAll(any())).thenAnswer((call) async {
@@ -1545,7 +1558,7 @@ void _persistInto(
     entries.removeWhere(
       (entry) =>
           delivered.containsKey(entry) &&
-          delivered[entry] == (revisions[entry] ?? 0),
+          delivered[entry] == (stamps[entry] ?? 0),
     );
   });
 }

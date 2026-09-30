@@ -111,9 +111,9 @@ void main() {
     );
   });
 
-  group('SyncQueue enqueueAll', () {
+  group('SyncQueue enqueueMissing', () {
     test(
-      'merges a batch into the queue in order, stamping each entry',
+      'adds only missing entries and leaves a queued one at its revision',
       () async {
         final queue = SyncQueue();
         const piece = SyncQueueEntry(
@@ -122,15 +122,11 @@ void main() {
           changedFields: ['title'],
         );
         await queue.enqueue(piece);
-        final before = queue.revisionOf(piece);
+        final dispatched = queue.revisionOf(piece);
 
-        await queue.enqueueAll(const [
+        await queue.enqueueMissing(const [
           SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'ph1'),
-          SyncQueueEntry(
-            operation: SyncOperation.pushPiece,
-            entityId: 'p1',
-            changedFields: ['notes'],
-          ),
+          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
           SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'ph1'),
         ]);
 
@@ -139,11 +135,17 @@ void main() {
           'pushPiece:p1',
           'pushPhoto:ph1',
         ]);
-        expect(all.first.changedFields!.toSet(), {'title', 'notes'});
+        expect(all.first.changedFields, ['title']);
         expect(
           queue.revisionOf(piece),
-          isNot(before),
-          reason: 'a push dispatched before the batch cannot retire it',
+          dispatched,
+          reason: 'a push already in flight for it still answers for it',
+        );
+
+        await queue.acknowledgeAll({piece: dispatched});
+        expect(
+          (await SyncQueue().getAll()).single.operation,
+          SyncOperation.pushPhoto,
         );
       },
     );
@@ -202,7 +204,7 @@ void main() {
           operation: SyncOperation.pushTag,
           entityId: 't1',
         );
-        await queue.enqueueAll([delivered, revised]);
+        await queue.enqueueMissing([delivered, revised]);
         final dispatched = {
           delivered: queue.revisionOf(delivered),
           revised: queue.revisionOf(revised),
@@ -236,7 +238,7 @@ void main() {
           operation: SyncOperation.pushClay,
           entityId: 'c1',
         );
-        await queue.enqueueAll([first, second, kept]);
+        await queue.enqueueMissing([first, second, kept]);
 
         final retirement = queue.acknowledgeAll({
           first: queue.revisionOf(first),

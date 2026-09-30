@@ -494,6 +494,90 @@ void main() {
   });
 
   test(
+    'repeated taps during a first sync never send a held write twice',
+    () async {
+      DateTime? pulledAt;
+      when(
+        () => service.getLastPulledAt(any()),
+      ).thenAnswer((_) async => pulledAt);
+      when(() => service.pullAll(any())).thenAnswer((_) async {
+        pulledAt = DateTime(2026);
+      });
+      var pendingPhotos = {'photo-1'};
+      when(
+        () => service.pendingPhotoUploadIds(),
+      ).thenAnswer((_) async => {...pendingPhotos});
+      when(() => service.fullUploadEntries('user-1')).thenAnswer(
+        (_) async => const [
+          SyncQueueEntry(
+            operation: SyncOperation.pushPieceGlazes,
+            entityId: 'p1',
+          ),
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: 'photo-1',
+          ),
+        ],
+      );
+      final release = Completer<void>();
+      var junctionWrites = 0;
+      var uploads = 0;
+      when(() => service.pushPieceGlazes('user-1', 'p1')).thenAnswer((_) async {
+        junctionWrites++;
+        await release.future;
+      });
+      when(() => service.uploadPhotoFile('user-1', 'photo-1')).thenAnswer((
+        _,
+      ) async {
+        uploads++;
+        await release.future;
+        pendingPhotos = {};
+      });
+
+      signIn();
+      for (var i = 0; i < 100 && (junctionWrites == 0 || uploads == 0); i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(junctionWrites, 1);
+      expect(uploads, 1);
+
+      // Sync Now while the first sync's writes are in the air, then two forced
+      // taps — the second stands down behind the first — and Sync Now again.
+      final notifier = container.read(syncStateProvider.notifier);
+      final taps = [notifier.syncNow()];
+      await settle();
+      taps
+        ..add(notifier.syncNow(forceFullSync: true))
+        ..add(notifier.syncNow(forceFullSync: true));
+      await settle();
+      taps.add(notifier.syncNow());
+      await settle();
+
+      expect(junctionWrites, 1, reason: 'each tap attaches to the held write');
+      expect(uploads, 1, reason: 'no tap uploads a photo still uploading');
+      verify(() => service.fullUploadEntries('user-1')).called(1);
+
+      release.complete();
+      await Future.wait(taps);
+      await waitForState(
+        (s) =>
+            s.status == SyncStatus.idle &&
+            s.lastSyncedAt != null &&
+            s.pendingCount == 0,
+      );
+
+      expect(
+        junctionWrites,
+        1,
+        reason: 'nothing sends the delivered junction batch again',
+      );
+      expect(uploads, 1, reason: 'nothing uploads the delivered photo again');
+      verifyNever(() => service.fullUploadEntries(any()));
+      expect(await queue.pendingCount, 0);
+    },
+  );
+
+  test(
     'a delivered entry is retired while a sibling lane is still held',
     () async {
       signIn();

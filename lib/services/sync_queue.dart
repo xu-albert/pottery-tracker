@@ -97,31 +97,40 @@ class SyncQueue {
   /// pushes and may only acknowledge the entry while it still reads the same.
   int revisionOf(SyncQueueEntry entry) => _revisions[entry] ?? 0;
 
-  Future<void> enqueue(SyncQueueEntry entry) => enqueueAll([entry]);
-
-  /// Stamps every entry in [batch] and merges the whole batch into the
-  /// persisted queue with one read and one write, so staging a full snapshot
-  /// costs the same preference I/O as a single edit.
-  Future<void> enqueueAll(List<SyncQueueEntry> batch) async {
-    if (batch.isEmpty) return;
+  Future<void> enqueue(SyncQueueEntry entry) async {
     // Stamped before the first await: a push acknowledging between the two
     // would otherwise drop the revision this call is about to merge in.
-    for (final entry in batch) {
-      _revisions[entry] = ++_lastRevision;
-    }
+    _revisions[entry] = ++_lastRevision;
     await _mutate(() async {
       final entries = await getAll();
-      final index = {for (var i = 0; i < entries.length; i++) entries[i]: i};
-      for (final entry in batch) {
-        final existing = index[entry];
-        if (existing == null) {
-          index[entry] = entries.length;
-          entries.add(entry);
-        } else {
-          entries[existing] = entries[existing].mergeWith(entry);
-        }
+      final existingIndex = entries.indexWhere((e) => e == entry);
+      if (existingIndex != -1) {
+        entries[existingIndex] = entries[existingIndex].mergeWith(entry);
+      } else {
+        entries.add(entry);
       }
       await _save(entries);
+    });
+  }
+
+  /// Adds every entry of [batch] that is not already queued, with one read and
+  /// one write, and stamps only those. An entry already queued keeps its
+  /// revision, so a push already in flight for it still answers for it rather
+  /// than being sent a second time.
+  Future<void> enqueueMissing(List<SyncQueueEntry> batch) async {
+    if (batch.isEmpty) return;
+    await _mutate(() async {
+      final entries = await getAll();
+      final queued = entries.toSet();
+      final missing = [
+        for (final entry in batch)
+          if (queued.add(entry)) entry,
+      ];
+      if (missing.isEmpty) return;
+      for (final entry in missing) {
+        _revisions[entry] = ++_lastRevision;
+      }
+      await _save([...entries, ...missing]);
     });
   }
 
