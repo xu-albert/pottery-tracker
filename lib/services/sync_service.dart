@@ -614,7 +614,7 @@ class SyncService {
   }
 
   // ════════════════════════════════════════════
-  // Push all local data (first sync)
+  // Full local snapshot (first and forced sync)
   // ════════════════════════════════════════════
 
   /// Describes a full local snapshot using the same durable operations as the
