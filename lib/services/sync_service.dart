@@ -449,9 +449,11 @@ class SyncService {
     }, SetOptions(merge: true));
   }
 
+  /// Uploads the photo's file unless its row already records where it is. A
+  /// photo's file never changes once taken, so that URL is final.
   Future<void> uploadPhotoFile(String uid, String photoId) async {
     final photo = await _db.photosDao.getPhotoById(photoId);
-    if (photo == null) return;
+    if (photo == null || photo.cloudUrl != null) return;
     final file = File(photo.localPath);
     if (!file.existsSync()) return;
 

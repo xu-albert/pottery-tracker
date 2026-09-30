@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +19,13 @@ class _Service extends SyncService {
   _Service(super.db, super.firestore, super.storage);
   bool failUpload = true;
   Completer<void>? _pulled;
+
+  /// Holds every photo upload until completed, standing in for a slow one.
+  Completer<void>? uploadGate;
+  int uploadsHeld = 0;
+
+  /// Runs once a snapshot has been read and before it is staged.
+  Future<void> Function()? afterSnapshotRead;
 
   /// Completes once the next pull has finished, which a sync only starts
   /// after its photo uploads have settled.
@@ -34,7 +42,19 @@ class _Service extends SyncService {
   @override
   Future<void> uploadPhotoFile(String uid, String photoId) async {
     if (failUpload) throw Exception('storage unavailable');
+    final gate = uploadGate;
+    if (gate != null) {
+      uploadsHeld++;
+      await gate.future;
+    }
     await super.uploadPhotoFile(uid, photoId);
+  }
+
+  @override
+  Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
+    final entries = await super.fullUploadEntries(uid);
+    await afterSnapshotRead?.call();
+    return entries;
   }
 
   @override
@@ -48,6 +68,37 @@ class _Service extends SyncService {
     await super.pullChangedSince(uid, since);
     _notifyPulled();
   }
+}
+
+/// Counts what reaches Storage: file uploads, and the download-URL lookups
+/// that each precede publishing an uploaded file's URL on its photo document.
+class _CountingStorage extends MockFirebaseStorage {
+  int uploads = 0;
+  int urlLookups = 0;
+
+  @override
+  Reference ref([String? path]) => _CountingReference(super.ref(path), this);
+}
+
+class _CountingReference implements Reference {
+  _CountingReference(this._inner, this._storage);
+  final Reference _inner;
+  final _CountingStorage _storage;
+
+  @override
+  UploadTask putFile(File file, [SettableMetadata? metadata]) {
+    _storage.uploads++;
+    return _inner.putFile(file, metadata);
+  }
+
+  @override
+  Future<String> getDownloadURL() {
+    _storage.urlLookups++;
+    return _inner.getDownloadURL();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<void> _waitUntil(Future<bool> Function() predicate) async {
@@ -193,4 +244,133 @@ void main() {
       expect(container.read(syncStateProvider).pendingCount, 0);
     });
   }
+
+  group('a forced sync during a photo upload', () {
+    late AppDatabase db;
+    late Directory dir;
+    late FakeFirebaseFirestore firestore;
+    late _CountingStorage storage;
+    late _Service service;
+    late ProviderContainer container;
+
+    setUp(() async {
+      // Synced before, so signing in takes the incremental path and retries
+      // the pending photo from its row.
+      SharedPreferences.setMockInitialValues({
+        '${SyncService.lastPulledAtPrefix}user-1': DateTime(
+          2020,
+        ).millisecondsSinceEpoch,
+      });
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      dir = Directory.systemTemp.createTempSync('photo_once_');
+      final file = File('${dir.path}/photo.jpg')..writeAsBytesSync([1, 2, 3]);
+      final now = DateTime(2026);
+      await db.piecesDao.insertPiece(
+        PiecesCompanion.insert(id: 'piece', createdAt: now, updatedAt: now),
+      );
+      await db.photosDao.insertPhoto(
+        PhotosCompanion.insert(
+          id: 'photo',
+          pieceId: 'piece',
+          localPath: file.path,
+          dateTaken: now,
+          createdAt: now,
+        ),
+      );
+      firestore = FakeFirebaseFirestore();
+      storage = _CountingStorage();
+      service = _Service(db, firestore, storage)
+        ..failUpload = false
+        ..uploadGate = Completer<void>();
+      await service.pushPhoto('user-1', 'photo');
+      container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (_) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.unauthenticated),
+            ),
+          ),
+          syncServiceProvider.overrideWithValue(service),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+        ],
+      );
+      container.read(syncStateProvider.notifier);
+    });
+
+    tearDown(() async {
+      container.dispose();
+      await db.close();
+      dir.deleteSync(recursive: true);
+    });
+
+    Future<void> signInWithUploadHeld() async {
+      container.read(authProvider.notifier).state = const AuthState(
+        status: AuthStatus.authenticated,
+        uid: 'user-1',
+      );
+      await _waitUntil(() async => service.uploadsHeld == 1);
+    }
+
+    Future<void> settled() => _waitUntil(() async {
+      final state = container.read(syncStateProvider);
+      return state.status == SyncStatus.idle &&
+          state.pendingCount == 0 &&
+          state.lastSyncedAt != null;
+    });
+
+    Future<void> expectUploadedOnce() async {
+      expect(storage.uploads, 1, reason: 'the photo file reaches Storage once');
+      expect(
+        storage.urlLookups,
+        1,
+        reason: 'and its URL is published on the photo document once',
+      );
+      final url = (await db.photosDao.getPhotoById('photo'))!.cloudUrl;
+      expect(url, isNotNull);
+      final remote = await firestore.doc('users/user-1/photos/photo').get();
+      expect(remote.data()!['cloudUrl'], url);
+    }
+
+    test('does not upload a photo whose retry is still uploading', () async {
+      await signInWithUploadHeld();
+
+      final forced = container
+          .read(syncStateProvider.notifier)
+          .syncNow(forceFullSync: true);
+      await _waitUntil(() async => (await SyncQueue().getAll()).isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      service.uploadGate!.complete();
+      await forced;
+      await settled();
+
+      await expectUploadedOnce();
+    });
+
+    test(
+      'does not upload a photo delivered while it reads its snapshot',
+      () async {
+        await SyncQueue().enqueue(
+          const SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: 'photo',
+          ),
+        );
+        await signInWithUploadHeld();
+
+        // The snapshot reads the photo as not yet uploaded; the held upload
+        // then lands and retires its queue entry before the snapshot is staged.
+        service.afterSnapshotRead = () async {
+          service.afterSnapshotRead = null;
+          service.uploadGate!.complete();
+          await _waitUntil(() async => (await SyncQueue().getAll()).isEmpty);
+        };
+        await container
+            .read(syncStateProvider.notifier)
+            .syncNow(forceFullSync: true);
+        await settled();
+
+        await expectUploadedOnce();
+      },
+    );
+  });
 }
