@@ -10,6 +10,7 @@ import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/database/transfer_key_backup.dart';
+import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -306,6 +307,7 @@ void main() {
         'pieceGlazes',
       ).where('pieceId', isEqualTo: 'p1').get();
       expect(snap.docs.length, 2);
+      final firstIds = snap.docs.map((doc) => doc.id).toSet();
 
       final glazeIds = snap.docs
           .map((d) => (d.data() as Map)['glazeOptionId'])
@@ -315,6 +317,13 @@ void main() {
       // Old row should be gone
       final oldDoc = await col('pieceGlazes').doc('old-row').get();
       expect(oldDoc.exists, false);
+
+      await syncService.pushPieceGlazes(_uid, 'p1');
+      final repeated = await col(
+        'pieceGlazes',
+      ).where('pieceId', isEqualTo: 'p1').get();
+      expect(repeated.docs.map((doc) => doc.id).toSet(), firstIds);
+      expect(repeated.docs.length, 2);
     });
   });
 
@@ -331,12 +340,81 @@ void main() {
         'pieceTags',
       ).where('pieceId', isEqualTo: 'p1').get();
       expect(snap.docs.length, 2);
+      final firstIds = snap.docs.map((doc) => doc.id).toSet();
 
       final tagIds = snap.docs
           .map((d) => (d.data() as Map)['tagOptionId'])
           .toSet();
       expect(tagIds, {'t1', 't2'});
+
+      await syncService.pushPieceTags(_uid, 'p1');
+      final repeated = await col(
+        'pieceTags',
+      ).where('pieceId', isEqualTo: 'p1').get();
+      expect(repeated.docs.map((doc) => doc.id).toSet(), firstIds);
+      expect(repeated.docs.length, 2);
     });
+  });
+
+  group('fullUploadEntries', () {
+    test(
+      'describes the full snapshot as ordinary durable operations',
+      () async {
+        await insertPiece(id: 'p1', title: 'Bowl');
+        await insertPhoto(
+          id: 'ph1',
+          pieceId: 'p1',
+          cloudUrl: 'https://example.test/photo.jpg',
+        );
+        await insertClay(id: 'c1', name: 'Stoneware');
+        await insertGlaze(id: 'g1', name: 'Celadon');
+        await insertTag(id: 't1', name: 'Gift');
+        await db.materialsDao.setGlazesForPiece('p1', ['g1']);
+        await db.materialsDao.setTagsForPiece('p1', ['t1']);
+
+        final entries = await syncService.fullUploadEntries(_uid);
+
+        expect(
+          entries,
+          containsAll(<SyncQueueEntry>[
+            const SyncQueueEntry(
+              operation: SyncOperation.pushPiece,
+              entityId: 'p1',
+            ),
+            const SyncQueueEntry(
+              operation: SyncOperation.pushPhoto,
+              entityId: 'ph1',
+            ),
+            const SyncQueueEntry(
+              operation: SyncOperation.pushClay,
+              entityId: 'c1',
+            ),
+            const SyncQueueEntry(
+              operation: SyncOperation.pushGlaze,
+              entityId: 'g1',
+            ),
+            const SyncQueueEntry(
+              operation: SyncOperation.pushTag,
+              entityId: 't1',
+            ),
+            const SyncQueueEntry(
+              operation: SyncOperation.pushPieceGlazes,
+              entityId: 'p1',
+            ),
+            const SyncQueueEntry(
+              operation: SyncOperation.pushPieceTags,
+              entityId: 'p1',
+            ),
+          ]),
+        );
+        expect(
+          entries.where(
+            (entry) => entry.operation == SyncOperation.pushPhotoFile,
+          ),
+          isEmpty,
+        );
+      },
+    );
   });
 
   group('pushDeletion', () {
@@ -887,52 +965,6 @@ void main() {
       final other = await syncService.getLastPulledAt('other-user');
       expect(other, isNull);
     });
-  });
-
-  // ── pushAllLocal ───────────────────────────────
-
-  group('pushAllLocal', () {
-    test(
-      'pushes all local pieces, materials, and junctions to Firestore',
-      () async {
-        await insertPiece(id: 'p1', title: 'Bowl');
-        await insertPiece(id: 'p2', title: 'Mug');
-        await insertClay(id: 'c1', name: 'Stoneware');
-        await insertGlaze(id: 'g1', name: 'Celadon');
-        await insertTag(id: 't1', name: 'Gift');
-
-        await db.materialsDao.setGlazesForPiece('p1', ['g1']);
-        await db.materialsDao.setTagsForPiece('p2', ['t1']);
-
-        await syncService.pushAllLocal(_uid);
-
-        // Check pieces in Firestore
-        final piecesSnap = await col('pieces').get();
-        expect(piecesSnap.docs.length, 2);
-
-        // Check materials
-        final claysSnap = await col('clays').get();
-        expect(claysSnap.docs.length, 1);
-        expect((claysSnap.docs.first.data() as Map)['name'], 'Stoneware');
-
-        final glazesSnap = await col('glazes').get();
-        expect(glazesSnap.docs.length, 1);
-
-        final tagsSnap = await col('tags').get();
-        expect(tagsSnap.docs.length, 1);
-
-        // Check junctions
-        final pieceGlazesSnap = await col(
-          'pieceGlazes',
-        ).where('pieceId', isEqualTo: 'p1').get();
-        expect(pieceGlazesSnap.docs.length, 1);
-
-        final pieceTagsSnap = await col(
-          'pieceTags',
-        ).where('pieceId', isEqualTo: 'p2').get();
-        expect(pieceTagsSnap.docs.length, 1);
-      },
-    );
   });
 
   // ── deleteLocalData ────────────────────────────

@@ -125,8 +125,9 @@ A run decides from its own outcome, never from the latched `SyncState.status` â€
 
 Piece-row and photo writes from screens go through `PieceWriter` (`lib/services/piece_writer.dart`), whose tests pin the enqueue for each operation; the remaining direct piece and photo DAO writes from screens are the glaze and tag setters in `piece_detail_screen.dart` (`setGlazesForPiece` / `setTagsForPiece`, each followed by a hand-enqueued `afterPieceGlazesWrite` / `afterPieceTagsWrite` + `afterPieceWrite` pair) and the album swipe-to-archive in `album_grid.dart`. Material rename/delete in the Manage screens goes straight to `materials_dao`, which also rewrites the denormalized `pieces.glazes` / `pieces.tags` columns.
 
-No account may push another account's data. The *next* account's first sync calls `pushAllLocal`, so
-whatever is on the device gets uploaded into whichever cloud tree is signed in. Captain decisions
+No account may push another account's data. The *next* account's first sync stages every local row
+through the durable queue, so whatever is on the device gets uploaded into whichever cloud tree is
+signed in. Captain decisions
 (2026-08-18/19) settle how that is prevented, and they differ by how the session ended:
 
 - **Explicit sign-out is destructive.** `SyncNotifier.signOutAndWipeLocalData` ends the session and

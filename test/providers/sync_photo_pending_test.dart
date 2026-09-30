@@ -17,11 +17,34 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _Service extends SyncService {
   _Service(super.db, super.firestore, super.storage);
   bool failUpload = true;
+  Completer<void>? _retryFinished;
+
+  Future<void> expectRetry() {
+    _retryFinished = Completer<void>();
+    return _retryFinished!.future;
+  }
 
   @override
   Future<void> uploadPhotoFile(String uid, String photoId) async {
     if (failUpload) throw Exception('storage unavailable');
     await super.uploadPhotoFile(uid, photoId);
+  }
+
+  @override
+  Future<void> retryMissingUploads(String uid) async {
+    await super.retryMissingUploads(uid);
+    _retryFinished?.complete();
+    _retryFinished = null;
+  }
+}
+
+Future<void> _waitUntil(Future<bool> Function() predicate) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (!await predicate()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('condition was not met');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
   }
 }
 
@@ -82,16 +105,13 @@ void main() {
       });
       Future<void> signIn() async {
         container.read(syncStateProvider.notifier);
-        final done = Completer<void>();
-        final sub = container.listen(syncStateProvider, (_, next) {
-          if (next.lastSyncedAt != null && !done.isCompleted) done.complete();
-        });
+        final retryFinished = service.expectRetry();
         container.read(authProvider.notifier).state = const AuthState(
           status: AuthStatus.authenticated,
           uid: 'user-1',
         );
-        await done.future.timeout(const Duration(seconds: 5));
-        sub.close();
+        await retryFinished.timeout(const Duration(seconds: 5));
+        await Future<void>.delayed(Duration.zero);
       }
 
       await signIn();
@@ -132,19 +152,19 @@ void main() {
             ),
           );
       final previous = container.read(syncStateProvider).lastSyncedAt;
-      final drained = Completer<void>();
-      final sub = container.listen(syncStateProvider, (_, next) {
-        if (next.lastSyncedAt != previous && !drained.isCompleted) {
-          drained.complete();
-        }
-      });
       container.read(syncStateProvider.notifier).scheduleProcessQueue();
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(container.read(syncStateProvider).pendingCount, 1);
-      await drained.future.timeout(const Duration(seconds: 5));
-      sub.close();
+      await _waitUntil(
+        () async => await container.read(syncQueueProvider).pendingCount == 0,
+      );
       expect(await container.read(syncQueueProvider).pendingCount, 0);
       expect(container.read(syncStateProvider).pendingCount, 1);
+      expect(
+        container.read(syncStateProvider).lastSyncedAt,
+        previous,
+        reason: 'a queue-only drain does not prove a full sync',
+      );
       service.failUpload = false;
       await container.read(syncStateProvider.notifier).syncNow();
       expect(container.read(syncStateProvider).pendingCount, 0);

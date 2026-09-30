@@ -515,7 +515,7 @@ void main() {
       // beats 1000ms on a loaded machine.
       final gate = Completer<void>();
       queue.pendingCountGate = gate;
-      syncService.pushAllLocalCalls.clear();
+      syncService.fullSnapshotCalls.clear();
       syncService.pushLog.clear();
       await container.read(syncTriggerProvider).afterPieceWrite('piece-b');
       auth.set(signedInAs(uidB));
@@ -531,14 +531,14 @@ void main() {
       expect(syncService.pushLog, contains('pushPiece:piece-b'));
       expect(
         syncService.pushLog,
-        contains('pushAllLocal:$uidB'),
+        contains('fullSnapshot:$uidB'),
         reason:
             'the sign-in sync stood down for the drain, so it has to have been '
             'run afterwards rather than dropped',
       );
       expect(
         syncService.pushLog.indexOf('pushPiece:piece-b'),
-        lessThan(syncService.pushLog.indexOf('pushAllLocal:$uidB')),
+        lessThan(syncService.pushLog.indexOf('fullSnapshot:$uidB')),
         reason:
             'the drain has to have lost nothing by winning: it uploaded first '
             'and the owed full sync followed, or this test is no longer '
@@ -578,10 +578,10 @@ void main() {
   test('a confirmed erase reports back when the device is busy', () async {
     await insertPieceWithPhoto('piece-a', "A's mug");
 
-    syncService.pushAllLocalGate = Completer<void>();
-    final entered = syncService.pushAllLocalEntered = Completer<void>();
+    syncService.fullSnapshotGate = Completer<void>();
+    final entered = syncService.fullSnapshotEntered = Completer<void>();
     final inFlight = notifier.syncNow(forceFullSync: true);
-    // The sync is provably inside pushAllLocal (and holding the device) long
+    // The sync is provably staging its full snapshot (and holding the device) long
     // before the erase below asks — the gate pins it there deterministically.
     await entered.future;
 
@@ -596,7 +596,7 @@ void main() {
       reason: 'a refused erase must not half-delete anything',
     );
 
-    syncService.pushAllLocalGate!.complete();
+    syncService.fullSnapshotGate!.complete();
     await inFlight;
     await settle();
 
@@ -683,7 +683,7 @@ void main() {
   test('a forced full sync that loses the race is replayed as forced', () async {
     await insertPieceWithPhoto('piece-a', "A's mug");
     // A has synced once already, so anything short of a forced sync takes the
-    // incremental branch and never reaches pushAllLocal.
+    // incremental branch and never stages a full snapshot.
     expect(await syncService.getLastPulledAt(uidA), isNotNull);
 
     // Stall the drain's wrap-up (its pending-count refresh) so it still
@@ -697,20 +697,20 @@ void main() {
     await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
     await pumpUntil(() => queue.pendingCountIsStalled);
 
-    syncService.pushAllLocalCalls.clear();
+    syncService.fullSnapshotCalls.clear();
     await notifier.syncNow(forceFullSync: true);
     expect(
-      syncService.pushAllLocalCalls,
+      syncService.fullSnapshotCalls,
       isEmpty,
       reason: 'the drain held the device, so this request stood down',
     );
 
     gate.complete();
-    await pumpUntil(() => syncService.pushAllLocalCalls.contains(uidA));
+    await pumpUntil(() => syncService.fullSnapshotCalls.contains(uidA));
     await settle();
 
     expect(
-      syncService.pushAllLocalCalls,
+      syncService.fullSnapshotCalls,
       contains(uidA),
       reason:
           'the owed sync is replayed as the forced full sync that was asked '
@@ -1341,7 +1341,7 @@ void main() {
 
       // Nothing is left that could claim the device for A: with no session
       // neither the debounced push nor a manual sync reaches the stamp.
-      syncService.pushAllLocalCalls.clear();
+      syncService.fullSnapshotCalls.clear();
       notifier.scheduleProcessQueue();
       await settle();
       await notifier.syncNow(forceFullSync: true);
@@ -1355,7 +1355,7 @@ void main() {
             'sign-in again, so it would lock this device for good',
       );
       expect(container.read(localDataOwnerProvider), isNull);
-      expect(syncService.pushAllLocalCalls, isEmpty);
+      expect(syncService.fullSnapshotCalls, isEmpty);
     });
   });
 
@@ -1574,8 +1574,8 @@ void main() {
       // controlled clock shrinks that wait to a handful of immediate pumps,
       // and the gate holds the sync open for however long the test needs —
       // no wall-clock timeout is being raced.
-      syncService.pushAllLocalGate = Completer<void>();
-      final entered = syncService.pushAllLocalEntered = Completer<void>();
+      syncService.fullSnapshotGate = Completer<void>();
+      final entered = syncService.fullSnapshotEntered = Completer<void>();
       unawaited(notifier.syncNow(forceFullSync: true));
       await entered.future;
       expect(
@@ -1600,7 +1600,7 @@ void main() {
       );
 
       // Let the straggler unwind.
-      syncService.pushAllLocalGate!.complete();
+      syncService.fullSnapshotGate!.complete();
       await pumpUntil(() => !container.read(staleSyncBlockingWipeProvider));
 
       expect(
@@ -1642,21 +1642,21 @@ class _FlakyWipeSyncService extends SyncService {
   /// nothing local survives it.
   bool securingFails = false;
 
-  /// Every uid `pushAllLocal` has run for. Only [SyncNotifier.syncNow] takes
-  /// that branch, so it is how a test tells which of the two push paths did an
-  /// upload — both leave the same rows in the cloud.
-  final List<String> pushAllLocalCalls = [];
+  /// Every uid whose full snapshot was staged. The legacy field name keeps
+  /// the ownership regression assertions readable while the production path
+  /// now expresses the snapshot as durable queue entries.
+  final List<String> fullSnapshotCalls = [];
 
   /// Uploads in the order they happened, so a test can assert which push path
   /// got there first rather than only that both eventually ran.
   final List<String> pushLog = [];
 
-  /// Holds `pushAllLocal` open, standing in for a slow first sync. A test
-  /// completes [pushAllLocalEntered] (or reads it) to know the sync is
-  /// provably inside the call, then releases [pushAllLocalGate] — ordering
+  /// Holds full-snapshot staging open, standing in for a slow first sync. A test
+  /// completes [fullSnapshotEntered] (or reads it) to know the sync is
+  /// provably inside the call, then releases [fullSnapshotGate] — ordering
   /// pinned by gates instead of by hoping one delay beats another.
-  Completer<void>? pushAllLocalGate;
-  Completer<void>? pushAllLocalEntered;
+  Completer<void>? fullSnapshotGate;
+  Completer<void>? fullSnapshotEntered;
 
   /// Holds `deleteLocalData` open, so a test can look at the device while the
   /// wipe the user confirmed is still running.
@@ -1681,13 +1681,13 @@ class _FlakyWipeSyncService extends SyncService {
   }
 
   @override
-  Future<void> pushAllLocal(String uid) async {
-    pushAllLocalCalls.add(uid);
-    pushLog.add('pushAllLocal:$uid');
-    pushAllLocalEntered?.complete();
-    final gate = pushAllLocalGate;
+  Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
+    fullSnapshotCalls.add(uid);
+    pushLog.add('fullSnapshot:$uid');
+    fullSnapshotEntered?.complete();
+    final gate = fullSnapshotGate;
     if (gate != null) await gate.future;
-    return super.pushAllLocal(uid);
+    return super.fullUploadEntries(uid);
   }
 
   @override

@@ -1,15 +1,17 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 import '../database/transfer_key_backup.dart';
 import 'encryption_key_service.dart';
+import 'sync_queue.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -188,8 +190,8 @@ class SyncService {
   /// Destroys this device's entire local copy of the account's data.
   ///
   /// Every local store the app owns must be listed here. Whatever survives is
-  /// what [pushAllLocal] uploads into the *next* account's cloud tree on its
-  /// first sync, so an omission here is a cross-account data leak, not a
+  /// what [fullUploadEntries] stages into the *next* account's cloud tree on
+  /// its first sync, so an omission here is a cross-account data leak, not a
   /// cosmetic bug. That is also why this runs on sign-out — see
   /// `SyncNotifier.signOutAndWipeLocalData`.
   ///
@@ -403,6 +405,19 @@ class SyncService {
   // Push methods
   // ════════════════════════════════════════════
 
+  /// Performs an authenticated server-only read before a push run starts.
+  ///
+  /// Unlike a write, a server-only read reports `unavailable` while Firestore
+  /// knows it is offline instead of remaining pending until reconnection. The
+  /// document does not need to exist: an authoritative missing result proves
+  /// the same reachability as an existing one.
+  Future<void> checkServerReachability(String uid) async {
+    await _col(
+      uid,
+      'meta',
+    ).doc('sync-reachability').get(const GetOptions(source: Source.server));
+  }
+
   Future<void> pushPiece(String uid, String pieceId) async {
     final piece = await _db.piecesDao.getPieceById(pieceId);
     if (piece == null) return;
@@ -492,39 +507,59 @@ class SyncService {
 
   Future<void> pushPieceGlazes(String uid, String pieceId) async {
     final col = _col(uid, 'pieceGlazes');
-    // Delete existing remote junction rows for this piece
-    final existing = await col.where('pieceId', isEqualTo: pieceId).get();
-    for (final doc in existing.docs) {
-      await doc.reference.delete();
-    }
-    // Get current local junction data
+    final existing = await col
+        .where('pieceId', isEqualTo: pieceId)
+        .get(const GetOptions(source: Source.server));
     final glazes = await _db.materialsDao.getGlazesForPiece(pieceId);
+    final desired = <String, Map<String, Object>>{};
     for (var i = 0; i < glazes.length; i++) {
-      final id = const Uuid().v4();
-      await col.doc(id).set({
+      final id = _junctionDocumentId(pieceId, glazes[i].id);
+      desired[id] = {
         'pieceId': pieceId,
         'glazeOptionId': glazes[i].id,
         'sortOrder': i,
-      });
+      };
     }
+    final batch = _firestore.batch();
+    for (final doc in existing.docs) {
+      if (!desired.containsKey(doc.id)) batch.delete(doc.reference);
+    }
+    for (final entry in desired.entries) {
+      batch.set(col.doc(entry.key), entry.value);
+    }
+    await batch.commit();
   }
 
   Future<void> pushPieceTags(String uid, String pieceId) async {
     final col = _col(uid, 'pieceTags');
-    final existing = await col.where('pieceId', isEqualTo: pieceId).get();
-    for (final doc in existing.docs) {
-      await doc.reference.delete();
-    }
+    final existing = await col
+        .where('pieceId', isEqualTo: pieceId)
+        .get(const GetOptions(source: Source.server));
     final tags = await _db.materialsDao.getTagsForPiece(pieceId);
+    final desired = <String, Map<String, Object>>{};
     for (var i = 0; i < tags.length; i++) {
-      final id = const Uuid().v4();
-      await col.doc(id).set({
+      final id = _junctionDocumentId(pieceId, tags[i].id);
+      desired[id] = {
         'pieceId': pieceId,
         'tagOptionId': tags[i].id,
         'sortOrder': i,
-      });
+      };
     }
+    final batch = _firestore.batch();
+    for (final doc in existing.docs) {
+      if (!desired.containsKey(doc.id)) batch.delete(doc.reference);
+    }
+    for (final entry in desired.entries) {
+      batch.set(col.doc(entry.key), entry.value);
+    }
+    await batch.commit();
   }
+
+  /// Stable across retries and app versions. Existing UUID-named junction
+  /// documents are deleted by the same atomic batch that installs these, so
+  /// old and new clients can alternate without a one-time data migration.
+  String _junctionDocumentId(String pieceId, String optionId) =>
+      sha256.convert(utf8.encode('$pieceId\u0000$optionId')).toString();
 
   Future<void> pushDeletion(String uid, String collection, String docId) async {
     await _col(uid, collection).doc(docId).set({
@@ -572,54 +607,76 @@ class SyncService {
   // Push all local data (first sync)
   // ════════════════════════════════════════════
 
-  /// Uploads every row that exists locally. A deletion has no row left to
-  /// upload, so this sends no tombstone: `SyncNotifier` mirrors what this
-  /// delivers to decide which queue entries it retires, and that list has to
-  /// change with this method.
-  Future<void> pushAllLocal(String uid) async {
-    debugPrint('SyncService: pushing all local data');
-
-    // Push all pieces
+  /// Describes a full local snapshot using the same durable operations as the
+  /// incremental queue. [SyncNotifier] enqueues these before dispatching them,
+  /// so first sync, forced sync and normal drains share acknowledgement,
+  /// revision and single-flight semantics.
+  Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
+    final entries = <SyncQueueEntry>[];
     final allPieces = await _db.select(_db.pieces).get();
-    for (final piece in allPieces) {
-      await pushPiece(uid, piece.id);
-    }
-
-    // Push all photos (metadata first, then attempt file uploads)
     final allPhotos = await _db.select(_db.photos).get();
+    final clays = await _db.materialsDao.getAllClays();
+    final glazes = await _db.materialsDao.getAllGlazes();
+    final tags = await _db.materialsDao.getAllTags();
+
+    entries.addAll(
+      allPieces.map(
+        (piece) => SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: piece.id,
+        ),
+      ),
+    );
     for (final photo in allPhotos) {
-      await pushPhoto(uid, photo.id);
-    }
-    // File uploads are best-effort — Storage may not be available on Spark plan
-    for (final photo in allPhotos) {
-      if (photo.cloudUrl == null) {
-        try {
-          await uploadPhotoFile(uid, photo.id);
-        } catch (e) {
-          debugPrint('SyncService: photo upload skipped (${photo.id}): $e');
-        }
+      entries.add(
+        SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: photo.id),
+      );
+      if (photo.cloudUrl == null && File(photo.localPath).existsSync()) {
+        entries.add(
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: photo.id,
+          ),
+        );
       }
     }
-
-    // Push all materials
-    final clays = await _db.materialsDao.getAllClays();
-    for (final clay in clays) {
-      await pushClay(uid, clay.id);
-    }
-    final glazes = await _db.materialsDao.getAllGlazes();
-    for (final glaze in glazes) {
-      await pushGlaze(uid, glaze.id);
-    }
-    final tags = await _db.materialsDao.getAllTags();
-    for (final tag in tags) {
-      await pushTag(uid, tag.id);
-    }
-
-    // Push junction rows for each piece
+    entries.addAll(
+      clays.map(
+        (clay) => SyncQueueEntry(
+          operation: SyncOperation.pushClay,
+          entityId: clay.id,
+        ),
+      ),
+    );
+    entries.addAll(
+      glazes.map(
+        (glaze) => SyncQueueEntry(
+          operation: SyncOperation.pushGlaze,
+          entityId: glaze.id,
+        ),
+      ),
+    );
+    entries.addAll(
+      tags.map(
+        (tag) =>
+            SyncQueueEntry(operation: SyncOperation.pushTag, entityId: tag.id),
+      ),
+    );
     for (final piece in allPieces) {
-      await pushPieceGlazes(uid, piece.id);
-      await pushPieceTags(uid, piece.id);
+      entries.add(
+        SyncQueueEntry(
+          operation: SyncOperation.pushPieceGlazes,
+          entityId: piece.id,
+        ),
+      );
+      entries.add(
+        SyncQueueEntry(
+          operation: SyncOperation.pushPieceTags,
+          entityId: piece.id,
+        ),
+      );
     }
+    return entries;
   }
 
   // ════════════════════════════════════════════

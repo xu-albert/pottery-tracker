@@ -85,6 +85,20 @@ void main() {
     return done.future.whenComplete(sub.close);
   }
 
+  Future<void> settle() async {
+    for (var i = 0; i < 30; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  Future<void> waitForQueueCount(int count) async {
+    for (var i = 0; i < 100; i++) {
+      if (await queue.pendingCount == count) return;
+      await Future<void>.delayed(Duration.zero);
+    }
+    fail('queue did not reach $count entries');
+  }
+
   void signIn() {
     container.read(authProvider.notifier).state = const AuthState(
       status: AuthStatus.authenticated,
@@ -108,7 +122,8 @@ void main() {
     when(
       () => service.getLastPulledAt(any()),
     ).thenAnswer((_) async => DateTime(2026));
-    when(() => service.pushAllLocal(any())).thenAnswer((_) async {});
+    when(() => service.checkServerReachability(any())).thenAnswer((_) async {});
+    when(() => service.fullUploadEntries(any())).thenAnswer((_) async => []);
     when(() => service.pullAll(any())).thenAnswer((_) async {});
     when(() => service.pullChangedSince(any(), any())).thenAnswer((_) async {});
     when(() => service.retryMissingUploads(any())).thenAnswer((_) async {});
@@ -116,8 +131,10 @@ void main() {
       final piece = await db.piecesDao.getPieceById(
         call.positionalArguments[1] as String,
       );
-      pushedTitles.add(piece!.title);
+      if (piece != null) pushedTitles.add(piece.title);
     });
+    when(() => service.pushPhoto(any(), any())).thenAnswer((_) async {});
+    when(() => service.uploadPhotoFile(any(), any())).thenAnswer((_) async {});
     container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
@@ -248,10 +265,8 @@ void main() {
         await drained;
         expect(
           pushedTitles,
-          fullSync
-              ? ['edited during sync']
-              : ['before sync', 'edited during sync'],
-          reason: 'pushAllLocal already delivered the full-sync snapshot',
+          ['before sync', 'edited during sync'],
+          reason: 'both full and incremental sync drain the durable queue',
         );
         expect(await queue.pendingCount, 0);
         expect(clock.timer!.isActive, isFalse);
@@ -260,7 +275,7 @@ void main() {
   }
 
   test(
-    'first sign-in retires its queue snapshot without re-uploading photos',
+    'first sign-in drains its queue snapshot through ordinary operations',
     () async {
       when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
       for (var i = 0; i < 12; i++) {
@@ -292,19 +307,20 @@ void main() {
 
       expect(await queue.pendingCount, 0);
       expect(container.read(syncStateProvider).pendingCount, 0);
-      verify(() => service.pushAllLocal('user-1')).called(1);
-      verifyNever(() => service.uploadPhotoFile(any(), any()));
+      verify(() => service.fullUploadEntries('user-1')).called(1);
+      verify(() => service.uploadPhotoFile('user-1', any())).called(12);
 
       when(
         () => service.getLastPulledAt('user-1'),
       ).thenAnswer((_) async => DateTime(2026));
+      final lastSynced = container.read(syncStateProvider).lastSyncedAt;
       await writer.updateFields('p1', title: 'one later edit');
       clock.instant = DateTime(2026, 6);
-      final drained = waitForState((s) => s.lastSyncedAt == clock.instant);
       clock.fire();
-      await drained;
+      await waitForQueueCount(0);
 
       expect(pushedTitles, ['one later edit']);
+      expect(container.read(syncStateProvider).lastSyncedAt, lastSynced);
       verifyNever(() => service.uploadPhotoFile(any(), any()));
     },
   );
@@ -312,8 +328,9 @@ void main() {
   test('first sign-in tombstones a queued deletion before it pulls', () async {
     when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
     final calls = <String>[];
-    when(() => service.pushAllLocal(any())).thenAnswer((_) async {
-      calls.add('pushAllLocal');
+    when(() => service.fullUploadEntries('user-1')).thenAnswer((_) async {
+      calls.add('fullUploadEntries');
+      return [];
     });
     when(() => service.pushPieceDeletion('user-1', 'gone')).thenAnswer((
       _,
@@ -347,11 +364,11 @@ void main() {
     );
 
     expect(calls, [
-      'pushAllLocal',
+      'fullUploadEntries',
       'pushDeletion',
       'pushPieceDeletion',
       'pullAll',
-    ], reason: 'a bulk upload of existing rows delivers no tombstone');
+    ], reason: 'full snapshots and tombstones use the same queue drain');
     expect(await queue.pendingCount, 0);
   });
 
@@ -373,7 +390,7 @@ void main() {
 
     signIn();
     await waitForState(
-      (s) => pulled && s.status == SyncStatus.idle && s.pendingCount == 1,
+      (s) => pulled && s.status == SyncStatus.error && s.pendingCount == 1,
     );
 
     expect(
@@ -432,11 +449,13 @@ void main() {
     );
     final entered = Completer<void>();
     final release = Completer<void>();
+    final pushReturned = Completer<void>();
     when(() => service.pushPiece('user-1', 'p1')).thenAnswer((_) async {
       pushedTitles.add((await db.piecesDao.getPieceById('p1'))!.title);
       if (release.isCompleted) return;
       entered.complete();
       await release.future;
+      pushReturned.complete();
     });
 
     await writer.updateFields('p1', title: 'read by the push');
@@ -448,10 +467,9 @@ void main() {
     await writer.updateFields('p1', title: 'edited mid-push');
     expect(await queue.pendingCount, 1);
 
-    clock.instant = DateTime(2026, 6);
-    final finished = waitForState((s) => s.lastSyncedAt == clock.instant);
     release.complete();
-    await finished;
+    await pushReturned.future;
+    await settle();
 
     expect(
       (await SyncQueue().getAll()).single.entityId,
@@ -486,7 +504,9 @@ void main() {
       signIn();
       await waitForState(
         (s) =>
-            attempts == 3 && s.status == SyncStatus.idle && s.pendingCount == 1,
+            attempts == 3 &&
+            s.status == SyncStatus.error &&
+            s.pendingCount == 1,
       );
       expect(await queue.pendingCount, 1);
       expect(container.read(syncStateProvider).pendingCount, 1);

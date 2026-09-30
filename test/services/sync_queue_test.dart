@@ -151,6 +151,48 @@ void main() {
       expect(all, isEmpty);
     });
 
+    test('acknowledge removes only the revision that was dispatched', () async {
+      final queue = SyncQueue();
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'p1',
+        changedFields: ['title'],
+      );
+      await queue.enqueue(entry);
+      final dispatchedRevision = queue.revisionOf(entry);
+
+      expect(await queue.acknowledge(entry, dispatchedRevision), isTrue);
+      expect(await queue.getAll(), isEmpty);
+    });
+
+    test(
+      'an enqueue racing acknowledgement keeps the newer revision',
+      () async {
+        final queue = SyncQueue();
+        const first = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
+        const newer = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['notes'],
+        );
+        await queue.enqueue(first);
+        final dispatchedRevision = queue.revisionOf(first);
+
+        final enqueue = queue.enqueue(newer);
+        final acknowledged = queue.acknowledge(first, dispatchedRevision);
+        await enqueue;
+
+        expect(await acknowledged, isFalse);
+        final remaining = await queue.getAll();
+        expect(remaining, hasLength(1));
+        expect(remaining.single.changedFields!.toSet(), {'title', 'notes'});
+      },
+    );
+
     test('clear empties the queue; pendingCount returns 0 after', () async {
       final queue = SyncQueue();
       await queue.enqueue(
