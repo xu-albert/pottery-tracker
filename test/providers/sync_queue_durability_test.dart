@@ -666,6 +666,85 @@ void main() {
     expect(clock.timer!.isActive, isFalse);
   });
 
+  test('a tap whose gate fails during a first sync never re-sends its '
+      'snapshot', () async {
+    DateTime? pulledAt;
+    when(
+      () => service.getLastPulledAt(any()),
+    ).thenAnswer((_) async => pulledAt);
+    when(() => service.pullAll(any())).thenAnswer((_) async {
+      pulledAt = DateTime(2026);
+    });
+    when(() => service.fullUploadEntries('user-1')).thenAnswer(
+      (_) async => const [
+        SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+        SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'photo-1'),
+        SyncQueueEntry(
+          operation: SyncOperation.pushPhotoFile,
+          entityId: 'photo-1',
+        ),
+        SyncQueueEntry(
+          operation: SyncOperation.pushPieceGlazes,
+          entityId: 'p1',
+        ),
+        SyncQueueEntry(operation: SyncOperation.pushPieceTags, entityId: 'p1'),
+      ],
+    );
+    final pushes = <String>[];
+    final release = Completer<void>();
+    when(
+      () => service.pushPiece('user-1', 'p1'),
+    ).thenAnswer((_) async => pushes.add('piece'));
+    when(
+      () => service.pushPhoto('user-1', 'photo-1'),
+    ).thenAnswer((_) async => pushes.add('photo'));
+    when(
+      () => service.uploadPhotoFile('user-1', 'photo-1'),
+    ).thenAnswer((_) async => pushes.add('photoFile'));
+    when(() => service.pushPieceGlazes('user-1', 'p1')).thenAnswer((_) async {
+      pushes.add('glazes');
+      await release.future;
+    });
+    when(
+      () => service.pushPieceTags('user-1', 'p1'),
+    ).thenAnswer((_) async => pushes.add('tags'));
+
+    // The first sync delivers and retires most of its snapshot, and holds on
+    // the junction write, with the tag write queued behind it.
+    signIn();
+    await waitForQueueCount(2);
+    expect(pushes, unorderedEquals(['piece', 'photo', 'photoFile', 'glazes']));
+
+    // A tap on a flapping link fails its reachability read.
+    final notifier = container.read(syncStateProvider.notifier);
+    when(
+      () => service.checkServerReachability(any()),
+    ).thenThrow(Exception('offline'));
+    await notifier.syncNow();
+    expect(container.read(syncStateProvider).status, SyncStatus.error);
+
+    // The next tap gets through, and everything is released.
+    when(() => service.checkServerReachability(any())).thenAnswer((_) async {});
+    final tap = notifier.syncNow();
+    await settle();
+    release.complete();
+    await tap;
+    await waitForState(
+      (s) =>
+          s.status == SyncStatus.idle &&
+          s.lastSyncedAt != null &&
+          s.pendingCount == 0,
+    );
+
+    expect(
+      [...pushes]..sort(),
+      ['glazes', 'photo', 'photoFile', 'piece', 'tags'],
+      reason: 'every snapshot write reaches the cloud exactly once',
+    );
+    verify(() => service.fullUploadEntries('user-1')).called(1);
+    expect(await queue.pendingCount, 0);
+  });
+
   group('a forced sync that did not finish is staged again later', () {
     late SyncNotifier notifier;
 

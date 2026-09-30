@@ -251,11 +251,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   /// The session whose full snapshot is staged and still awaits a pull. Until
   /// a pull of that session succeeds, a repeated or forced tap in it is
-  /// already covered by the snapshot: it attaches to the snapshot's flights
-  /// instead of staging it again, and a forced request owed meanwhile is
-  /// answered by the full pull rather than replayed. A run that fails before
-  /// dispatching drops it, since whatever it staged is still queued; a new
-  /// generation makes it stale by itself.
+  /// already covered by the snapshot: it attaches to the snapshot's flights,
+  /// or sends whatever of it is still queued, instead of staging it again, and
+  /// a forced request owed meanwhile is answered by the full pull rather than
+  /// replayed. A failed reachability read or pull leaves it standing, since
+  /// what the snapshot has not delivered is still queued; a new generation
+  /// makes it stale by itself.
   _Session? _unpulledSnapshot;
 
   /// Every dispatched drain whose writes have not all settled. The pull waits
@@ -497,7 +498,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       unawaited(_dispatch(session, entries));
       dispatched = true;
     } catch (e) {
-      if (_unpulledSnapshot == session) _unpulledSnapshot = null;
       await _publishFailure(e);
     } finally {
       _releaseSyncing();
