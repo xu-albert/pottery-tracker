@@ -49,9 +49,8 @@ class SyncState {
     this.errorMessage,
   });
 
-  /// A count update keeps the current [errorMessage]. Setting a [status]
-  /// clears it unless a new one is passed, so neither a new attempt nor its
-  /// result inherits an earlier failure's reason.
+  /// Omitting [errorMessage] clears it. Callers that are only refreshing a
+  /// count must pass a still-relevant reason explicitly.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
@@ -62,7 +61,7 @@ class SyncState {
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
-      errorMessage: errorMessage ?? (status == null ? this.errorMessage : null),
+      errorMessage: errorMessage,
     );
   }
 }
@@ -274,7 +273,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _refreshPendingCount() async {
     final count = await _pendingCount();
     if (!mounted) return;
-    state = state.copyWith(pendingCount: count);
+    final reason = state.status == SyncStatus.error ? state.errorMessage : null;
+    state = state.copyWith(pendingCount: count, errorMessage: reason);
   }
 
   String _failureReason(Object error) =>
@@ -369,6 +369,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     state = state.copyWith(status: SyncStatus.syncing);
 
     try {
+      Object? drainFailure;
       if (await _claimOrBlock(uid)) return;
 
       final lastPulled = forceFullSync
@@ -400,12 +401,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // A full sync reports on itself rather than on this drain: what the
         // drain could not push is still queued, and the refreshed
         // `pendingCount` below is what says so on the tile.
-        await _processQueueInternal(uid);
+        drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
-        await _processQueueInternal(uid);
+        drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullChangedSince(uid, lastPulled);
       }
@@ -416,7 +417,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = SyncState(
         status: SyncStatus.idle,
         pendingCount: await _pendingCount(),
-        lastSyncedAt: _clock.now(),
+        lastSyncedAt: drainFailure == null ? _clock.now() : state.lastSyncedAt,
       );
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');

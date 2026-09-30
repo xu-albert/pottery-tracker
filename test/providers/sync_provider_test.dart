@@ -119,12 +119,12 @@ void main() {
     );
 
     test(
-      'a count update keeps the reason; a status or new reason replaces it',
+      'copyWith clears an omitted reason; a caller can replace it explicitly',
       () {
         expect(
           failed.copyWith(pendingCount: 3).errorMessage,
-          'stale failure',
-          reason: 'a count update does not resolve the current failure',
+          isNull,
+          reason: 'callers must opt in when a count update keeps a reason',
         );
         expect(failed.copyWith(errorMessage: 'boom').errorMessage, 'boom');
         for (final status in [
@@ -246,6 +246,36 @@ void main() {
       // pushAllLocal was called once by the constructor's auto-sync (before
       // we stubbed getLastPulledAt to return a date), but not by this syncNow.
       verify(() => s.syncService.pushAllLocal(any())).called(1);
+    });
+
+    test('does not advance lastSyncedAt when the upload half fails', () async {
+      final clock = _StubSyncClock();
+      final s = _setup(auth: _signedIn, clock: clock);
+      addTearDown(s.container.dispose);
+      await _settle();
+
+      final previous = s.container.read(syncStateProvider).lastSyncedAt;
+      final entry = const SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-1',
+      );
+      when(
+        () => s.syncService.getLastPulledAt('user-1'),
+      ).thenAnswer((_) async => DateTime(2025, 1, 1));
+      when(() => s.queue.getAll()).thenAnswer((_) async => [entry]);
+      when(() => s.queue.pendingCount).thenAnswer((_) async => 1);
+      when(
+        () => s.syncService.pushPiece('user-1', 'piece-1'),
+      ).thenThrow(Exception('upload unavailable'));
+
+      clock.instant = clock.instant.add(const Duration(minutes: 5));
+      await s.notifier.syncNow();
+
+      expect(
+        s.container.read(syncStateProvider).lastSyncedAt,
+        previous,
+        reason: 'a successful pull cannot claim an unsuccessful upload',
+      );
     });
 
     test('forceFullSync ignores lastPulledAt and does full sync', () async {
