@@ -680,43 +680,45 @@ void main() {
     },
   );
 
-  test('a forced full sync that loses the race is replayed as forced', () async {
-    await insertPieceWithPhoto('piece-a', "A's mug");
-    // A has synced once already, so anything short of a forced sync takes the
-    // incremental branch and never stages a full snapshot.
-    expect(await syncService.getLastPulledAt(uidA), isNotNull);
+  test(
+    'a forced full sync that loses the race is replayed as forced',
+    () async {
+      await insertPieceWithPhoto('piece-a', "A's mug");
+      // A has synced once already, so anything short of a forced sync takes the
+      // incremental branch and never stages a full snapshot.
+      expect(await syncService.getLastPulledAt(uidA), isNotNull);
 
-    // Stall the drain's wrap-up (its pending-count refresh) so it still
-    // holds the device when the forced sync arrives. The gate opens before
-    // the enqueue, so whichever event-loop turn the zero-delay debounce
-    // fires on, the drain is guaranteed to walk into it. The enqueue-time
-    // refresh must pass through: it reports pending work before a drain starts.
-    final gate = Completer<void>();
-    queue.pendingCountGate = gate;
-    queue.stallOnlyWhenEmpty = true;
-    await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
-    await pumpUntil(() => queue.pendingCountIsStalled);
+      // Stall the drain's reachability read, which it makes while it still
+      // holds the device, so the forced sync arrives while it is held. The gate
+      // opens before the enqueue, so whichever event-loop turn the zero-delay
+      // debounce fires on, the drain is guaranteed to walk into it.
+      final gate = Completer<void>();
+      syncService.reachabilityGate = gate;
+      await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
+      await pumpUntil(() => syncService.reachabilityIsStalled);
 
-    syncService.fullSnapshotCalls.clear();
-    await notifier.syncNow(forceFullSync: true);
-    expect(
-      syncService.fullSnapshotCalls,
-      isEmpty,
-      reason: 'the drain held the device, so this request stood down',
-    );
+      syncService.fullSnapshotCalls.clear();
+      await notifier.syncNow(forceFullSync: true);
+      expect(
+        syncService.fullSnapshotCalls,
+        isEmpty,
+        reason: 'the drain held the device, so this request stood down',
+      );
 
-    gate.complete();
-    await pumpUntil(() => syncService.fullSnapshotCalls.contains(uidA));
-    await settle();
+      syncService.reachabilityGate = null;
+      gate.complete();
+      await pumpUntil(() => syncService.fullSnapshotCalls.contains(uidA));
+      await settle();
 
-    expect(
-      syncService.fullSnapshotCalls,
-      contains(uidA),
-      reason:
-          'the owed sync is replayed as the forced full sync that was asked '
-          'for, not downgraded to the incremental branch',
-    );
-  });
+      expect(
+        syncService.fullSnapshotCalls,
+        contains(uidA),
+        reason:
+            'the owed sync is replayed as the forced full sync that was asked '
+            'for, not downgraded to the incremental branch',
+      );
+    },
+  );
 
   group('the lock cannot be escaped', () {
     // Four ways the lock silently released when it was derived from the live
@@ -1662,6 +1664,22 @@ class _FlakyWipeSyncService extends SyncService {
   /// wipe the user confirmed is still running.
   Completer<void>? wipeGate;
 
+  /// Holds the reachability read every push makes before it dispatches, while
+  /// it still holds the device — standing in for a slow server round trip.
+  Completer<void>? reachabilityGate;
+  bool reachabilityIsStalled = false;
+
+  @override
+  Future<void> checkServerReachability(String uid) async {
+    final gate = reachabilityGate;
+    if (gate != null) {
+      reachabilityIsStalled = true;
+      await gate.future;
+      reachabilityIsStalled = false;
+    }
+    await super.checkServerReachability(uid);
+  }
+
   @override
   Future<void> deleteLocalData() async {
     final gate = wipeGate;
@@ -1704,7 +1722,6 @@ class _FlakyWipeSyncService extends SyncService {
 /// completes the gate when the ordering it wants is established.
 class _StallableSyncQueue extends SyncQueue {
   Completer<void>? pendingCountGate;
-  bool stallOnlyWhenEmpty = false;
 
   /// True while a pending-count read is being held by [pendingCountGate].
   bool pendingCountIsStalled = false;
@@ -1712,8 +1729,7 @@ class _StallableSyncQueue extends SyncQueue {
   @override
   Future<int> get pendingCount async {
     final gate = pendingCountGate;
-    if (gate != null &&
-        (!stallOnlyWhenEmpty || await super.pendingCount == 0)) {
+    if (gate != null) {
       pendingCountIsStalled = true;
       await gate.future;
       pendingCountIsStalled = false;

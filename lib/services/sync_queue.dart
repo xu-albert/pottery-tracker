@@ -95,17 +95,29 @@ class SyncQueue {
   /// pushes and may only acknowledge the entry while it still reads the same.
   int revisionOf(SyncQueueEntry entry) => _revisions[entry] ?? 0;
 
-  Future<void> enqueue(SyncQueueEntry entry) async {
+  Future<void> enqueue(SyncQueueEntry entry) => enqueueAll([entry]);
+
+  /// Stamps every entry in [batch] and merges the whole batch into the
+  /// persisted queue with one read and one write, so staging a full snapshot
+  /// costs the same preference I/O as a single edit.
+  Future<void> enqueueAll(List<SyncQueueEntry> batch) async {
+    if (batch.isEmpty) return;
     // Stamped before the first await: a push acknowledging between the two
     // would otherwise drop the revision this call is about to merge in.
-    _revisions[entry] = ++_lastRevision;
+    for (final entry in batch) {
+      _revisions[entry] = ++_lastRevision;
+    }
     await _mutate(() async {
       final entries = await getAll();
-      final existingIndex = entries.indexWhere((e) => e == entry);
-      if (existingIndex != -1) {
-        entries[existingIndex] = entries[existingIndex].mergeWith(entry);
-      } else {
-        entries.add(entry);
+      final index = {for (var i = 0; i < entries.length; i++) entries[i]: i};
+      for (final entry in batch) {
+        final existing = index[entry];
+        if (existing == null) {
+          index[entry] = entries.length;
+          entries.add(entry);
+        } else {
+          entries[existing] = entries[existing].mergeWith(entry);
+        }
       }
       await _save(entries);
     });
@@ -132,21 +144,26 @@ class SyncQueue {
     });
   }
 
-  /// Removes [entry] only if no enqueue has revised it since dispatch.
+  /// Removes each entry of [dispatched] that no enqueue has revised since it
+  /// captured the paired revision, with one read and one write.
   ///
   /// The check and persisted mutation share the queue's mutation lane. An
   /// enqueue stamps its revision before joining that lane, so even an edit
   /// arriving just before this callback runs prevents the older push from
   /// acknowledging it.
-  Future<bool> acknowledge(SyncQueueEntry entry, int revision) =>
-      _mutate(() async {
-        if (revisionOf(entry) != revision) return false;
-        _revisions.remove(entry);
-        final entries = await getAll();
-        entries.remove(entry);
-        await _save(entries);
-        return true;
-      });
+  Future<void> acknowledgeAll(Map<SyncQueueEntry, int> dispatched) => _mutate(
+    () async {
+      final delivered = {
+        for (final MapEntry(key: entry, value: revision) in dispatched.entries)
+          if (revisionOf(entry) == revision) entry,
+      };
+      if (delivered.isEmpty) return;
+      delivered.forEach(_revisions.remove);
+      final entries = await getAll();
+      entries.removeWhere(delivered.contains);
+      await _save(entries);
+    },
+  );
 
   Future<T> _mutate<T>(Future<T> Function() mutation) {
     final result = _mutationTail.then((_) => mutation());

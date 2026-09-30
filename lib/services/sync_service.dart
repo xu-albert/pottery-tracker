@@ -1100,7 +1100,8 @@ class SyncService {
   // ════════════════════════════════════════════
 
   /// Durable upload work, including files whose queue attempt already ended.
-  /// The same eligibility as retryMissingUploads excludes remote-only photos.
+  /// Remote-only photos have no local file to upload, so they are excluded.
+  /// `SyncNotifier.syncNow` retries each of these through its push lanes.
   Future<Set<String>> pendingPhotoUploadIds() async {
     final photos = await _db.select(_db.photos).get();
     return {
@@ -1108,30 +1109,6 @@ class SyncService {
         if (photo.cloudUrl == null && File(photo.localPath).existsSync())
           photo.id,
     };
-  }
-
-  Future<void> retryMissingUploads(String uid) async {
-    final allPhotos = await _db.select(_db.photos).get();
-    final needUpload = allPhotos
-        .where((p) => p.cloudUrl == null && File(p.localPath).existsSync())
-        .toList();
-
-    if (needUpload.isEmpty) {
-      debugPrint('SyncService: no photos need upload retry');
-      return;
-    }
-    debugPrint(
-      'SyncService: ${needUpload.length} photos need upload (have local file, no cloudUrl)',
-    );
-
-    for (final photo in needUpload) {
-      try {
-        await uploadPhotoFile(uid, photo.id);
-        debugPrint('SyncService: uploaded missing photo ${photo.id}');
-      } catch (e) {
-        debugPrint('SyncService: upload retry failed for ${photo.id}: $e');
-      }
-    }
   }
 
   // ════════════════════════════════════════════

@@ -53,7 +53,7 @@ void main() {
     queue = _MockSyncQueue();
     pending = 0;
     when(() => queue.revisionOf(any())).thenReturn(0);
-    when(() => queue.acknowledge(any(), any())).thenAnswer((_) async => true);
+    when(() => queue.acknowledgeAll(any())).thenAnswer((_) async {});
 
     when(() => queue.pendingCount).thenAnswer((_) async => pending);
     when(() => queue.getAll()).thenAnswer(
@@ -72,7 +72,6 @@ void main() {
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
-    when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
     when(
       () => syncService.checkServerReachability(any()),
     ).thenAnswer((_) async {});
@@ -141,6 +140,9 @@ void main() {
       when(
         () => syncService.pendingPhotoUploadIds(),
       ).thenAnswer((_) async => {'photo'});
+      when(
+        () => syncService.uploadPhotoFile(any(), any()),
+      ).thenThrow(Exception('storage unavailable'));
       await pumpSettings(tester);
       expect(find.text('1 change waiting to back up'), findsOneWidget);
       expect(find.text('All data backed up'), findsNothing);
@@ -238,7 +240,7 @@ void main() {
         findsOneWidget,
       );
 
-      // Let the debounce fire; it stands down while the sync holds the lock.
+      // Let the debounce fire; it attaches to the write already in the air.
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
@@ -308,9 +310,8 @@ void main() {
       ).thenAnswer((_) async => List.filled(pending, queued));
       when(() => queue.revisionOf(queued)).thenReturn(0);
       when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
-      when(() => queue.acknowledge(queued, 0)).thenAnswer((_) async {
+      when(() => queue.acknowledgeAll({queued: 0})).thenAnswer((_) async {
         pending = 0;
-        return true;
       });
       when(
         () => syncService.pullChangedSince(any(), any()),

@@ -126,7 +126,6 @@ void main() {
     when(() => service.fullUploadEntries(any())).thenAnswer((_) async => []);
     when(() => service.pullAll(any())).thenAnswer((_) async {});
     when(() => service.pullChangedSince(any(), any())).thenAnswer((_) async {});
-    when(() => service.retryMissingUploads(any())).thenAnswer((_) async {});
     when(() => service.pushPiece(any(), any())).thenAnswer((call) async {
       final piece = await db.piecesDao.getPieceById(
         call.positionalArguments[1] as String,
@@ -210,68 +209,114 @@ void main() {
   }
 
   for (final fullSync in [false, true]) {
-    for (final duringRetry in [false, true]) {
-      test('${fullSync ? 'first' : 'incremental'} sign-in sync preserves '
-          'an edit during ${duringRetry ? 'upload retry' : 'pull'} and '
-          'repays its expired debounce', () async {
-        if (fullSync) {
-          when(
-            () => service.getLastPulledAt(any()),
-          ).thenAnswer((_) async => null);
-        }
-        final entered = Completer<void>();
-        final release = Completer<void>();
-        Future<void> stall() async {
-          entered.complete();
-          await release.future;
-        }
+    test('${fullSync ? 'first' : 'incremental'} sign-in sync preserves '
+        'an edit during pull and repays its expired debounce', () async {
+      if (fullSync) {
+        when(
+          () => service.getLastPulledAt(any()),
+        ).thenAnswer((_) async => null);
+      }
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      Future<void> stall() async {
+        entered.complete();
+        await release.future;
+      }
 
-        if (duringRetry) {
-          when(
-            () => service.retryMissingUploads(any()),
-          ).thenAnswer((_) => stall());
-        } else if (fullSync) {
-          when(() => service.pullAll(any())).thenAnswer((_) => stall());
-        } else {
-          when(
-            () => service.pullChangedSince(any(), any()),
-          ).thenAnswer((_) => stall());
-        }
-        await writer.updateFields('p1', title: 'before sync');
-        signIn();
-        await entered.future;
-        expect(
-          await queue.pendingCount,
-          0,
-          reason: 'only the original queue snapshot has been drained',
-        );
+      if (fullSync) {
+        when(() => service.pullAll(any())).thenAnswer((_) => stall());
+      } else {
+        when(
+          () => service.pullChangedSince(any(), any()),
+        ).thenAnswer((_) => stall());
+      }
+      await writer.updateFields('p1', title: 'before sync');
+      signIn();
+      await entered.future;
+      expect(
+        await queue.pendingCount,
+        0,
+        reason: 'only the original queue snapshot has been drained',
+      );
 
-        await writer.updateFields('p1', title: 'edited during sync');
-        clock.fire();
-        await Future<void>.delayed(Duration.zero);
-        expect(await queue.pendingCount, 1);
-        final finished = waitForState((s) => s.status == SyncStatus.idle);
-        release.complete();
-        await finished;
+      await writer.updateFields('p1', title: 'edited during sync');
+      clock.fire();
+      await Future<void>.delayed(Duration.zero);
+      expect(await queue.pendingCount, 1);
+      final finished = waitForState((s) => s.status == SyncStatus.idle);
+      release.complete();
+      await finished;
 
-        expect(
-          (await SyncQueue().getAll()).single.entityId,
-          'p1',
-          reason: 'the unacknowledged edit must survive in persisted storage',
-        );
-        expect(container.read(syncStateProvider).pendingCount, 1);
-        final drained = waitForState((s) => s.pendingCount == 0);
-        clock.fire();
-        await drained;
-        expect(
-          pushedTitles,
-          ['before sync', 'edited during sync'],
-          reason: 'both full and incremental sync drain the durable queue',
-        );
-        expect(await queue.pendingCount, 0);
-        expect(clock.timer!.isActive, isFalse);
+      expect(
+        (await SyncQueue().getAll()).single.entityId,
+        'p1',
+        reason: 'the unacknowledged edit must survive in persisted storage',
+      );
+      expect(container.read(syncStateProvider).pendingCount, 1);
+      final drained = waitForState((s) => s.pendingCount == 0);
+      clock.fire();
+      await drained;
+      expect(
+        pushedTitles,
+        ['before sync', 'edited during sync'],
+        reason: 'both full and incremental sync drain the durable queue',
+      );
+      expect(await queue.pendingCount, 0);
+      expect(clock.timer!.isActive, isFalse);
+    });
+  }
+
+  for (final fullSync in [false, true]) {
+    test('${fullSync ? 'first' : 'incremental'} sign-in sync retries a photo '
+        'upload without spinning or holding back a later edit', () async {
+      if (fullSync) {
+        when(
+          () => service.getLastPulledAt(any()),
+        ).thenAnswer((_) async => null);
+      }
+      var pendingPhotos = {'photo-1'};
+      when(
+        () => service.pendingPhotoUploadIds(),
+      ).thenAnswer((_) async => {...pendingPhotos});
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      when(() => service.uploadPhotoFile('user-1', 'photo-1')).thenAnswer((
+        _,
+      ) async {
+        entered.complete();
+        await release.future;
+        pendingPhotos = {};
       });
-    }
+
+      signIn();
+      await entered.future;
+      await settle();
+      expect(
+        container.read(syncStateProvider).status,
+        SyncStatus.idle,
+        reason: 'a Storage retry awaiting the server must not spin the tile',
+      );
+      expect(container.read(syncStateProvider).pendingCount, 1);
+      verifyNever(() => service.pullAll(any()));
+      verifyNever(() => service.pullChangedSince(any(), any()));
+
+      await writer.updateFields('p1', title: 'edited during retry');
+      clock.fire();
+      await waitForQueueCount(0);
+      expect(
+        pushedTitles,
+        ['edited during retry'],
+        reason: 'the edit is delivered while the upload is still in the air',
+      );
+
+      final synced = waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+      release.complete();
+      await synced;
+      expect(container.read(syncStateProvider).pendingCount, 0);
+      verify(() => service.uploadPhotoFile('user-1', 'photo-1')).called(1);
+    });
   }
 
   test(
@@ -406,7 +451,7 @@ void main() {
     );
   });
 
-  test('an edit during a queue drain gets a subsequent drain', () async {
+  test('a later drain sends an unrelated edit past a held push', () async {
     signIn();
     await waitForState(
       (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
@@ -430,14 +475,21 @@ void main() {
     await entered.future;
     await writer.updateFields('p2', title: 'second drain');
     clock.fire();
-    await Future<void>.delayed(Duration.zero);
-    final finished = waitForState((s) => s.pendingCount == 1);
-    release.complete();
-    await finished;
+    await settle();
+    expect(pushedTitles, [
+      'first drain',
+      'second drain',
+    ], reason: 'an unrelated entity does not wait behind a held push');
+    expect(clock.timer!.isActive, isFalse);
+
     final drained = waitForState((s) => s.pendingCount == 0);
-    clock.fire();
+    release.complete();
     await drained;
-    expect(pushedTitles, ['first drain', 'second drain']);
+    expect(
+      pushedTitles,
+      ['first drain', 'second drain'],
+      reason: 'the second drain attached to the held push, never resent it',
+    );
     expect(await queue.pendingCount, 0);
   });
 

@@ -55,11 +55,15 @@ class _PushOutcome {
   final Object? error;
   final bool acknowledgeQueueEntry;
 
+  /// The flight that delivered [entry], or null when none did.
+  final _InFlightPush? flight;
+
   const _PushOutcome({
     required this.entry,
     required this.revision,
     this.error,
     required this.acknowledgeQueueEntry,
+    this.flight,
   });
 }
 
@@ -221,9 +225,22 @@ class SyncNotifier extends StateNotifier<SyncState> {
   final Ref _ref;
   final SyncQueue _queue;
   final SyncService _syncService;
+
+  /// Held only while a run changes local state — staging and dispatching the
+  /// queue, or pulling — never while a write awaits server acknowledgement.
   bool _syncing = false;
   bool _wiping = false;
+
+  /// The one live push per operation and revision. A drain that reaches an
+  /// entry already here attaches to it, and a newer revision waits behind
+  /// it. A delivered flight stays until its drain has retired the entry from
+  /// the queue, so an overlapping drain cannot send that revision twice.
   final Map<_FlightKey, _InFlightPush> _inFlightPushes = {};
+
+  /// Every dispatched drain whose writes have not all settled. The pull waits
+  /// for these, because it would read an unacknowledged write's pending server
+  /// timestamps as missing.
+  final Set<Future<Object?>> _outstandingDrains = {};
 
   /// True while a sync that started *before* a wipe is still running. It can
   /// still be inserting rows and downloading photos behind the delete, so the
@@ -345,40 +362,36 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
     final auth = _ref.read(authProvider);
     if (!auth.isSignedIn || auth.uid == null) return;
+    final uid = auth.uid!;
 
     _syncing = true;
+    Future<Object?>? acknowledged;
     try {
-      if (await _claimOrBlock(auth.uid!)) return;
-      await _syncService.checkServerReachability(auth.uid!);
+      if (await _claimOrBlock(uid)) return;
+      await _syncService.checkServerReachability(uid);
       state = state.copyWith(status: SyncStatus.syncing);
-      final drainFailure = await _processQueueInternal(
-        auth.uid!,
-        onStaged: _publishWaitingState,
-      );
-      await _refreshPendingCount();
-      if (drainFailure == null && !_syncOwed) {
-        // A successful drain resolves the previous failure, but it does not
-        // move Last synced. That promise requires the captured pushes, the
-        // authoritative pull and required photo metadata to all succeed.
-        state = state.copyWith(status: SyncStatus.idle);
-      } else if (drainFailure != null) {
-        state = state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: _failureReason(drainFailure),
-        );
-      }
+      acknowledged = _dispatch(uid, await _queue.getAll());
     } catch (e) {
-      debugPrint('SyncNotifier: push failed: $e');
-      await _refreshPendingCount();
-      state = state.copyWith(
-        status: SyncStatus.error,
-        errorMessage: _failureReason(e),
-      );
+      await _publishFailure(e);
     } finally {
-      _staleSyncInFlight = false;
-      _publishStaleSyncBlockingWipe(false);
-      _syncing = false;
-      _rescheduleOwedQueue();
+      _releaseSyncing();
+    }
+    if (acknowledged != null) {
+      final drainFailure = await acknowledged;
+      await _refreshPendingCount();
+      if (_sessionIs(uid)) {
+        if (drainFailure != null) {
+          state = state.copyWith(
+            status: SyncStatus.error,
+            errorMessage: _failureReason(drainFailure),
+          );
+        } else if (!_syncing && !_syncOwed) {
+          // A successful drain resolves the previous failure, but it does not
+          // move Last synced. That promise requires the captured pushes, the
+          // authoritative pull and required photo metadata to all succeed.
+          state = state.copyWith(status: SyncStatus.idle);
+        }
+      }
     }
     await _payOwedSync();
   }
@@ -416,50 +429,85 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _syncing = true;
 
     final uid = auth.uid!;
+    DateTime? lastPulled;
+    Future<Object?>? acknowledged;
     try {
       if (await _claimOrBlock(uid)) return;
-      final lastPulled = forceFullSync
+      lastPulled = forceFullSync
           ? null
           : await _syncService.getLastPulledAt(uid);
-      Object? drainFailure;
 
       if (lastPulled == null) {
         // Building and persisting the snapshot is local work. Do it before the
         // reachability read so a first sync attempted offline still shows all
         // work waiting and survives process death.
-        for (final entry in await _syncService.fullUploadEntries(uid)) {
-          await _queue.enqueue(entry);
-        }
+        await _queue.enqueueAll(await _syncService.fullUploadEntries(uid));
         await _refreshPendingCount();
       }
 
       await _syncService.checkServerReachability(uid);
       state = state.copyWith(status: SyncStatus.syncing);
 
-      if (lastPulled == null) {
-        // First/forced sync is expressed as ordinary durable queue work. This
-        // removes the second, unbounded push path and gives full uploads the
-        // same revision and single-flight guarantees as incremental edits.
-        drainFailure = await _processQueueInternal(
-          uid,
-          onStaged: _publishWaitingState,
+      // A photo file an earlier attempt could not upload is retried from its
+      // local row, which is its durable record, through the same single-flight
+      // lanes as the queue rather than holding the sync while Storage retries.
+      final dispatched = {...await _queue.getAll()};
+      for (final photoId in await _syncService.pendingPhotoUploadIds()) {
+        dispatched.add(
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: photoId,
+          ),
         );
-        await _refreshPendingCount();
-        state = state.copyWith(status: SyncStatus.syncing);
+      }
+      acknowledged = _dispatch(uid, dispatched);
+    } catch (e) {
+      await _publishFailure(e);
+    } finally {
+      _releaseSyncing();
+    }
+    if (acknowledged != null) {
+      await _pullOnceSettled(
+        uid,
+        lastPulled,
+        await acknowledged,
+        forceFullSync: forceFullSync,
+      );
+    }
+    await _payOwedSync();
+  }
+
+  /// The authoritative pull and the verdict on the whole sync, once every
+  /// dispatched write has settled — this run's and those of any drain that
+  /// overlapped it, whose pending server timestamps the pull would read as
+  /// missing. It takes [_syncing] again because it writes local rows, which a
+  /// wipe waits on; a run that finds it held owes the sync instead.
+  Future<void> _pullOnceSettled(
+    String uid,
+    DateTime? lastPulled,
+    Object? drainFailure, {
+    required bool forceFullSync,
+  }) async {
+    while (_outstandingDrains.isNotEmpty) {
+      await Future.wait(_outstandingDrains.toList());
+    }
+    if (!_sessionIs(uid)) return;
+    if (_syncing || _wiping) {
+      _syncOwed = true;
+      _owedSyncForcesFull = _owedSyncForcesFull || forceFullSync;
+      return;
+    }
+    _syncing = true;
+    try {
+      if (await _claimOrBlock(uid)) return;
+      await _refreshPendingCount();
+      state = state.copyWith(status: SyncStatus.syncing);
+      if (lastPulled == null) {
         await _syncService.pullAll(uid);
       } else {
-        // Incremental: process push queue, then pull changes
-        drainFailure = await _processQueueInternal(
-          uid,
-          onStaged: _publishWaitingState,
-        );
-        await _refreshPendingCount();
-        state = state.copyWith(status: SyncStatus.syncing);
         await _syncService.pullChangedSince(uid, lastPulled);
       }
 
-      // Retry uploading photos that have local files but no cloudUrl
-      await _syncService.retryMissingUploads(uid);
       final pendingPhotos = await _syncService.pendingPhotoUploadIds();
       final pendingCount = await _pendingCount();
       if (drainFailure == null && pendingPhotos.isEmpty) {
@@ -483,51 +531,56 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
       }
     } catch (e) {
-      debugPrint('SyncNotifier: sync failed: $e');
-      await _refreshPendingCount();
-      state = state.copyWith(
-        status: SyncStatus.error,
-        errorMessage: _failureReason(e),
-      );
+      await _publishFailure(e);
     } finally {
-      _staleSyncInFlight = false;
-      _publishStaleSyncBlockingWipe(false);
-      _syncing = false;
-      _rescheduleOwedQueue();
+      _releaseSyncing();
     }
-    await _payOwedSync();
   }
 
-  void _publishWaitingState() {
-    if (!mounted) return;
-    state = state.copyWith(status: SyncStatus.idle);
+  void _releaseSyncing() {
+    _staleSyncInFlight = false;
+    _publishStaleSyncBlockingWipe(false);
+    _syncing = false;
+    _rescheduleOwedQueue();
   }
 
-  /// Drains the push queue, and reports whether it managed to.
+  Future<void> _publishFailure(Object error) async {
+    debugPrint('SyncNotifier: sync failed: $error');
+    await _refreshPendingCount();
+    state = state.copyWith(
+      status: SyncStatus.error,
+      errorMessage: _failureReason(error),
+    );
+  }
+
+  /// Whether [uid] still holds the session a run started under. A run whose
+  /// session ended while its writes were in the air publishes nothing and
+  /// pulls nothing.
+  bool _sessionIs(String uid) => mounted && _ref.read(authProvider).uid == uid;
+
+  /// Starts every entry in its entity lane and returns without waiting on
+  /// the server, so the caller can release [_syncing]. Anything it started
+  /// stops the spinner: the durable queue keeps that work visible as waiting
+  /// to back up, without pretending the writes reached the cloud.
   ///
-  /// Returns `null` when every entry it was responsible for reached the
-  /// cloud, and otherwise the error from the last entry that exhausted its
-  /// retries. That answer is what lets [_pushQueue] and [syncNow] publish the
-  /// current failure, and withhold the `lastSyncedAt` stamp, without inferring
-  /// anything from a status left by an earlier run.
+  /// The returned future settles once each entry has been acknowledged and
+  /// retired from the queue or has exhausted its retries: `null` when every
+  /// one reached the cloud, and otherwise the last failure. That answer is
+  /// what lets a run publish its own outcome, and withhold the `lastSyncedAt`
+  /// stamp, without inferring anything from a status left by an earlier run.
   ///
-  /// Two outcomes deliberately do not count as a failed drain, because the
-  /// work remains visible as pending: a photo file upload, counted from its
-  /// local row and picked up by [SyncService.retryMissingUploads]; and an entry
-  /// that pushed successfully but was edited again while in flight, which
-  /// stays queued at its newer revision and is sent by the drain that edit
+  /// Operations for one logical entity stay ordered; independent entities do
+  /// not sit behind a slow deletion or write. Each lane swallows the previous
+  /// outcome before starting its next entry so one failed operation does not
+  /// prevent later durable work from being attempted.
+  ///
+  /// Two outcomes deliberately do not count as a failure, because the work
+  /// remains visible as pending: a photo file upload, counted from its local
+  /// row and retried from there by the next [syncNow]; and an entry that
+  /// pushed successfully but was edited again while in flight, which stays
+  /// queued at its newer revision and is sent by the drain that edit
   /// scheduled.
-  Future<Object?> _processQueueInternal(
-    String uid, {
-    void Function()? onStaged,
-  }) async {
-    final entries = await _queue.getAll();
-    if (entries.isEmpty) return null;
-
-    // Operations for one logical entity stay ordered; independent entities do
-    // not sit behind a slow deletion or write. Each lane swallows the previous
-    // outcome before starting its next entry so one failed operation does not
-    // prevent later durable work from being attempted.
+  Future<Object?> _dispatch(String uid, Iterable<SyncQueueEntry> entries) {
     final laneTails = <String, Future<void>>{};
     final outcomes = <Future<_PushOutcome>>[];
     for (final entry in entries) {
@@ -537,20 +590,40 @@ class SyncNotifier extends StateNotifier<SyncState> {
       outcomes.add(outcome);
       laneTails[lane] = outcome.then<void>((_) {}, onError: (_) {});
     }
+    if (outcomes.isEmpty) return Future<Object?>.value();
+    if (mounted) state = state.copyWith(status: SyncStatus.idle);
 
-    // Every first operation is now scheduled in its lane. The queue remains
-    // durable while backend acknowledgements are pending, so the user-facing
-    // state can stop spinning without pretending the writes reached cloud.
-    onStaged?.call();
+    final settled = _settle(uid, outcomes);
+    _outstandingDrains.add(settled);
+    unawaited(settled.whenComplete(() => _outstandingDrains.remove(settled)));
+    return settled;
+  }
 
+  /// Retires every delivered entry in one queue write, then lets go of the
+  /// flights that delivered them.
+  Future<Object?> _settle(
+    String uid,
+    List<Future<_PushOutcome>> outcomes,
+  ) async {
     final completed = await Future.wait(outcomes);
     Object? drainFailure;
-    // Serialize preference mutations after the remote work. Concurrent
-    // read/modify/write removals can otherwise resurrect an acknowledged row.
     for (final outcome in completed) {
       if (outcome.error != null) drainFailure = outcome.error;
-      if (outcome.acknowledgeQueueEntry) {
-        await _queue.acknowledge(outcome.entry, outcome.revision);
+    }
+    try {
+      await _queue.acknowledgeAll({
+        for (final outcome in completed)
+          if (outcome.acknowledgeQueueEntry) outcome.entry: outcome.revision,
+      });
+    } catch (e) {
+      // Whatever could not be retired stays queued and is sent again.
+      drainFailure = e;
+    }
+    for (final outcome in completed) {
+      final key = _FlightKey(uid, outcome.entry);
+      if (outcome.flight != null &&
+          identical(_inFlightPushes[key], outcome.flight)) {
+        _inFlightPushes.remove(key);
       }
     }
     return drainFailure;
@@ -577,26 +650,35 @@ class SyncNotifier extends StateNotifier<SyncState> {
   ) async {
     final revision = _queue.revisionOf(entry);
     if (entry.operation == SyncOperation.pushPhotoFile) {
+      final flight = _singleFlightPush(uid, entry, revision);
       try {
-        await _singleFlightPush(uid, entry, revision);
+        await flight.acknowledgement;
       } catch (e) {
         debugPrint('SyncNotifier: photo file upload failed (best-effort): $e');
+        return _PushOutcome(
+          entry: entry,
+          revision: revision,
+          acknowledgeQueueEntry: true,
+        );
       }
       return _PushOutcome(
         entry: entry,
         revision: revision,
         acknowledgeQueueEntry: true,
+        flight: flight,
       );
     }
 
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
+      final flight = _singleFlightPush(uid, entry, revision);
       try {
-        await _singleFlightPush(uid, entry, revision);
+        await flight.acknowledgement;
         return _PushOutcome(
           entry: entry,
           revision: revision,
           acknowledgeQueueEntry: true,
+          flight: flight,
         );
       } catch (e) {
         debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
@@ -614,31 +696,39 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
   }
 
-  Future<void> _singleFlightPush(
+  /// Starts [entry]'s push at [revision], or returns the flight already
+  /// carrying that revision: an entry is never sent again while the future
+  /// that sent it is alive. A different revision waits for the one in the
+  /// air, because that acknowledgement cannot speak for data edited after its
+  /// push captured its revision, and the two writes must not overlap.
+  _InFlightPush _singleFlightPush(
     String uid,
     SyncQueueEntry entry,
     int revision,
   ) {
     final key = _FlightKey(uid, entry);
     final existing = _inFlightPushes[key];
-    if (existing != null) {
-      if (existing.revision == revision) return existing.acknowledgement;
-      // The earlier acknowledgement cannot speak for data edited after that
-      // push captured its revision. Serialize the newer revision behind it.
-      return existing.acknowledgement.then(
-        (_) => _singleFlightPush(uid, entry, revision),
-      );
-    }
+    if (existing != null && existing.revision == revision) return existing;
 
-    late final Future<void> acknowledgement;
-    acknowledgement = _processEntry(uid, entry).whenComplete(() {
-      final current = _inFlightPushes[key];
-      if (identical(current?.acknowledgement, acknowledgement)) {
-        _inFlightPushes.remove(key);
-      }
-    });
-    _inFlightPushes[key] = _InFlightPush(revision, acknowledgement);
-    return acknowledgement;
+    final predecessor =
+        existing?.acknowledgement.then<void>((_) {}, onError: (_) {}) ??
+        Future<void>.value();
+    final flight = _InFlightPush(
+      revision,
+      predecessor.then((_) => _processEntry(uid, entry)),
+    );
+    _inFlightPushes[key] = flight;
+    // A failed flight leaves at once so a retry can start a fresh one; a
+    // delivered one stays until its drain has retired the entry.
+    flight.acknowledgement.then<void>(
+      (_) {},
+      onError: (_) {
+        if (identical(_inFlightPushes[key], flight)) {
+          _inFlightPushes.remove(key);
+        }
+      },
+    );
+    return flight;
   }
 
   Future<void> _processEntry(String uid, SyncQueueEntry entry) async {
@@ -1015,7 +1105,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   Future<DeleteAllDataResult> deleteAllData() async {
-    if (_syncing || _wiping) {
+    // A write still waiting on the server would land after the cloud delete
+    // and put data back into the tree being deleted.
+    if (_syncing || _wiping || _outstandingDrains.isNotEmpty) {
       debugPrint('SyncNotifier: account deletion refused, the device is busy');
       return DeleteAllDataResult.busy;
     }

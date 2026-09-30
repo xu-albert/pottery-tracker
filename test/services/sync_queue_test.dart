@@ -111,6 +111,44 @@ void main() {
     );
   });
 
+  group('SyncQueue enqueueAll', () {
+    test(
+      'merges a batch into the queue in order, stamping each entry',
+      () async {
+        final queue = SyncQueue();
+        const piece = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
+        await queue.enqueue(piece);
+        final before = queue.revisionOf(piece);
+
+        await queue.enqueueAll(const [
+          SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'ph1'),
+          SyncQueueEntry(
+            operation: SyncOperation.pushPiece,
+            entityId: 'p1',
+            changedFields: ['notes'],
+          ),
+          SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'ph1'),
+        ]);
+
+        final all = await SyncQueue().getAll();
+        expect(all.map((e) => '${e.operation.name}:${e.entityId}'), [
+          'pushPiece:p1',
+          'pushPhoto:ph1',
+        ]);
+        expect(all.first.changedFields!.toSet(), {'title', 'notes'});
+        expect(
+          queue.revisionOf(piece),
+          isNot(before),
+          reason: 'a push dispatched before the batch cannot retire it',
+        );
+      },
+    );
+  });
+
   group('SyncQueue getAll / remove / clear / pendingCount', () {
     test('returns empty list when nothing enqueued', () async {
       final queue = SyncQueue();
@@ -151,19 +189,36 @@ void main() {
       expect(all, isEmpty);
     });
 
-    test('acknowledge removes only the revision that was dispatched', () async {
-      final queue = SyncQueue();
-      const entry = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-        changedFields: ['title'],
-      );
-      await queue.enqueue(entry);
-      final dispatchedRevision = queue.revisionOf(entry);
+    test(
+      'acknowledgeAll retires only entries still at their dispatched revision',
+      () async {
+        final queue = SyncQueue();
+        const delivered = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
+        const revised = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 't1',
+        );
+        await queue.enqueueAll([delivered, revised]);
+        final dispatched = {
+          delivered: queue.revisionOf(delivered),
+          revised: queue.revisionOf(revised),
+        };
+        await queue.enqueue(revised);
 
-      expect(await queue.acknowledge(entry, dispatchedRevision), isTrue);
-      expect(await queue.getAll(), isEmpty);
-    });
+        await queue.acknowledgeAll(dispatched);
+
+        expect(await queue.getAll(), [revised]);
+        expect(
+          await SyncQueue().getAll(),
+          [revised],
+          reason: 'the retirement is persisted, not only held in memory',
+        );
+      },
+    );
 
     test(
       'an enqueue racing acknowledgement keeps the newer revision',
@@ -183,10 +238,10 @@ void main() {
         final dispatchedRevision = queue.revisionOf(first);
 
         final enqueue = queue.enqueue(newer);
-        final acknowledged = queue.acknowledge(first, dispatchedRevision);
+        final acknowledged = queue.acknowledgeAll({first: dispatchedRevision});
         await enqueue;
+        await acknowledged;
 
-        expect(await acknowledged, isFalse);
         final remaining = await queue.getAll();
         expect(remaining, hasLength(1));
         expect(remaining.single.changedFields!.toSet(), {'title', 'notes'});

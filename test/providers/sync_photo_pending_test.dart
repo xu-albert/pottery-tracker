@@ -17,11 +17,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _Service extends SyncService {
   _Service(super.db, super.firestore, super.storage);
   bool failUpload = true;
-  Completer<void>? _retryFinished;
+  Completer<void>? _pulled;
 
-  Future<void> expectRetry() {
-    _retryFinished = Completer<void>();
-    return _retryFinished!.future;
+  /// Completes once the next pull has finished, which a sync only starts
+  /// after its photo uploads have settled.
+  Future<void> expectPull() {
+    _pulled = Completer<void>();
+    return _pulled!.future;
+  }
+
+  void _notifyPulled() {
+    _pulled?.complete();
+    _pulled = null;
   }
 
   @override
@@ -31,10 +38,15 @@ class _Service extends SyncService {
   }
 
   @override
-  Future<void> retryMissingUploads(String uid) async {
-    await super.retryMissingUploads(uid);
-    _retryFinished?.complete();
-    _retryFinished = null;
+  Future<void> pullAll(String uid) async {
+    await super.pullAll(uid);
+    _notifyPulled();
+  }
+
+  @override
+  Future<void> pullChangedSince(String uid, DateTime since) async {
+    await super.pullChangedSince(uid, since);
+    _notifyPulled();
   }
 }
 
@@ -105,13 +117,16 @@ void main() {
       });
       Future<void> signIn() async {
         container.read(syncStateProvider.notifier);
-        final retryFinished = service.expectRetry();
+        final pulled = service.expectPull();
         container.read(authProvider.notifier).state = const AuthState(
           status: AuthStatus.authenticated,
           uid: 'user-1',
         );
-        await retryFinished.timeout(const Duration(seconds: 5));
-        await Future<void>.delayed(Duration.zero);
+        await pulled.timeout(const Duration(seconds: 5));
+        await _waitUntil(
+          () async =>
+              container.read(syncStateProvider).status != SyncStatus.syncing,
+        );
       }
 
       await signIn();
