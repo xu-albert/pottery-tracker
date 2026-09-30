@@ -493,6 +493,46 @@ void main() {
     expect(await queue.pendingCount, 0);
   });
 
+  test(
+    'a delivered entry is retired while a sibling lane is still held',
+    () async {
+      signIn();
+      await waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      when(() => service.pushPiece('user-1', 'p1')).thenAnswer((_) async {
+        entered.complete();
+        await release.future;
+      });
+      await db.piecesDao.insertPiece(
+        PiecesCompanion.insert(
+          id: 'p2',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      );
+      await writer.updateFields('p1', title: 'held');
+      await writer.updateFields('p2', title: 'delivered');
+      clock.fire();
+      await entered.future;
+
+      await waitForQueueCount(1);
+      expect(
+        (await SyncQueue().getAll()).single.entityId,
+        'p1',
+        reason: 'p2 reached the cloud, so a relaunch must not send it again',
+      );
+      await waitForState((s) => s.pendingCount == 1);
+
+      final drained = waitForState((s) => s.pendingCount == 0);
+      release.complete();
+      await drained;
+      expect(await queue.pendingCount, 0);
+    },
+  );
+
   test('an edit during the in-flight push of the same entity is not '
       'acknowledged by that push', () async {
     signIn();

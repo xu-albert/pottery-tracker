@@ -90,6 +90,8 @@ class SyncQueue {
   final Map<SyncQueueEntry, int> _revisions = {};
   int _lastRevision = 0;
   Future<void> _mutationTail = Future<void>.value();
+  Map<SyncQueueEntry, int> _unretired = {};
+  Future<void>? _retiring;
 
   /// The revision [entry] holds right now. A drain captures this before it
   /// pushes and may only acknowledge the entry while it still reads the same.
@@ -145,16 +147,24 @@ class SyncQueue {
   }
 
   /// Removes each entry of [dispatched] that no enqueue has revised since it
-  /// captured the paired revision, with one read and one write.
+  /// captured the paired revision.
+  ///
+  /// Calls made while earlier queue work is still pending join one batch and
+  /// receive the same future, so entries retired one by one as their pushes
+  /// land still cost one read and one write per batch.
   ///
   /// The check and persisted mutation share the queue's mutation lane. An
   /// enqueue stamps its revision before joining that lane, so even an edit
   /// arriving just before this callback runs prevents the older push from
   /// acknowledging it.
-  Future<void> acknowledgeAll(Map<SyncQueueEntry, int> dispatched) => _mutate(
-    () async {
+  Future<void> acknowledgeAll(Map<SyncQueueEntry, int> dispatched) {
+    _unretired.addAll(dispatched);
+    return _retiring ??= _mutate(() async {
+      final batch = _unretired;
+      _unretired = {};
+      _retiring = null;
       final delivered = {
-        for (final MapEntry(key: entry, value: revision) in dispatched.entries)
+        for (final MapEntry(key: entry, value: revision) in batch.entries)
           if (revisionOf(entry) == revision) entry,
       };
       if (delivered.isEmpty) return;
@@ -162,8 +172,8 @@ class SyncQueue {
       final entries = await getAll();
       entries.removeWhere(delivered.contains);
       await _save(entries);
-    },
-  );
+    });
+  }
 
   Future<T> _mutate<T>(Future<T> Function() mutation) {
     final result = _mutationTail.then((_) => mutation());

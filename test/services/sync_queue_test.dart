@@ -221,6 +221,39 @@ void main() {
     );
 
     test(
+      'acknowledgements made while queue work is pending share one batch',
+      () async {
+        final queue = SyncQueue();
+        const first = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        );
+        const second = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 't1',
+        );
+        const kept = SyncQueueEntry(
+          operation: SyncOperation.pushClay,
+          entityId: 'c1',
+        );
+        await queue.enqueueAll([first, second, kept]);
+
+        final retirement = queue.acknowledgeAll({
+          first: queue.revisionOf(first),
+        });
+        final joined = queue.acknowledgeAll({second: queue.revisionOf(second)});
+        expect(
+          joined,
+          same(retirement),
+          reason: 'the second retirement joins the batch the first started',
+        );
+        await joined;
+
+        expect(await SyncQueue().getAll(), [kept]);
+      },
+    );
+
+    test(
       'an enqueue racing acknowledgement keeps the newer revision',
       () async {
         final queue = SyncQueue();

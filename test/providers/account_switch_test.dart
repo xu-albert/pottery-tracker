@@ -720,6 +720,100 @@ void main() {
     },
   );
 
+  test("a write the previous account left in the air does not hold the next "
+      "account's sync", () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    await notifier.syncNow(forceFullSync: true);
+
+    // A's edit is sent, and the link drops before the server acknowledges it.
+    final gate = Completer<void>();
+    syncService.pushPieceGate = gate;
+    await container.read(syncTriggerProvider).afterPieceWrite('piece-a');
+    await pumpUntil(() => syncService.pushPieceIsStalled);
+    expect(syncService.pushPieceIsStalled, isTrue);
+
+    await notifier.signOutAndWipeLocalData(() async {});
+    auth.set(const AuthState(status: AuthStatus.unauthenticated));
+    await settle();
+
+    auth.set(signedInAs(uidB));
+    await pumpUntil(
+      () => container.read(syncStateProvider).lastSyncedAt != null,
+    );
+
+    final state = container.read(syncStateProvider);
+    expect(
+      state.status,
+      SyncStatus.idle,
+      reason: "B's sync must not spin behind a write that belongs to A",
+    );
+    expect(state.lastSyncedAt, isNotNull);
+    expect(
+      await syncService.getLastPulledAt(uidB),
+      isNotNull,
+      reason: "B's library was pulled without waiting for A's write",
+    );
+    expect(syncService.pushPieceIsStalled, isTrue);
+
+    syncService.pushPieceGate = null;
+    gate.complete();
+    await settle();
+  });
+
+  test('a lane from a session that has ended starts no further push', () async {
+    await insertPieceWithPhoto('piece-a', "A's mug");
+    final (glaze, _) = await db.materialsDao.findOrCreateGlaze('Celadon');
+    await db.materialsDao.setGlazesForPiece('piece-a', [glaze.id]);
+    await notifier.syncNow(forceFullSync: true);
+    Future<int> cloudGlazeLinks() async =>
+        (await firestore.collection('users/$uidA/pieceGlazes').get())
+            .docs
+            .length;
+    expect(await cloudGlazeLinks(), 1);
+
+    // An edit to the piece and its glazes, one lane: the piece push is sent
+    // and left unacknowledged when the link drops, so the glazes wait.
+    final gate = Completer<void>();
+    syncService.pushPieceGate = gate;
+    await queue.enqueueAll(const [
+      SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'piece-a'),
+      SyncQueueEntry(
+        operation: SyncOperation.pushPieceGlazes,
+        entityId: 'piece-a',
+      ),
+    ]);
+    notifier.scheduleProcessQueue();
+    await pumpUntil(() => syncService.pushPieceIsStalled);
+    expect(syncService.pushPieceIsStalled, isTrue);
+
+    // A signs out, which wipes the device, and straight back in. The new
+    // session's first sync is held before it pulls A's library back down.
+    await notifier.signOutAndWipeLocalData(() async {});
+    auth.set(const AuthState(status: AuthStatus.unauthenticated));
+    await settle();
+    final snapshotGate = syncService.fullSnapshotGate = Completer<void>();
+    final entered = syncService.fullSnapshotEntered = Completer<void>();
+    auth.set(signedInAs(uidA));
+    await entered.future;
+
+    // Firestore resumes A's writes, and the held push is acknowledged.
+    syncService.pushPieceGate = null;
+    gate.complete();
+    await settle();
+
+    expect(
+      await cloudGlazeLinks(),
+      1,
+      reason:
+          "the ended session's lane read the wiped device's empty glaze list; "
+          "sending it would have deleted what A backed up",
+    );
+
+    snapshotGate.complete();
+    await settle();
+    expect(await db.materialsDao.getGlazesForPiece('piece-a'), hasLength(1));
+  });
+
   group('the lock cannot be escaped', () {
     // Four ways the lock silently released when it was derived from the live
     // sync status instead of the persisted owner stamp. Each one put a refused
@@ -1708,10 +1802,21 @@ class _FlakyWipeSyncService extends SyncService {
     return super.fullUploadEntries(uid);
   }
 
+  /// Holds every piece push once its write is sent, standing in for a write
+  /// whose acknowledgement is still in the air when the link drops.
+  Completer<void>? pushPieceGate;
+  bool pushPieceIsStalled = false;
+
   @override
-  Future<void> pushPiece(String uid, String pieceId) {
+  Future<void> pushPiece(String uid, String pieceId) async {
     pushLog.add('pushPiece:$pieceId');
-    return super.pushPiece(uid, pieceId);
+    await super.pushPiece(uid, pieceId);
+    final gate = pushPieceGate;
+    if (gate != null) {
+      pushPieceIsStalled = true;
+      await gate.future;
+      pushPieceIsStalled = false;
+    }
   }
 }
 

@@ -946,6 +946,70 @@ void main() {
       verifyNever(() => s.queue.acknowledgeAll(any(that: contains(entry))));
     });
 
+    test(
+      "a failure in a drain that overlapped the sync is the sync's too",
+      () async {
+        final clock = _StubSyncClock();
+        final s = _setup(auth: _signedIn, clock: clock);
+        addTearDown(s.container.dispose);
+        await _settle();
+        final lastSynced = s.container.read(syncStateProvider).lastSyncedAt;
+        expect(lastSynced, isNotNull);
+
+        const captured = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'piece-1',
+        );
+        const later = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 'tag-1',
+        );
+        final entries = <SyncQueueEntry>[captured];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        when(() => s.syncService.pushPiece('user-1', 'piece-1')).thenAnswer((
+          _,
+        ) async {
+          entered.complete();
+          await release.future;
+        });
+        when(
+          () => s.syncService.pushTag('user-1', 'tag-1'),
+        ).thenThrow(Exception('tag push failed'));
+        clock.instant = clock.instant.add(const Duration(minutes: 5));
+
+        final sync = s.notifier.syncNow();
+        await entered.future;
+
+        // An edit made while the sync's own push is in the air drains on its
+        // own, and its push keeps failing.
+        entries.add(later);
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        release.complete();
+        await sync;
+
+        final state = s.container.read(syncStateProvider);
+        expect(state.status, SyncStatus.error);
+        expect(
+          state.errorMessage,
+          contains('tag push failed'),
+          reason:
+              'the sync must not erase the reason the overlapping drain gave',
+        );
+        expect(
+          state.lastSyncedAt,
+          lastSynced,
+          reason: 'the tag edit never reached the cloud',
+        );
+        expect(entries, [later]);
+      },
+    );
+
     test('a best-effort photo file failure is not a drain failure', () async {
       final clock = _StubSyncClock();
       final s = _setup(auth: _signedIn, clock: clock);
