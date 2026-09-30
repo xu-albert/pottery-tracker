@@ -666,6 +666,70 @@ void main() {
     expect(clock.timer!.isActive, isFalse);
   });
 
+  group('a forced sync that did not finish is staged again later', () {
+    late SyncNotifier notifier;
+
+    setUp(() async {
+      signIn();
+      await waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+      when(() => service.fullUploadEntries('user-1')).thenAnswer(
+        (_) async => const [
+          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+        ],
+      );
+      notifier = container.read(syncStateProvider.notifier);
+    });
+
+    Future<void> expectForcedSyncSendsSnapshot() async {
+      pushedTitles.clear();
+      clearInteractions(service);
+      await notifier.syncNow(forceFullSync: true);
+      verify(() => service.fullUploadEntries('user-1')).called(1);
+      expect(
+        pushedTitles,
+        ['original'],
+        reason: 're-upload everything has to re-upload, not only drain',
+      );
+      verify(() => service.pullAll('user-1')).called(1);
+    }
+
+    test('after the server was out of reach', () async {
+      when(
+        () => service.checkServerReachability(any()),
+      ).thenThrow(Exception('offline'));
+      await notifier.syncNow(forceFullSync: true);
+      expect(container.read(syncStateProvider).status, SyncStatus.error);
+      expect(await queue.pendingCount, 1);
+
+      // Back online, an ordinary sync delivers the staged snapshot and pulls
+      // incrementally.
+      when(
+        () => service.checkServerReachability(any()),
+      ).thenAnswer((_) async {});
+      await notifier.syncNow();
+      expect(pushedTitles, ['original']);
+      expect(await queue.pendingCount, 0);
+
+      await expectForcedSyncSendsSnapshot();
+    });
+
+    test('after its full pull failed', () async {
+      when(() => service.pullAll(any())).thenThrow(Exception('pull failed'));
+      await notifier.syncNow(forceFullSync: true);
+      expect(container.read(syncStateProvider).status, SyncStatus.error);
+      expect(pushedTitles, ['original']);
+
+      // An ordinary retry pulls incrementally, and succeeds.
+      when(() => service.pullAll(any())).thenAnswer((_) async {});
+      await notifier.syncNow();
+      expect(container.read(syncStateProvider).status, SyncStatus.idle);
+
+      await expectForcedSyncSendsSnapshot();
+    });
+  });
+
   test(
     'exhausted pushes survive sync completion without a hot retry loop',
     () async {

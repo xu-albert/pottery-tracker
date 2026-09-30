@@ -450,7 +450,9 @@ class SyncService {
   }
 
   /// Uploads the photo's file unless its row already records where it is. A
-  /// photo's file never changes once taken, so that URL is final.
+  /// photo's file never changes once taken, so that URL is final. A photo
+  /// deleted while its file was uploading gets that file deleted again, since
+  /// its piece's deletion may already have looked for it, and no URL.
   Future<void> uploadPhotoFile(String uid, String photoId) async {
     final photo = await _db.photosDao.getPhotoById(photoId);
     if (photo == null || photo.cloudUrl != null) return;
@@ -460,6 +462,12 @@ class SyncService {
     final storagePath = 'users/$uid/photos/${photo.pieceId}/$photoId.jpg';
     final ref = _storage.ref(storagePath);
     await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+    if (await _db.photosDao.getPhotoById(photoId) == null) {
+      try {
+        await ref.delete();
+      } catch (_) {}
+      return;
+    }
     final url = await ref.getDownloadURL();
 
     // A file is backed up only once its remote metadata can locate it.

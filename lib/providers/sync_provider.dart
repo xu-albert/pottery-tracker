@@ -249,11 +249,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// holds up the new session or starts another push.
   int _generation = 0;
 
-  /// The session whose full snapshot is staged and still awaits its full
-  /// pull. Until that pull, a repeated or forced tap in the same session is
-  /// already covered by it: it attaches to the snapshot's flights instead of
-  /// staging it again, and a forced request owed meanwhile is answered by that
-  /// pull rather than replayed. A new generation makes it stale by itself.
+  /// The session whose full snapshot is staged and still awaits a pull. Until
+  /// a pull of that session succeeds, a repeated or forced tap in it is
+  /// already covered by the snapshot: it attaches to the snapshot's flights
+  /// instead of staging it again, and a forced request owed meanwhile is
+  /// answered by the full pull rather than replayed. A run that fails before
+  /// dispatching drops it, since whatever it staged is still queued; a new
+  /// generation makes it stale by itself.
   _Session? _unpulledSnapshot;
 
   /// Every dispatched drain whose writes have not all settled. The pull waits
@@ -495,6 +497,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       unawaited(_dispatch(session, entries));
       dispatched = true;
     } catch (e) {
+      if (_unpulledSnapshot == session) _unpulledSnapshot = null;
       await _publishFailure(e);
     } finally {
       _releaseSyncing();
@@ -544,12 +547,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(status: SyncStatus.syncing);
       if (lastPulled == null) {
         await _syncService.pullAll(session.uid);
-        if (_unpulledSnapshot == session) {
-          _unpulledSnapshot = null;
-          _owedSyncForcesFull = false;
-        }
+        if (_unpulledSnapshot == session) _owedSyncForcesFull = false;
       } else {
         await _syncService.pullChangedSince(session.uid, lastPulled);
+      }
+      if (_unpulledSnapshot == session && !_owedSyncForcesFull) {
+        _unpulledSnapshot = null;
       }
 
       final pendingPhotos = await _syncService.pendingPhotoUploadIds();

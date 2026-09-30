@@ -76,6 +76,10 @@ class _CountingStorage extends MockFirebaseStorage {
   int uploads = 0;
   int urlLookups = 0;
 
+  /// Holds each file upload until completed; the object exists only after.
+  Completer<void>? putFileGate;
+  int putFilesHeld = 0;
+
   @override
   Reference ref([String? path]) => _CountingReference(super.ref(path), this);
 }
@@ -88,14 +92,36 @@ class _CountingReference implements Reference {
   @override
   UploadTask putFile(File file, [SettableMetadata? metadata]) {
     _storage.uploads++;
-    return _inner.putFile(file, metadata);
+    final gate = _storage.putFileGate;
+    if (gate == null) return _inner.putFile(file, metadata);
+    _storage.putFilesHeld++;
+    return _HeldUpload(
+      gate.future.then<TaskSnapshot>((_) => _inner.putFile(file, metadata)),
+    );
   }
+
+  @override
+  Future<void> delete() => _inner.delete();
 
   @override
   Future<String> getDownloadURL() {
     _storage.urlLookups++;
     return _inner.getDownloadURL();
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _HeldUpload implements UploadTask {
+  _HeldUpload(this._done);
+  final Future<TaskSnapshot> _done;
+
+  @override
+  Future<S> then<S>(
+    FutureOr<S> Function(TaskSnapshot) onValue, {
+    Function? onError,
+  }) => _done.then(onValue, onError: onError);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -245,7 +271,7 @@ void main() {
     });
   }
 
-  group('a forced sync during a photo upload', () {
+  group('a photo upload in flight', () {
     late AppDatabase db;
     late Directory dir;
     late FakeFirebaseFirestore firestore;
@@ -331,7 +357,8 @@ void main() {
       expect(remote.data()!['cloudUrl'], url);
     }
 
-    test('does not upload a photo whose retry is still uploading', () async {
+    test('a forced sync does not upload a photo whose retry is still '
+        'uploading', () async {
       await signInWithUploadHeld();
 
       final forced = container
@@ -346,31 +373,65 @@ void main() {
       await expectUploadedOnce();
     });
 
-    test(
-      'does not upload a photo delivered while it reads its snapshot',
-      () async {
-        await SyncQueue().enqueue(
-          const SyncQueueEntry(
-            operation: SyncOperation.pushPhotoFile,
-            entityId: 'photo',
-          ),
-        );
-        await signInWithUploadHeld();
+    test('a forced sync does not upload a photo delivered while it reads its '
+        'snapshot', () async {
+      await SyncQueue().enqueue(
+        const SyncQueueEntry(
+          operation: SyncOperation.pushPhotoFile,
+          entityId: 'photo',
+        ),
+      );
+      await signInWithUploadHeld();
 
-        // The snapshot reads the photo as not yet uploaded; the held upload
-        // then lands and retires its queue entry before the snapshot is staged.
-        service.afterSnapshotRead = () async {
-          service.afterSnapshotRead = null;
-          service.uploadGate!.complete();
-          await _waitUntil(() async => (await SyncQueue().getAll()).isEmpty);
-        };
-        await container
-            .read(syncStateProvider.notifier)
-            .syncNow(forceFullSync: true);
-        await settled();
+      // The snapshot reads the photo as not yet uploaded; the held upload
+      // then lands and retires its queue entry before the snapshot is staged.
+      service.afterSnapshotRead = () async {
+        service.afterSnapshotRead = null;
+        service.uploadGate!.complete();
+        await _waitUntil(() async => (await SyncQueue().getAll()).isEmpty);
+      };
+      await container
+          .read(syncStateProvider.notifier)
+          .syncNow(forceFullSync: true);
+      await settled();
 
-        await expectUploadedOnce();
-      },
-    );
+      await expectUploadedOnce();
+    });
+
+    test('a piece deleted during the upload keeps its file out of Storage '
+        'and its URL unpublished', () async {
+      service.uploadGate = null;
+      storage.putFileGate = Completer<void>();
+      container.read(authProvider.notifier).state = const AuthState(
+        status: AuthStatus.authenticated,
+        uid: 'user-1',
+      );
+      await _waitUntil(() async => storage.putFilesHeld == 1);
+
+      // The piece is deleted while its photo's file is still uploading, and
+      // that deletion reaches the cloud before the file does.
+      await db.photosDao.deletePhotosForPiece('piece');
+      await db.piecesDao.deletePiece('piece');
+      await container.read(syncTriggerProvider).afterPieceDeletion('piece', [
+        'photo',
+      ]);
+      await _waitUntil(() async => (await SyncQueue().getAll()).isEmpty);
+      final photoDoc = firestore.doc('users/user-1/photos/photo');
+      expect((await photoDoc.get()).data()!['deletedAt'], isNotNull);
+
+      storage.putFileGate!.complete();
+      await settled();
+
+      expect(
+        storage.storedFilesMap.keys,
+        isNot(contains('users/user-1/photos/piece/photo.jpg')),
+        reason: "the deleted piece's photo must not stay in Storage",
+      );
+      expect(
+        (await photoDoc.get()).data()!['cloudUrl'],
+        isNull,
+        reason: 'a deleted photo gets no URL published',
+      );
+    });
   });
 }
