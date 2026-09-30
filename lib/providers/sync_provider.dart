@@ -49,9 +49,8 @@ class SyncState {
     this.errorMessage,
   });
 
-  /// A count update keeps the current [errorMessage]. Setting a [status]
-  /// clears it unless a new one is passed, so neither a new attempt nor its
-  /// result inherits an earlier failure's reason.
+  /// Omitting [errorMessage] clears it. Callers that are only refreshing a
+  /// count must pass a still-relevant reason explicitly.
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
@@ -62,7 +61,7 @@ class SyncState {
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
-      errorMessage: errorMessage ?? (status == null ? this.errorMessage : null),
+      errorMessage: errorMessage,
     );
   }
 }
@@ -274,7 +273,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _refreshPendingCount() async {
     final count = await _pendingCount();
     if (!mounted) return;
-    state = state.copyWith(pendingCount: count);
+    final reason = state.status == SyncStatus.error ? state.errorMessage : null;
+    state = state.copyWith(pendingCount: count, errorMessage: reason);
   }
 
   String _failureReason(Object error) =>
@@ -369,6 +369,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     state = state.copyWith(status: SyncStatus.syncing);
 
     try {
+      Object? drainFailure;
       if (await _claimOrBlock(uid)) return;
 
       final lastPulled = forceFullSync
@@ -397,15 +398,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // before the pull, which would otherwise bring the deleted rows back
         // and overwrite the concurrent edits.
         //
-        // A full sync reports on itself rather than on this drain: what the
-        // drain could not push is still queued, and the refreshed
-        // `pendingCount` below is what says so on the tile.
-        await _processQueueInternal(uid);
+        // A failed drain does not fail the sync: what it could not push is
+        // still queued, and the refreshed `pendingCount` below is what says
+        // so on the tile. It does withhold the `lastSyncedAt` stamp, as the
+        // incremental drain's failure does.
+        drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullAll(uid);
       } else {
         // Incremental: process push queue, then pull changes
-        await _processQueueInternal(uid);
+        drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullChangedSince(uid, lastPulled);
       }
@@ -416,7 +418,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = SyncState(
         status: SyncStatus.idle,
         pendingCount: await _pendingCount(),
-        lastSyncedAt: _clock.now(),
+        lastSyncedAt: drainFailure == null ? _clock.now() : state.lastSyncedAt,
       );
     } catch (e) {
       debugPrint('SyncNotifier: sync failed: $e');
@@ -457,10 +459,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   ///
   /// Returns `null` when every entry it was responsible for reached the
   /// cloud, and otherwise the error from the last entry that exhausted its
-  /// retries. That answer is what lets [_pushQueue] decide whether the run it
-  /// just finished is entitled to call the device backed up; the failure
-  /// itself is reported by the entries staying queued, not by a status; it
-  /// only replaces the reason of an error that is already showing.
+  /// retries. That answer is what lets [_pushQueue] and [syncNow] decide
+  /// whether the run that called it is entitled to call the device backed up;
+  /// the failure itself is reported by the entries staying queued, not by a
+  /// status; it only replaces the reason of an error that is already showing.
   ///
   /// Two outcomes deliberately do not count as a failed drain, because the
   /// work remains visible as pending: a photo file upload, counted from its

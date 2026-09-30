@@ -357,6 +357,10 @@ void main() {
 
   test('a deletion whose tombstone fails stays queued', () async {
     when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
+    var pulled = false;
+    when(() => service.pullAll(any())).thenAnswer((_) async {
+      pulled = true;
+    });
     when(
       () => service.pushPieceDeletion('user-1', 'gone'),
     ).thenThrow(Exception('offline'));
@@ -369,7 +373,7 @@ void main() {
 
     signIn();
     await waitForState(
-      (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      (s) => pulled && s.status == SyncStatus.idle && s.pendingCount == 1,
     );
 
     expect(
@@ -378,6 +382,11 @@ void main() {
       reason: 'an unsent tombstone must survive in persisted storage',
     );
     expect(container.read(syncStateProvider).pendingCount, 1);
+    expect(
+      container.read(syncStateProvider).lastSyncedAt,
+      isNull,
+      reason: 'a successful pull cannot claim an unsent tombstone',
+    );
   });
 
   test('an edit during a queue drain gets a subsequent drain', () async {
@@ -466,14 +475,19 @@ void main() {
   test(
     'exhausted pushes survive sync completion without a hot retry loop',
     () async {
-      when(
-        () => service.pushPiece(any(), any()),
-      ).thenThrow(Exception('offline'));
+      var attempts = 0;
+      when(() => service.pushPiece(any(), any())).thenAnswer((_) {
+        attempts++;
+        throw Exception('offline');
+      });
       await writer.updateFields('p1', title: 'keep me');
       // No outstanding debounce: only syncNow owns this attempt.
       clock.timer!.cancel();
       signIn();
-      await waitForState((s) => s.lastSyncedAt != null);
+      await waitForState(
+        (s) =>
+            attempts == 3 && s.status == SyncStatus.idle && s.pendingCount == 1,
+      );
       expect(await queue.pendingCount, 1);
       expect(container.read(syncStateProvider).pendingCount, 1);
       verify(() => service.pushPiece('user-1', 'p1')).called(3);
