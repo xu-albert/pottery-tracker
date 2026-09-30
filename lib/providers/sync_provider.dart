@@ -398,9 +398,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // before the pull, which would otherwise bring the deleted rows back
         // and overwrite the concurrent edits.
         //
-        // A full sync reports on itself rather than on this drain: what the
-        // drain could not push is still queued, and the refreshed
-        // `pendingCount` below is what says so on the tile.
+        // A failed drain does not fail the sync: what it could not push is
+        // still queued, and the refreshed `pendingCount` below is what says
+        // so on the tile. It does withhold the `lastSyncedAt` stamp, as the
+        // incremental drain's failure does.
         drainFailure = await _processQueueInternal(uid);
         await _refreshPendingCount();
         await _syncService.pullAll(uid);
@@ -458,10 +459,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   ///
   /// Returns `null` when every entry it was responsible for reached the
   /// cloud, and otherwise the error from the last entry that exhausted its
-  /// retries. That answer is what lets [_pushQueue] decide whether the run it
-  /// just finished is entitled to call the device backed up; the failure
-  /// itself is reported by the entries staying queued, not by a status; it
-  /// only replaces the reason of an error that is already showing.
+  /// retries. That answer is what lets [_pushQueue] and [syncNow] decide
+  /// whether the run that called it is entitled to call the device backed up;
+  /// the failure itself is reported by the entries staying queued, not by a
+  /// status; it only replaces the reason of an error that is already showing.
   ///
   /// Two outcomes deliberately do not count as a failed drain, because the
   /// work remains visible as pending: a photo file upload, counted from its

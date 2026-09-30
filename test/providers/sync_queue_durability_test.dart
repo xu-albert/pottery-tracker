@@ -382,6 +382,11 @@ void main() {
       reason: 'an unsent tombstone must survive in persisted storage',
     );
     expect(container.read(syncStateProvider).pendingCount, 1);
+    expect(
+      container.read(syncStateProvider).lastSyncedAt,
+      isNull,
+      reason: 'a successful pull cannot claim an unsent tombstone',
+    );
   });
 
   test('an edit during a queue drain gets a subsequent drain', () async {
