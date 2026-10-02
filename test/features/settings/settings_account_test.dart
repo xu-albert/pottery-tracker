@@ -65,9 +65,14 @@ void main() {
     when(
       () => syncService.getLastPulledAt(any()),
     ).thenAnswer((_) async => null);
-    when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});
+    when(
+      () => syncService.checkServerReachability(any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => syncService.fullUploadEntries(any()),
+    ).thenAnswer((_) async => []);
     when(() => syncService.pullAll(any())).thenAnswer((_) async {});
-    when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
+    when(() => queue.enqueueMissing(any())).thenAnswer((_) async {});
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
     // The refusal marker is device-ownership state like the stamp above: the
     // notifier reads it on every claim, so a mock has to answer for it.

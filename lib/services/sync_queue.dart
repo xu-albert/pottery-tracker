@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -88,6 +89,9 @@ class SyncQueue {
   /// so a revision captured before a push cannot be matched by a later one.
   final Map<SyncQueueEntry, int> _revisions = {};
   int _lastRevision = 0;
+  Future<void> _mutationTail = Future<void>.value();
+  Map<SyncQueueEntry, int> _unretired = {};
+  Future<void>? _retiring;
 
   /// The revision [entry] holds right now. A drain captures this before it
   /// pushes and may only acknowledge the entry while it still reads the same.
@@ -97,14 +101,37 @@ class SyncQueue {
     // Stamped before the first await: a push acknowledging between the two
     // would otherwise drop the revision this call is about to merge in.
     _revisions[entry] = ++_lastRevision;
-    final entries = await getAll();
-    final existingIndex = entries.indexWhere((e) => e == entry);
-    if (existingIndex != -1) {
-      entries[existingIndex] = entries[existingIndex].mergeWith(entry);
-    } else {
-      entries.add(entry);
-    }
-    await _save(entries);
+    await _mutate(() async {
+      final entries = await getAll();
+      final existingIndex = entries.indexWhere((e) => e == entry);
+      if (existingIndex != -1) {
+        entries[existingIndex] = entries[existingIndex].mergeWith(entry);
+      } else {
+        entries.add(entry);
+      }
+      await _save(entries);
+    });
+  }
+
+  /// Adds every entry of [batch] that is not already queued, with one read and
+  /// one write, and stamps only those. An entry already queued keeps its
+  /// revision, so a push already in flight for it still answers for it rather
+  /// than being sent a second time.
+  Future<void> enqueueMissing(List<SyncQueueEntry> batch) async {
+    if (batch.isEmpty) return;
+    await _mutate(() async {
+      final entries = await getAll();
+      final queued = entries.toSet();
+      final missing = [
+        for (final entry in batch)
+          if (queued.add(entry)) entry,
+      ];
+      if (missing.isEmpty) return;
+      for (final entry in missing) {
+        _revisions[entry] = ++_lastRevision;
+      }
+      await _save([...entries, ...missing]);
+    });
   }
 
   Future<List<SyncQueueEntry>> getAll() async {
@@ -120,16 +147,55 @@ class SyncQueue {
   }
 
   Future<void> remove(SyncQueueEntry entry) async {
-    _revisions.remove(entry);
-    final entries = await getAll();
-    entries.remove(entry);
-    await _save(entries);
+    await _mutate(() async {
+      _revisions.remove(entry);
+      final entries = await getAll();
+      entries.remove(entry);
+      await _save(entries);
+    });
+  }
+
+  /// Removes each entry of [dispatched] that no enqueue has revised since it
+  /// captured the paired revision.
+  ///
+  /// Calls made while earlier queue work is still pending join one batch and
+  /// receive the same future, so entries retired one by one as their pushes
+  /// land still cost one read and one write per batch.
+  ///
+  /// The check and persisted mutation share the queue's mutation lane. An
+  /// enqueue stamps its revision before joining that lane, so even an edit
+  /// arriving just before this callback runs prevents the older push from
+  /// acknowledging it.
+  Future<void> acknowledgeAll(Map<SyncQueueEntry, int> dispatched) {
+    _unretired.addAll(dispatched);
+    return _retiring ??= _mutate(() async {
+      final batch = _unretired;
+      _unretired = {};
+      _retiring = null;
+      final delivered = {
+        for (final MapEntry(key: entry, value: revision) in batch.entries)
+          if (revisionOf(entry) == revision) entry,
+      };
+      if (delivered.isEmpty) return;
+      delivered.forEach(_revisions.remove);
+      final entries = await getAll();
+      entries.removeWhere(delivered.contains);
+      await _save(entries);
+    });
+  }
+
+  Future<T> _mutate<T>(Future<T> Function() mutation) {
+    final result = _mutationTail.then((_) => mutation());
+    _mutationTail = result.then<void>((_) {}, onError: (_, _) {});
+    return result;
   }
 
   Future<void> clear() async {
-    _revisions.clear();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(storageKey);
+    await _mutate(() async {
+      _revisions.clear();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(storageKey);
+    });
   }
 
   Future<int> get pendingCount async => (await getAll()).length;

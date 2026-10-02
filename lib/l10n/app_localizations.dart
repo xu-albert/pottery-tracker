@@ -862,10 +862,10 @@ abstract class AppLocalizations {
   /// **'Syncing...'**
   String get syncSyncing;
 
-  /// Sync status with pending changes
+  /// Sync status for locally saved changes that have not been acknowledged by the server
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =1{1 change pending} other{{count} changes pending}}'**
+  /// **'{count, plural, =1{1 change waiting to back up} other{{count} changes waiting to back up}}'**
   String syncPending(int count);
 
   /// Sync error status

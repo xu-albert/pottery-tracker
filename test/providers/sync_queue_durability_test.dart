@@ -85,6 +85,20 @@ void main() {
     return done.future.whenComplete(sub.close);
   }
 
+  Future<void> settle() async {
+    for (var i = 0; i < 30; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  Future<void> waitForQueueCount(int count) async {
+    for (var i = 0; i < 100; i++) {
+      if (await queue.pendingCount == count) return;
+      await Future<void>.delayed(Duration.zero);
+    }
+    fail('queue did not reach $count entries');
+  }
+
   void signIn() {
     container.read(authProvider.notifier).state = const AuthState(
       status: AuthStatus.authenticated,
@@ -108,16 +122,18 @@ void main() {
     when(
       () => service.getLastPulledAt(any()),
     ).thenAnswer((_) async => DateTime(2026));
-    when(() => service.pushAllLocal(any())).thenAnswer((_) async {});
+    when(() => service.checkServerReachability(any())).thenAnswer((_) async {});
+    when(() => service.fullUploadEntries(any())).thenAnswer((_) async => []);
     when(() => service.pullAll(any())).thenAnswer((_) async {});
     when(() => service.pullChangedSince(any(), any())).thenAnswer((_) async {});
-    when(() => service.retryMissingUploads(any())).thenAnswer((_) async {});
     when(() => service.pushPiece(any(), any())).thenAnswer((call) async {
       final piece = await db.piecesDao.getPieceById(
         call.positionalArguments[1] as String,
       );
-      pushedTitles.add(piece!.title);
+      if (piece != null) pushedTitles.add(piece.title);
     });
+    when(() => service.pushPhoto(any(), any())).thenAnswer((_) async {});
+    when(() => service.uploadPhotoFile(any(), any())).thenAnswer((_) async {});
     container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
@@ -193,74 +209,118 @@ void main() {
   }
 
   for (final fullSync in [false, true]) {
-    for (final duringRetry in [false, true]) {
-      test('${fullSync ? 'first' : 'incremental'} sign-in sync preserves '
-          'an edit during ${duringRetry ? 'upload retry' : 'pull'} and '
-          'repays its expired debounce', () async {
-        if (fullSync) {
-          when(
-            () => service.getLastPulledAt(any()),
-          ).thenAnswer((_) async => null);
-        }
-        final entered = Completer<void>();
-        final release = Completer<void>();
-        Future<void> stall() async {
-          entered.complete();
-          await release.future;
-        }
+    test('${fullSync ? 'first' : 'incremental'} sign-in sync preserves '
+        'an edit during pull and repays its expired debounce', () async {
+      if (fullSync) {
+        when(
+          () => service.getLastPulledAt(any()),
+        ).thenAnswer((_) async => null);
+      }
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      Future<void> stall() async {
+        entered.complete();
+        await release.future;
+      }
 
-        if (duringRetry) {
-          when(
-            () => service.retryMissingUploads(any()),
-          ).thenAnswer((_) => stall());
-        } else if (fullSync) {
-          when(() => service.pullAll(any())).thenAnswer((_) => stall());
-        } else {
-          when(
-            () => service.pullChangedSince(any(), any()),
-          ).thenAnswer((_) => stall());
-        }
-        await writer.updateFields('p1', title: 'before sync');
-        signIn();
-        await entered.future;
-        expect(
-          await queue.pendingCount,
-          0,
-          reason: 'only the original queue snapshot has been drained',
-        );
+      if (fullSync) {
+        when(() => service.pullAll(any())).thenAnswer((_) => stall());
+      } else {
+        when(
+          () => service.pullChangedSince(any(), any()),
+        ).thenAnswer((_) => stall());
+      }
+      await writer.updateFields('p1', title: 'before sync');
+      signIn();
+      await entered.future;
+      expect(
+        await queue.pendingCount,
+        0,
+        reason: 'only the original queue snapshot has been drained',
+      );
 
-        await writer.updateFields('p1', title: 'edited during sync');
-        clock.fire();
-        await Future<void>.delayed(Duration.zero);
-        expect(await queue.pendingCount, 1);
-        final finished = waitForState((s) => s.status == SyncStatus.idle);
-        release.complete();
-        await finished;
+      await writer.updateFields('p1', title: 'edited during sync');
+      clock.fire();
+      await Future<void>.delayed(Duration.zero);
+      expect(await queue.pendingCount, 1);
+      final finished = waitForState((s) => s.status == SyncStatus.idle);
+      release.complete();
+      await finished;
 
-        expect(
-          (await SyncQueue().getAll()).single.entityId,
-          'p1',
-          reason: 'the unacknowledged edit must survive in persisted storage',
-        );
-        expect(container.read(syncStateProvider).pendingCount, 1);
-        final drained = waitForState((s) => s.pendingCount == 0);
-        clock.fire();
-        await drained;
-        expect(
-          pushedTitles,
-          fullSync
-              ? ['edited during sync']
-              : ['before sync', 'edited during sync'],
-          reason: 'pushAllLocal already delivered the full-sync snapshot',
-        );
-        expect(await queue.pendingCount, 0);
-        expect(clock.timer!.isActive, isFalse);
+      expect(
+        (await SyncQueue().getAll()).single.entityId,
+        'p1',
+        reason: 'the unacknowledged edit must survive in persisted storage',
+      );
+      expect(container.read(syncStateProvider).pendingCount, 1);
+      final drained = waitForState((s) => s.pendingCount == 0);
+      clock.fire();
+      await drained;
+      expect(
+        pushedTitles,
+        ['before sync', 'edited during sync'],
+        reason: 'both full and incremental sync drain the durable queue',
+      );
+      expect(await queue.pendingCount, 0);
+      expect(clock.timer!.isActive, isFalse);
+    });
+  }
+
+  for (final fullSync in [false, true]) {
+    test('${fullSync ? 'first' : 'incremental'} sign-in sync retries a photo '
+        'upload without spinning or holding back a later edit', () async {
+      if (fullSync) {
+        when(
+          () => service.getLastPulledAt(any()),
+        ).thenAnswer((_) async => null);
+      }
+      var pendingPhotos = {'photo-1'};
+      when(
+        () => service.pendingPhotoUploadIds(),
+      ).thenAnswer((_) async => {...pendingPhotos});
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      when(() => service.uploadPhotoFile('user-1', 'photo-1')).thenAnswer((
+        _,
+      ) async {
+        entered.complete();
+        await release.future;
+        pendingPhotos = {};
       });
-    }
+
+      signIn();
+      await entered.future;
+      await settle();
+      expect(
+        container.read(syncStateProvider).status,
+        SyncStatus.idle,
+        reason: 'a Storage retry awaiting the server must not spin the tile',
+      );
+      expect(container.read(syncStateProvider).pendingCount, 1);
+      verifyNever(() => service.pullAll(any()));
+      verifyNever(() => service.pullChangedSince(any(), any()));
+
+      await writer.updateFields('p1', title: 'edited during retry');
+      clock.fire();
+      await waitForQueueCount(0);
+      expect(
+        pushedTitles,
+        ['edited during retry'],
+        reason: 'the edit is delivered while the upload is still in the air',
+      );
+
+      final synced = waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+      release.complete();
+      await synced;
+      expect(container.read(syncStateProvider).pendingCount, 0);
+      verify(() => service.uploadPhotoFile('user-1', 'photo-1')).called(1);
+    });
   }
 
   test(
-    'first sign-in retires its queue snapshot without re-uploading photos',
+    'first sign-in drains its queue snapshot through ordinary operations',
     () async {
       when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
       for (var i = 0; i < 12; i++) {
@@ -292,19 +352,20 @@ void main() {
 
       expect(await queue.pendingCount, 0);
       expect(container.read(syncStateProvider).pendingCount, 0);
-      verify(() => service.pushAllLocal('user-1')).called(1);
-      verifyNever(() => service.uploadPhotoFile(any(), any()));
+      verify(() => service.fullUploadEntries('user-1')).called(1);
+      verify(() => service.uploadPhotoFile('user-1', any())).called(12);
 
       when(
         () => service.getLastPulledAt('user-1'),
       ).thenAnswer((_) async => DateTime(2026));
+      final lastSynced = container.read(syncStateProvider).lastSyncedAt;
       await writer.updateFields('p1', title: 'one later edit');
       clock.instant = DateTime(2026, 6);
-      final drained = waitForState((s) => s.lastSyncedAt == clock.instant);
       clock.fire();
-      await drained;
+      await waitForQueueCount(0);
 
       expect(pushedTitles, ['one later edit']);
+      expect(container.read(syncStateProvider).lastSyncedAt, lastSynced);
       verifyNever(() => service.uploadPhotoFile(any(), any()));
     },
   );
@@ -312,8 +373,9 @@ void main() {
   test('first sign-in tombstones a queued deletion before it pulls', () async {
     when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
     final calls = <String>[];
-    when(() => service.pushAllLocal(any())).thenAnswer((_) async {
-      calls.add('pushAllLocal');
+    when(() => service.fullUploadEntries('user-1')).thenAnswer((_) async {
+      calls.add('fullUploadEntries');
+      return [];
     });
     when(() => service.pushPieceDeletion('user-1', 'gone')).thenAnswer((
       _,
@@ -347,11 +409,11 @@ void main() {
     );
 
     expect(calls, [
-      'pushAllLocal',
+      'fullUploadEntries',
       'pushDeletion',
       'pushPieceDeletion',
       'pullAll',
-    ], reason: 'a bulk upload of existing rows delivers no tombstone');
+    ], reason: 'full snapshots and tombstones use the same queue drain');
     expect(await queue.pendingCount, 0);
   });
 
@@ -373,7 +435,7 @@ void main() {
 
     signIn();
     await waitForState(
-      (s) => pulled && s.status == SyncStatus.idle && s.pendingCount == 1,
+      (s) => pulled && s.status == SyncStatus.error && s.pendingCount == 1,
     );
 
     expect(
@@ -389,7 +451,7 @@ void main() {
     );
   });
 
-  test('an edit during a queue drain gets a subsequent drain', () async {
+  test('a later drain sends an unrelated edit past a held push', () async {
     signIn();
     await waitForState(
       (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
@@ -413,16 +475,147 @@ void main() {
     await entered.future;
     await writer.updateFields('p2', title: 'second drain');
     clock.fire();
-    await Future<void>.delayed(Duration.zero);
-    final finished = waitForState((s) => s.pendingCount == 1);
-    release.complete();
-    await finished;
+    await settle();
+    expect(pushedTitles, [
+      'first drain',
+      'second drain',
+    ], reason: 'an unrelated entity does not wait behind a held push');
+    expect(clock.timer!.isActive, isFalse);
+
     final drained = waitForState((s) => s.pendingCount == 0);
-    clock.fire();
+    release.complete();
     await drained;
-    expect(pushedTitles, ['first drain', 'second drain']);
+    expect(
+      pushedTitles,
+      ['first drain', 'second drain'],
+      reason: 'the second drain attached to the held push, never resent it',
+    );
     expect(await queue.pendingCount, 0);
   });
+
+  test(
+    'repeated taps during a first sync never send a held write twice',
+    () async {
+      DateTime? pulledAt;
+      when(
+        () => service.getLastPulledAt(any()),
+      ).thenAnswer((_) async => pulledAt);
+      when(() => service.pullAll(any())).thenAnswer((_) async {
+        pulledAt = DateTime(2026);
+      });
+      var pendingPhotos = {'photo-1'};
+      when(
+        () => service.pendingPhotoUploadIds(),
+      ).thenAnswer((_) async => {...pendingPhotos});
+      when(() => service.fullUploadEntries('user-1')).thenAnswer(
+        (_) async => const [
+          SyncQueueEntry(
+            operation: SyncOperation.pushPieceGlazes,
+            entityId: 'p1',
+          ),
+          SyncQueueEntry(
+            operation: SyncOperation.pushPhotoFile,
+            entityId: 'photo-1',
+          ),
+        ],
+      );
+      final release = Completer<void>();
+      var junctionWrites = 0;
+      var uploads = 0;
+      when(() => service.pushPieceGlazes('user-1', 'p1')).thenAnswer((_) async {
+        junctionWrites++;
+        await release.future;
+      });
+      when(() => service.uploadPhotoFile('user-1', 'photo-1')).thenAnswer((
+        _,
+      ) async {
+        uploads++;
+        await release.future;
+        pendingPhotos = {};
+      });
+
+      signIn();
+      for (var i = 0; i < 100 && (junctionWrites == 0 || uploads == 0); i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(junctionWrites, 1);
+      expect(uploads, 1);
+
+      // Sync Now while the first sync's writes are in the air, then two forced
+      // taps — the second stands down behind the first — and Sync Now again.
+      final notifier = container.read(syncStateProvider.notifier);
+      final taps = [notifier.syncNow()];
+      await settle();
+      taps
+        ..add(notifier.syncNow(forceFullSync: true))
+        ..add(notifier.syncNow(forceFullSync: true));
+      await settle();
+      taps.add(notifier.syncNow());
+      await settle();
+
+      expect(junctionWrites, 1, reason: 'each tap attaches to the held write');
+      expect(uploads, 1, reason: 'no tap uploads a photo still uploading');
+      verify(() => service.fullUploadEntries('user-1')).called(1);
+
+      release.complete();
+      await Future.wait(taps);
+      await waitForState(
+        (s) =>
+            s.status == SyncStatus.idle &&
+            s.lastSyncedAt != null &&
+            s.pendingCount == 0,
+      );
+
+      expect(
+        junctionWrites,
+        1,
+        reason: 'nothing sends the delivered junction batch again',
+      );
+      expect(uploads, 1, reason: 'nothing uploads the delivered photo again');
+      verifyNever(() => service.fullUploadEntries(any()));
+      expect(await queue.pendingCount, 0);
+    },
+  );
+
+  test(
+    'a delivered entry is retired while a sibling lane is still held',
+    () async {
+      signIn();
+      await waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      when(() => service.pushPiece('user-1', 'p1')).thenAnswer((_) async {
+        entered.complete();
+        await release.future;
+      });
+      await db.piecesDao.insertPiece(
+        PiecesCompanion.insert(
+          id: 'p2',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      );
+      await writer.updateFields('p1', title: 'held');
+      await writer.updateFields('p2', title: 'delivered');
+      clock.fire();
+      await entered.future;
+
+      await waitForQueueCount(1);
+      expect(
+        (await SyncQueue().getAll()).single.entityId,
+        'p1',
+        reason: 'p2 reached the cloud, so a relaunch must not send it again',
+      );
+      await waitForState((s) => s.pendingCount == 1);
+
+      final drained = waitForState((s) => s.pendingCount == 0);
+      release.complete();
+      await drained;
+      expect(await queue.pendingCount, 0);
+    },
+  );
 
   test('an edit during the in-flight push of the same entity is not '
       'acknowledged by that push', () async {
@@ -432,11 +625,13 @@ void main() {
     );
     final entered = Completer<void>();
     final release = Completer<void>();
+    final pushReturned = Completer<void>();
     when(() => service.pushPiece('user-1', 'p1')).thenAnswer((_) async {
       pushedTitles.add((await db.piecesDao.getPieceById('p1'))!.title);
       if (release.isCompleted) return;
       entered.complete();
       await release.future;
+      pushReturned.complete();
     });
 
     await writer.updateFields('p1', title: 'read by the push');
@@ -448,10 +643,9 @@ void main() {
     await writer.updateFields('p1', title: 'edited mid-push');
     expect(await queue.pendingCount, 1);
 
-    clock.instant = DateTime(2026, 6);
-    final finished = waitForState((s) => s.lastSyncedAt == clock.instant);
     release.complete();
-    await finished;
+    await pushReturned.future;
+    await settle();
 
     expect(
       (await SyncQueue().getAll()).single.entityId,
@@ -472,6 +666,149 @@ void main() {
     expect(clock.timer!.isActive, isFalse);
   });
 
+  test('a tap whose gate fails during a first sync never re-sends its '
+      'snapshot', () async {
+    DateTime? pulledAt;
+    when(
+      () => service.getLastPulledAt(any()),
+    ).thenAnswer((_) async => pulledAt);
+    when(() => service.pullAll(any())).thenAnswer((_) async {
+      pulledAt = DateTime(2026);
+    });
+    when(() => service.fullUploadEntries('user-1')).thenAnswer(
+      (_) async => const [
+        SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+        SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'photo-1'),
+        SyncQueueEntry(
+          operation: SyncOperation.pushPhotoFile,
+          entityId: 'photo-1',
+        ),
+        SyncQueueEntry(
+          operation: SyncOperation.pushPieceGlazes,
+          entityId: 'p1',
+        ),
+        SyncQueueEntry(operation: SyncOperation.pushPieceTags, entityId: 'p1'),
+      ],
+    );
+    final pushes = <String>[];
+    final release = Completer<void>();
+    when(
+      () => service.pushPiece('user-1', 'p1'),
+    ).thenAnswer((_) async => pushes.add('piece'));
+    when(
+      () => service.pushPhoto('user-1', 'photo-1'),
+    ).thenAnswer((_) async => pushes.add('photo'));
+    when(
+      () => service.uploadPhotoFile('user-1', 'photo-1'),
+    ).thenAnswer((_) async => pushes.add('photoFile'));
+    when(() => service.pushPieceGlazes('user-1', 'p1')).thenAnswer((_) async {
+      pushes.add('glazes');
+      await release.future;
+    });
+    when(
+      () => service.pushPieceTags('user-1', 'p1'),
+    ).thenAnswer((_) async => pushes.add('tags'));
+
+    // The first sync delivers and retires most of its snapshot, and holds on
+    // the junction write, with the tag write queued behind it.
+    signIn();
+    await waitForQueueCount(2);
+    expect(pushes, unorderedEquals(['piece', 'photo', 'photoFile', 'glazes']));
+
+    // A tap on a flapping link fails its reachability read.
+    final notifier = container.read(syncStateProvider.notifier);
+    when(
+      () => service.checkServerReachability(any()),
+    ).thenThrow(Exception('offline'));
+    await notifier.syncNow();
+    expect(container.read(syncStateProvider).status, SyncStatus.error);
+
+    // The next tap gets through, and everything is released.
+    when(() => service.checkServerReachability(any())).thenAnswer((_) async {});
+    final tap = notifier.syncNow();
+    await settle();
+    release.complete();
+    await tap;
+    await waitForState(
+      (s) =>
+          s.status == SyncStatus.idle &&
+          s.lastSyncedAt != null &&
+          s.pendingCount == 0,
+    );
+
+    expect(
+      [...pushes]..sort(),
+      ['glazes', 'photo', 'photoFile', 'piece', 'tags'],
+      reason: 'every snapshot write reaches the cloud exactly once',
+    );
+    verify(() => service.fullUploadEntries('user-1')).called(1);
+    expect(await queue.pendingCount, 0);
+  });
+
+  group('a forced sync that did not finish is staged again later', () {
+    late SyncNotifier notifier;
+
+    setUp(() async {
+      signIn();
+      await waitForState(
+        (s) => s.status == SyncStatus.idle && s.lastSyncedAt != null,
+      );
+      when(() => service.fullUploadEntries('user-1')).thenAnswer(
+        (_) async => const [
+          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+        ],
+      );
+      notifier = container.read(syncStateProvider.notifier);
+    });
+
+    Future<void> expectForcedSyncSendsSnapshot() async {
+      pushedTitles.clear();
+      clearInteractions(service);
+      await notifier.syncNow(forceFullSync: true);
+      verify(() => service.fullUploadEntries('user-1')).called(1);
+      expect(
+        pushedTitles,
+        ['original'],
+        reason: 're-upload everything has to re-upload, not only drain',
+      );
+      verify(() => service.pullAll('user-1')).called(1);
+    }
+
+    test('after the server was out of reach', () async {
+      when(
+        () => service.checkServerReachability(any()),
+      ).thenThrow(Exception('offline'));
+      await notifier.syncNow(forceFullSync: true);
+      expect(container.read(syncStateProvider).status, SyncStatus.error);
+      expect(await queue.pendingCount, 1);
+
+      // Back online, an ordinary sync delivers the staged snapshot and pulls
+      // incrementally.
+      when(
+        () => service.checkServerReachability(any()),
+      ).thenAnswer((_) async {});
+      await notifier.syncNow();
+      expect(pushedTitles, ['original']);
+      expect(await queue.pendingCount, 0);
+
+      await expectForcedSyncSendsSnapshot();
+    });
+
+    test('after its full pull failed', () async {
+      when(() => service.pullAll(any())).thenThrow(Exception('pull failed'));
+      await notifier.syncNow(forceFullSync: true);
+      expect(container.read(syncStateProvider).status, SyncStatus.error);
+      expect(pushedTitles, ['original']);
+
+      // An ordinary retry pulls incrementally, and succeeds.
+      when(() => service.pullAll(any())).thenAnswer((_) async {});
+      await notifier.syncNow();
+      expect(container.read(syncStateProvider).status, SyncStatus.idle);
+
+      await expectForcedSyncSendsSnapshot();
+    });
+  });
+
   test(
     'exhausted pushes survive sync completion without a hot retry loop',
     () async {
@@ -486,7 +823,9 @@ void main() {
       signIn();
       await waitForState(
         (s) =>
-            attempts == 3 && s.status == SyncStatus.idle && s.pendingCount == 1,
+            attempts == 3 &&
+            s.status == SyncStatus.error &&
+            s.pendingCount == 1,
       );
       expect(await queue.pendingCount, 1);
       expect(container.read(syncStateProvider).pendingCount, 1);

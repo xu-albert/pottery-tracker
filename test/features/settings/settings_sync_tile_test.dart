@@ -53,7 +53,7 @@ void main() {
     queue = _MockSyncQueue();
     pending = 0;
     when(() => queue.revisionOf(any())).thenReturn(0);
-    when(() => queue.remove(any())).thenAnswer((_) async {});
+    when(() => queue.acknowledgeAll(any())).thenAnswer((_) async {});
 
     when(() => queue.pendingCount).thenAnswer((_) async => pending);
     when(() => queue.getAll()).thenAnswer(
@@ -72,7 +72,12 @@ void main() {
     when(() => syncService.getLocalDataOwner()).thenAnswer((_) async => null);
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
-    when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
+    when(
+      () => syncService.checkServerReachability(any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => syncService.fullUploadEntries(any()),
+    ).thenAnswer((_) async => []);
     // A device that has synced before, so the launch below takes the
     // incremental path...
     when(
@@ -135,8 +140,11 @@ void main() {
       when(
         () => syncService.pendingPhotoUploadIds(),
       ).thenAnswer((_) async => {'photo'});
+      when(
+        () => syncService.uploadPhotoFile(any(), any()),
+      ).thenThrow(Exception('storage unavailable'));
       await pumpSettings(tester);
-      expect(find.text('1 change pending'), findsOneWidget);
+      expect(find.text('1 change waiting to back up'), findsOneWidget);
       expect(find.text('All data backed up'), findsNothing);
 
       when(
@@ -147,7 +155,7 @@ void main() {
       await sync;
       await tester.pump();
       expect(find.text('All data backed up'), findsOneWidget);
-      expect(find.textContaining('pending'), findsNothing);
+      expect(find.textContaining('waiting to back up'), findsNothing);
     });
 
     testWidgets('reports work that has not left the device even while the '
@@ -156,8 +164,8 @@ void main() {
 
       await pumpSettings(tester);
 
-      expect(find.text('Sync error'), findsOneWidget);
-      expect(find.textContaining('2 changes pending'), findsOneWidget);
+      expect(find.text('Sync error'), findsNothing);
+      expect(find.text('2 changes waiting to back up'), findsOneWidget);
     });
 
     testWidgets('counts an edit queued while the sync is failing', (
@@ -166,7 +174,7 @@ void main() {
       await pumpSettings(tester);
 
       expect(find.text('Sync error'), findsOneWidget);
-      expect(find.textContaining('pending'), findsNothing);
+      expect(find.textContaining('waiting to back up'), findsNothing);
 
       // The offline edit: persisted, then handed to the debounced drain.
       pending = 1;
@@ -174,8 +182,8 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(find.text('Sync error'), findsOneWidget);
-      expect(find.textContaining('1 change pending'), findsOneWidget);
+      expect(find.text('Sync error'), findsNothing);
+      expect(find.text('1 change waiting to back up'), findsOneWidget);
 
       // Let the debounce fire so no timer outlives the test.
       for (var i = 0; i < 10; i++) {
@@ -189,26 +197,15 @@ void main() {
 
       await pumpSettings(tester);
 
-      final subtitle = tester
-          .widget<Text>(
-            find.descendant(
-              of: find.ancestor(
-                of: find.text('Sync error'),
-                matching: find.byType(ListTile),
-              ),
-              matching: find.textContaining('pending'),
-            ),
-          )
-          .data!;
-      expect(subtitle, contains('1 change pending'));
-      expect(subtitle, contains('unavailable'));
+      expect(find.text('1 change waiting to back up'), findsOneWidget);
+      expect(find.textContaining('unavailable'), findsOneWidget);
     });
 
-    testWidgets('reports queued work while a sync is still in progress', (
+    testWidgets('stops spinning while a queued write awaits acknowledgement', (
       tester,
     ) async {
-      // An offline push Firestore holds until the device reconnects, so the
-      // tile stays on "Syncing..." with the work still on the device.
+      // An offline Firestore write may wait until reconnection. The durable
+      // queue remains visible, but the tile must not spin indefinitely.
       pending = 1;
       const queued = SyncQueueEntry(
         operation: SyncOperation.pushPiece,
@@ -224,8 +221,12 @@ void main() {
 
       await pumpSettings(tester);
 
-      expect(find.text('Syncing...'), findsOneWidget);
-      expect(find.textContaining('1 change pending'), findsOneWidget);
+      expect(find.text('Syncing...'), findsNothing);
+      expect(
+        find.textContaining('1 change waiting to back up'),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
 
       // A second edit made while that push is still waiting.
       pending = 2;
@@ -233,10 +234,13 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(find.text('Syncing...'), findsOneWidget);
-      expect(find.textContaining('2 changes pending'), findsOneWidget);
+      expect(find.text('Syncing...'), findsNothing);
+      expect(
+        find.textContaining('2 changes waiting to back up'),
+        findsOneWidget,
+      );
 
-      // Let the debounce fire; it stands down while the sync holds the lock.
+      // Let the debounce fire; it attaches to the write already in the air.
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
@@ -246,7 +250,7 @@ void main() {
       tester,
     ) async {
       pending = 1;
-      when(() => syncService.pullChangedSince(any(), any())).thenThrow(
+      when(() => syncService.checkServerReachability(any())).thenThrow(
         FirebaseException(
           plugin: 'cloud_firestore',
           code: 'unavailable',
@@ -259,27 +263,16 @@ void main() {
 
       await pumpSettings(tester);
 
-      final subtitle = tester
-          .widget<Text>(
-            find.descendant(
-              of: find.ancestor(
-                of: find.text('Sync error'),
-                matching: find.byType(ListTile),
-              ),
-              matching: find.textContaining('pending'),
-            ),
-          )
-          .data!;
-      expect(subtitle, contains('1 change pending'));
-      expect(subtitle, contains('No connection to the server'));
-      expect(subtitle, isNot(contains('local cache')));
-      expect(subtitle, isNot(contains('setPersistenceEnabled')));
+      expect(find.text('1 change waiting to back up'), findsOneWidget);
+      expect(find.text('No connection to the server'), findsOneWidget);
+      expect(find.textContaining('local cache'), findsNothing);
+      expect(find.textContaining('setPersistenceEnabled'), findsNothing);
     });
 
     testWidgets('keeps saying why while a later offline edit moves the count', (
       tester,
     ) async {
-      when(() => syncService.pullChangedSince(any(), any())).thenThrow(
+      when(() => syncService.checkServerReachability(any())).thenThrow(
         FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
       );
 
@@ -293,19 +286,8 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      final subtitle = tester
-          .widget<Text>(
-            find.descendant(
-              of: find.ancestor(
-                of: find.text('Sync error'),
-                matching: find.byType(ListTile),
-              ),
-              matching: find.textContaining('pending'),
-            ),
-          )
-          .data!;
-      expect(subtitle, contains('1 change pending'));
-      expect(subtitle, contains('No connection to the server'));
+      expect(find.text('1 change waiting to back up'), findsOneWidget);
+      expect(find.text('No connection to the server'), findsOneWidget);
 
       // Let the debounce fire so no timer outlives the test.
       for (var i = 0; i < 10; i++) {
@@ -328,7 +310,9 @@ void main() {
       ).thenAnswer((_) async => List.filled(pending, queued));
       when(() => queue.revisionOf(queued)).thenReturn(0);
       when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {});
-      when(() => queue.remove(queued)).thenAnswer((_) async => pending = 0);
+      when(() => queue.acknowledgeAll({queued: 0})).thenAnswer((_) async {
+        pending = 0;
+      });
       when(
         () => syncService.pullChangedSince(any(), any()),
       ).thenAnswer((_) => Completer<void>().future);
@@ -336,7 +320,7 @@ void main() {
       await pumpSettings(tester);
 
       expect(find.text('Syncing...'), findsOneWidget);
-      expect(find.textContaining('pending'), findsNothing);
+      expect(find.textContaining('waiting to back up'), findsNothing);
     });
   });
 }

@@ -27,6 +27,8 @@ class _Collection extends Mock
 
 class _Query extends Mock implements Query<Map<String, dynamic>> {}
 
+class _Batch extends Mock implements WriteBatch {}
+
 /// Models the SDK boundary: default reads can return an incomplete offline
 /// cache; server reads fail offline. Both stores execute real query filtering.
 class _Network {
@@ -37,7 +39,10 @@ class _Network {
 
   _Network() {
     final user = _Document();
+    final batch = _Batch();
     when(() => firestore.doc('users/user-1')).thenReturn(user);
+    when(() => firestore.batch()).thenReturn(batch);
+    when(() => batch.commit()).thenAnswer((_) async => []);
     for (final name in [
       'pieces',
       'photos',
@@ -46,6 +51,7 @@ class _Network {
       'tags',
       'pieceGlazes',
       'pieceTags',
+      'meta',
     ]) {
       final collection = _Collection();
       final remote = server.collection('users/user-1/$name');

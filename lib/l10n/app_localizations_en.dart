@@ -428,8 +428,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count changes pending',
-      one: '1 change pending',
+      other: '$count changes waiting to back up',
+      one: '1 change waiting to back up',
     );
     return '$_temp0';
   }

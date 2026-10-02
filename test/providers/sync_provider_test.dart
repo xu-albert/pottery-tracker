@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,19 +44,22 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
   when(() => queue.pendingCount).thenAnswer((_) async => 0);
   when(() => queue.getAll()).thenAnswer((_) async => []);
   when(() => queue.clear()).thenAnswer((_) async {});
-  when(() => queue.remove(any())).thenAnswer((_) async {});
+  when(() => queue.enqueueMissing(any())).thenAnswer((_) async {});
+  when(() => queue.acknowledgeAll(any())).thenAnswer((_) async {});
   // Nothing edits an entity mid-push in these tests, so every entry keeps the
   // revision the drain captured. The concurrent-edit case is pinned against a
   // real queue in sync_queue_durability_test.dart.
   when(() => queue.revisionOf(any())).thenReturn(0);
 
   when(() => syncService.getLastPulledAt(any())).thenAnswer((_) async => null);
-  when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});
+  when(
+    () => syncService.checkServerReachability(any()),
+  ).thenAnswer((_) async {});
+  when(() => syncService.fullUploadEntries(any())).thenAnswer((_) async => []);
   when(() => syncService.pullAll(any())).thenAnswer((_) async {});
   when(
     () => syncService.pullChangedSince(any(), any()),
   ).thenAnswer((_) async {});
-  when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
   // Unowned by default: the device belongs to whoever signs in first.
@@ -198,12 +202,12 @@ void main() {
       await s.notifier.syncNow();
 
       expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
-      verifyNever(() => s.syncService.pushAllLocal(any()));
+      verifyNever(() => s.syncService.fullUploadEntries(any()));
       verifyNever(() => s.syncService.pullAll(any()));
     });
 
     test(
-      'first sync: pushAllLocal then pullAll when no lastPulledAt',
+      'first sync: stages a full upload then pulls when no watermark exists',
       () async {
         final s = _setup(auth: _signedIn);
         addTearDown(s.container.dispose);
@@ -216,9 +220,10 @@ void main() {
         await s.notifier.syncNow();
 
         verifyInOrder([
-          () => s.syncService.pushAllLocal('user-1'),
+          () => s.syncService.fullUploadEntries('user-1'),
+          () => s.queue.enqueueMissing(any()),
+          () => s.syncService.checkServerReachability('user-1'),
           () => s.syncService.pullAll('user-1'),
-          () => s.syncService.retryMissingUploads('user-1'),
         ]);
 
         final state = s.container.read(syncStateProvider);
@@ -243,9 +248,9 @@ void main() {
       verify(
         () => s.syncService.pullChangedSince('user-1', lastPulled),
       ).called(1);
-      // pushAllLocal was called once by the constructor's auto-sync (before
-      // we stubbed getLastPulledAt to return a date), but not by this syncNow.
-      verify(() => s.syncService.pushAllLocal(any())).called(1);
+      // The constructor's first sync staged one full snapshot. This
+      // incremental sync does not stage another one.
+      verify(() => s.syncService.fullUploadEntries('user-1')).called(1);
     });
 
     test('does not advance lastSyncedAt when the upload half fails', () async {
@@ -291,40 +296,43 @@ void main() {
       await s.notifier.syncNow(forceFullSync: true);
 
       // called(2): once from the constructor's auto-sync, once from this test
-      verify(() => s.syncService.pushAllLocal('user-1')).called(2);
+      verify(() => s.syncService.fullUploadEntries('user-1')).called(2);
       verify(() => s.syncService.pullAll('user-1')).called(2);
       verifyNever(() => s.syncService.pullChangedSince(any(), any()));
     });
 
-    test('full sync acknowledges only the entries it pushes', () async {
-      final s = _setup(auth: _signedIn);
-      addTearDown(s.container.dispose);
-      await Future<void>.delayed(Duration.zero);
-      clearInteractions(s.syncService);
-      clearInteractions(s.queue);
+    test(
+      'full sync sends and acknowledges the captured queue revision',
+      () async {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        await Future<void>.delayed(Duration.zero);
+        clearInteractions(s.syncService);
+        clearInteractions(s.queue);
 
-      const entry = SyncQueueEntry(
-        operation: SyncOperation.pushPiece,
-        entityId: 'p1',
-      );
-      final queued = <SyncQueueEntry>[entry];
-      when(() => s.queue.getAll()).thenAnswer((_) async => [...queued]);
-      when(() => s.queue.remove(entry)).thenAnswer((_) async {
-        queued.remove(entry);
-      });
-      when(() => s.queue.revisionOf(entry)).thenReturn(7);
-      await s.notifier.syncNow();
+        const entry = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        );
+        final queued = <SyncQueueEntry>[entry];
+        when(() => s.queue.getAll()).thenAnswer((_) async => [...queued]);
+        when(() => s.queue.acknowledgeAll({entry: 7})).thenAnswer((_) async {
+          queued.remove(entry);
+        });
+        when(() => s.queue.revisionOf(entry)).thenReturn(7);
+        await s.notifier.syncNow();
 
-      verifyInOrder([
-        () => s.queue.getAll(),
-        () => s.queue.revisionOf(entry),
-        () => s.syncService.pushAllLocal('user-1'),
-        () => s.queue.revisionOf(entry),
-        () => s.queue.remove(entry),
-      ]);
-      verifyNever(() => s.syncService.pushPiece(any(), any()));
-      verifyNever(() => s.queue.clear());
-    });
+        verifyInOrder([
+          () => s.syncService.fullUploadEntries('user-1'),
+          () => s.syncService.checkServerReachability('user-1'),
+          () => s.queue.getAll(),
+          () => s.queue.revisionOf(entry),
+          () => s.syncService.pushPiece('user-1', 'p1'),
+          () => s.queue.acknowledgeAll({entry: 7}),
+        ]);
+        verifyNever(() => s.queue.clear());
+      },
+    );
 
     test('full sync sends a queued deletion before it pulls', () async {
       final s = _setup(auth: _signedIn);
@@ -339,15 +347,16 @@ void main() {
       );
       final queued = <SyncQueueEntry>[entry];
       when(() => s.queue.getAll()).thenAnswer((_) async => [...queued]);
-      when(() => s.queue.remove(entry)).thenAnswer((_) async {
+      when(() => s.queue.acknowledgeAll({entry: 0})).thenAnswer((_) async {
         queued.remove(entry);
       });
       await s.notifier.syncNow();
 
       verifyInOrder([
-        () => s.syncService.pushAllLocal('user-1'),
+        () => s.syncService.fullUploadEntries('user-1'),
+        () => s.syncService.checkServerReachability('user-1'),
         () => s.syncService.pushPieceDeletion('user-1', 'gone'),
-        () => s.queue.remove(entry),
+        () => s.queue.acknowledgeAll({entry: 0}),
         () => s.syncService.pullAll('user-1'),
       ]);
     });
@@ -358,7 +367,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       when(
-        () => s.syncService.pushAllLocal(any()),
+        () => s.syncService.checkServerReachability(any()),
       ).thenThrow(Exception('network down'));
 
       await s.notifier.syncNow();
@@ -369,7 +378,7 @@ void main() {
     });
 
     test('a retry replaces or clears the reason', () async {
-      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await _settle();
       when(
@@ -403,7 +412,7 @@ void main() {
       var callCount = 0;
       var running = 0;
       var everOverlapped = false;
-      when(() => s.syncService.pushAllLocal(any())).thenAnswer((_) async {
+      when(() => s.syncService.pullAll(any())).thenAnswer((_) async {
         callCount++;
         running++;
         if (running > 1) everOverlapped = true;
@@ -459,7 +468,7 @@ void main() {
 
         expect(callCount, 3);
         // Entry should NOT have been removed since all retries failed
-        verifyNever(() => s.queue.remove(entry));
+        verifyNever(() => s.queue.acknowledgeAll(any(that: contains(entry))));
       },
     );
 
@@ -487,7 +496,7 @@ void main() {
       await s.notifier.syncNow();
 
       expect(callCount, 2);
-      verify(() => s.queue.remove(entry)).called(1);
+      verify(() => s.queue.acknowledgeAll({entry: 0})).called(1);
     });
 
     test('pushPhotoFile is best-effort: no retry, always removed', () async {
@@ -515,7 +524,296 @@ void main() {
         () => s.syncService.uploadPhotoFile('user-1', 'photo-1'),
       ).called(1);
       // Still removed from queue despite failure
-      verify(() => s.queue.remove(entry)).called(1);
+      verify(() => s.queue.acknowledgeAll({entry: 0})).called(1);
+    });
+  });
+
+  group('offline-aware dispatch', () {
+    test('offline reachability fails before any queued write starts', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+      clearInteractions(s.syncService);
+
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-1',
+      );
+      when(() => s.queue.getAll()).thenAnswer((_) async => [entry]);
+      when(() => s.queue.pendingCount).thenAnswer((_) async => 1);
+      when(
+        () => s.syncService.getLastPulledAt('user-1'),
+      ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+      when(() => s.syncService.checkServerReachability('user-1')).thenThrow(
+        FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+      );
+
+      await s.notifier.syncNow();
+
+      final state = s.container.read(syncStateProvider);
+      expect(state.status, SyncStatus.error);
+      expect(state.errorMessage, SyncState.unavailableErrorCode);
+      expect(state.pendingCount, 1);
+      verifyNever(() => s.syncService.pushPiece(any(), any()));
+      verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+    });
+
+    test(
+      'slow online acknowledgement leaves a truthful non-spinning state',
+      () async {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        await _settle();
+        clearInteractions(s.syncService);
+
+        const entry = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'piece-1',
+        );
+        final entries = <SyncQueueEntry>[entry];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        when(() => s.syncService.pushPiece('user-1', 'piece-1')).thenAnswer((
+          _,
+        ) async {
+          entered.complete();
+          await release.future;
+        });
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+
+        final first = s.notifier.syncNow();
+        await entered.future;
+        await _settle();
+
+        final waiting = s.container.read(syncStateProvider);
+        expect(waiting.status, SyncStatus.idle);
+        expect(waiting.pendingCount, 1);
+
+        // A second tap attaches to the write already in the air instead of
+        // sending it again, and pulls nothing until it is acknowledged.
+        final second = s.notifier.syncNow();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+        verify(() => s.syncService.pushPiece('user-1', 'piece-1')).called(1);
+        verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+
+        release.complete();
+        await Future.wait([first, second]);
+        expect(entries, isEmpty);
+        verifyNever(() => s.syncService.pushPiece('user-1', 'piece-1'));
+        expect(s.container.read(syncStateProvider).lastSyncedAt, isNotNull);
+      },
+    );
+
+    test(
+      'a flapping connection retries only after a fresh reachability pass',
+      () async {
+        final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+        addTearDown(s.container.dispose);
+        await _settle();
+        clearInteractions(s.syncService);
+
+        const entry = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 'tag-1',
+        );
+        final entries = <SyncQueueEntry>[entry];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        var reachabilityCalls = 0;
+        when(() => s.syncService.checkServerReachability('user-1')).thenAnswer((
+          _,
+        ) async {
+          reachabilityCalls++;
+          if (reachabilityCalls == 1) {
+            throw FirebaseException(
+              plugin: 'cloud_firestore',
+              code: 'unavailable',
+            );
+          }
+        });
+
+        await s.notifier.syncNow();
+        verifyNever(() => s.syncService.pushTag(any(), any()));
+        expect(entries, [entry]);
+
+        await s.notifier.syncNow();
+        expect(reachabilityCalls, 2);
+        verify(() => s.syncService.pushTag('user-1', 'tag-1')).called(1);
+        expect(entries, isEmpty);
+      },
+    );
+
+    test('a slow deletion does not block an unrelated entity lane', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+
+      const deletion = SyncQueueEntry(
+        operation: SyncOperation.deletePiece,
+        entityId: 'piece-a',
+      );
+      const update = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-b',
+      );
+      final entries = <SyncQueueEntry>[deletion, update];
+      _persistInto(s.queue, entries);
+      when(
+        () => s.syncService.getLastPulledAt('user-1'),
+      ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+      final deletionEntered = Completer<void>();
+      final releaseDeletion = Completer<void>();
+      final updateEntered = Completer<void>();
+      when(
+        () => s.syncService.pushPieceDeletion('user-1', 'piece-a'),
+      ).thenAnswer((_) async {
+        deletionEntered.complete();
+        await releaseDeletion.future;
+      });
+      when(
+        () => s.syncService.pushPiece('user-1', 'piece-b'),
+      ).thenAnswer((_) async => updateEntered.complete());
+
+      final sync = s.notifier.syncNow();
+      await deletionEntered.future;
+      await updateEntered.future;
+      expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+
+      releaseDeletion.complete();
+      await sync;
+      expect(entries, isEmpty);
+    });
+
+    test(
+      'full sync stages its snapshot without overlapping a held junction',
+      () async {
+        final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+        addTearDown(s.container.dispose);
+        await _settle();
+        clearInteractions(s.syncService);
+
+        const junction = SyncQueueEntry(
+          operation: SyncOperation.pushPieceGlazes,
+          entityId: 'piece-1',
+        );
+        final entries = <SyncQueueEntry>[];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.fullUploadEntries('user-1'),
+        ).thenAnswer((_) async => [junction]);
+        DateTime? pulledAt;
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => pulledAt);
+        when(() => s.syncService.pullAll('user-1')).thenAnswer((_) async {
+          pulledAt = DateTime.utc(2026, 9, 1);
+        });
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        var running = 0;
+        var maxRunning = 0;
+        when(
+          () => s.syncService.pushPieceGlazes('user-1', 'piece-1'),
+        ).thenAnswer((_) async {
+          running++;
+          if (running > maxRunning) maxRunning = running;
+          if (!entered.isCompleted) entered.complete();
+          await release.future;
+          running--;
+        });
+
+        final first = s.notifier.syncNow(forceFullSync: true);
+        await entered.future;
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(s.container.read(syncStateProvider).pendingCount, 1);
+
+        final second = s.notifier.syncNow(forceFullSync: true);
+        await _settle();
+        verify(
+          () => s.syncService.pushPieceGlazes('user-1', 'piece-1'),
+        ).called(1);
+        verify(() => s.syncService.fullUploadEntries('user-1')).called(1);
+        verifyNever(() => s.syncService.pullAll(any()));
+        release.complete();
+        await Future.wait([first, second]);
+        expect(maxRunning, 1);
+        expect(entries, isEmpty);
+        verifyNever(() => s.syncService.pushPieceGlazes('user-1', 'piece-1'));
+        verifyNever(() => s.syncService.fullUploadEntries(any()));
+      },
+    );
+
+    test('overlapping drains share one live push per entry revision', () async {
+      final s = _setup(auth: _signedIn, clock: _StubSyncClock());
+      addTearDown(s.container.dispose);
+      await _settle();
+      clearInteractions(s.syncService);
+
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'piece-1',
+      );
+      final entries = <SyncQueueEntry>[entry];
+      final revisions = {entry: 1};
+      _persistInto(s.queue, entries, revisions: revisions);
+      when(
+        () => s.syncService.getLastPulledAt('user-1'),
+      ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+      final releases = <Completer<void>>[];
+      var running = 0;
+      var maxRunning = 0;
+      when(() => s.syncService.pushPiece('user-1', 'piece-1')).thenAnswer((
+        _,
+      ) async {
+        running++;
+        if (running > maxRunning) maxRunning = running;
+        final release = Completer<void>();
+        releases.add(release);
+        await release.future;
+        running--;
+      });
+
+      // The debounced drain sends revision 1 and holds it.
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+      expect(releases, hasLength(1));
+
+      // A tap overlapping that drain reaches the same revision: it attaches.
+      final tap = s.notifier.syncNow();
+      await _settle();
+      expect(releases, hasLength(1));
+
+      // An edit revises the entry. Its drain waits behind the live write
+      // rather than sending a second one alongside it.
+      revisions[entry] = 2;
+      s.notifier.scheduleProcessQueue();
+      await _settle();
+      expect(releases, hasLength(1));
+      expect(entries, [entry]);
+
+      releases.single.complete();
+      await _settle();
+      expect(releases, hasLength(2));
+      expect(entries, [
+        entry,
+      ], reason: 'the first acknowledgement cannot retire revision 2');
+      verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+
+      releases.last.complete();
+      await tap;
+      expect(maxRunning, 1);
+      expect(entries, isEmpty);
+      verify(() => s.syncService.pushPiece('user-1', 'piece-1')).called(2);
+      verify(() => s.syncService.pullChangedSince('user-1', any())).called(1);
     });
   });
 
@@ -531,74 +829,70 @@ void main() {
     void queueHolds(MockSyncQueue queue, {required int pending}) {
       when(() => queue.getAll()).thenAnswer((_) async => [entry]);
       when(() => queue.pendingCount).thenAnswer((_) async => pending);
-      when(() => queue.remove(entry)).thenAnswer((_) async {
+      when(() => queue.acknowledgeAll({entry: 0})).thenAnswer((_) async {
         when(() => queue.getAll()).thenAnswer((_) async => []);
       });
     }
 
-    test(
-      'a recovered drain returns the device to idle and backed up',
-      () async {
-        final clock = _StubSyncClock();
-        final s = _setup(auth: _signedIn, clock: clock);
-        addTearDown(s.container.dispose);
-        await _settle();
+    test('a recovered drain returns idle without moving Last synced', () async {
+      final clock = _StubSyncClock();
+      final s = _setup(auth: _signedIn, clock: clock);
+      addTearDown(s.container.dispose);
+      await _settle();
 
-        // Latch the error the way the app actually does. `syncNow`'s catch
-        // is the only writer of the error the sync tile shows: a drain
-        // reaches its own catch only if the queue store itself fails, and
-        // `SyncQueue.pendingCount` reads `getAll()` too, so a store that
-        // broke would take the catch body down with it and never set the
-        // error at all.
-        when(
-          () => s.syncService.getLastPulledAt('user-1'),
-        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
-        when(
-          () => s.syncService.pullChangedSince(any(), any()),
-        ).thenThrow(Exception('network unreachable'));
+      // Latch the error the way the app actually does. `syncNow`'s catch
+      // is the only writer of the error the sync tile shows: a drain
+      // reaches its own catch only if the queue store itself fails, and
+      // `SyncQueue.pendingCount` reads `getAll()` too, so a store that
+      // broke would take the catch body down with it and never set the
+      // error at all.
+      when(
+        () => s.syncService.getLastPulledAt('user-1'),
+      ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+      when(
+        () => s.syncService.pullChangedSince(any(), any()),
+      ).thenThrow(Exception('network unreachable'));
 
-        await s.notifier.syncNow();
-        await _settle();
+      await s.notifier.syncNow();
+      await _settle();
 
-        var state = s.container.read(syncStateProvider);
-        expect(state.status, SyncStatus.error);
-        expect(state.errorMessage, contains('network unreachable'));
-        final failedAt = state.lastSyncedAt;
+      var state = s.container.read(syncStateProvider);
+      expect(state.status, SyncStatus.error);
+      expect(state.errorMessage, contains('network unreachable'));
+      final failedAt = state.lastSyncedAt;
 
-        // The network comes back and the user edits. This drain pushes
-        // everything, so it — not the status the failed run latched — is what
-        // the tile is entitled to read.
-        queueHolds(s.queue, pending: 1);
-        when(() => s.queue.pendingCount).thenAnswer((_) async => 0);
-        clock.instant = clock.instant.add(const Duration(minutes: 5));
+      // The network comes back and the user edits. This drain pushes
+      // everything, so it — not the status the failed run latched — is what
+      // the tile is entitled to read.
+      queueHolds(s.queue, pending: 1);
+      when(() => s.queue.pendingCount).thenAnswer((_) async => 0);
+      clock.instant = clock.instant.add(const Duration(minutes: 5));
 
-        s.notifier.scheduleProcessQueue();
-        await _settle();
+      s.notifier.scheduleProcessQueue();
+      await _settle();
 
-        state = s.container.read(syncStateProvider);
-        expect(
-          state.status,
-          SyncStatus.idle,
-          reason:
-              'everything queued reached the cloud, so reading the latched '
-              'error here leaves Settings saying "Sync error" about a run '
-              'that is over',
-        );
-        expect(
-          state.errorMessage,
-          isNull,
-          reason: 'the message captions a failure that no longer stands',
-        );
-        expect(state.pendingCount, 0);
-        expect(
-          state.lastSyncedAt,
-          clock.instant,
-          reason: 'the recovered drain is what backed the device up',
-        );
-        expect(state.lastSyncedAt, isNot(failedAt));
-        verify(() => s.queue.remove(entry)).called(1);
-      },
-    );
+      state = s.container.read(syncStateProvider);
+      expect(
+        state.status,
+        SyncStatus.idle,
+        reason:
+            'everything queued reached the cloud, so reading the latched '
+            'error here leaves Settings saying "Sync error" about a run '
+            'that is over',
+      );
+      expect(
+        state.errorMessage,
+        isNull,
+        reason: 'the message captions a failure that no longer stands',
+      );
+      expect(state.pendingCount, 0);
+      expect(
+        state.lastSyncedAt,
+        failedAt,
+        reason: 'a push-only drain has not completed the authoritative pull',
+      );
+      verify(() => s.queue.acknowledgeAll({entry: 0})).called(1);
+    });
 
     test('a new drain failure replaces the previous pull reason', () async {
       final s = _setup(auth: _signedIn, clock: _StubSyncClock());
@@ -645,13 +939,7 @@ void main() {
       await _settle();
 
       final state = s.container.read(syncStateProvider);
-      expect(
-        state.status,
-        isNot(SyncStatus.error),
-        reason:
-            'a drain that exhausts its retries reports the same way a full '
-            'sync does — the work stays queued, it does not raise an error',
-      );
+      expect(state.status, SyncStatus.error);
       expect(
         state.pendingCount,
         1,
@@ -662,8 +950,72 @@ void main() {
         backedUpAt,
         reason: 'nothing was backed up, so the timestamp may not move',
       );
-      verifyNever(() => s.queue.remove(entry));
+      verifyNever(() => s.queue.acknowledgeAll(any(that: contains(entry))));
     });
+
+    test(
+      "a failure in a drain that overlapped the sync is the sync's too",
+      () async {
+        final clock = _StubSyncClock();
+        final s = _setup(auth: _signedIn, clock: clock);
+        addTearDown(s.container.dispose);
+        await _settle();
+        final lastSynced = s.container.read(syncStateProvider).lastSyncedAt;
+        expect(lastSynced, isNotNull);
+
+        const captured = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'piece-1',
+        );
+        const later = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 'tag-1',
+        );
+        final entries = <SyncQueueEntry>[captured];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        when(() => s.syncService.pushPiece('user-1', 'piece-1')).thenAnswer((
+          _,
+        ) async {
+          entered.complete();
+          await release.future;
+        });
+        when(
+          () => s.syncService.pushTag('user-1', 'tag-1'),
+        ).thenThrow(Exception('tag push failed'));
+        clock.instant = clock.instant.add(const Duration(minutes: 5));
+
+        final sync = s.notifier.syncNow();
+        await entered.future;
+
+        // An edit made while the sync's own push is in the air drains on its
+        // own, and its push keeps failing.
+        entries.add(later);
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        release.complete();
+        await sync;
+
+        final state = s.container.read(syncStateProvider);
+        expect(state.status, SyncStatus.error);
+        expect(
+          state.errorMessage,
+          contains('tag push failed'),
+          reason:
+              'the sync must not erase the reason the overlapping drain gave',
+        );
+        expect(
+          state.lastSyncedAt,
+          lastSynced,
+          reason: 'the tag edit never reached the cloud',
+        );
+        expect(entries, [later]);
+      },
+    );
 
     test('a best-effort photo file failure is not a drain failure', () async {
       final clock = _StubSyncClock();
@@ -680,6 +1032,7 @@ void main() {
       when(
         () => s.syncService.uploadPhotoFile('user-1', 'photo-1'),
       ).thenThrow(Exception('storage unavailable'));
+      final lastSynced = s.container.read(syncStateProvider).lastSyncedAt;
       clock.instant = clock.instant.add(const Duration(minutes: 5));
 
       s.notifier.scheduleProcessQueue();
@@ -690,10 +1043,10 @@ void main() {
         state.status,
         SyncStatus.idle,
         reason:
-            'photo files are best-effort and retryMissingUploads picks them '
-            'up on the next full sync, so one must not raise a sync error',
+            'photo files are best-effort and the next sync retries them from '
+            'their local rows, so one must not raise a sync error',
       );
-      expect(state.lastSyncedAt, clock.instant);
+      expect(state.lastSyncedAt, lastSynced);
     });
   });
 
@@ -920,7 +1273,7 @@ void main() {
 
       await s.notifier.syncNow(forceFullSync: true);
 
-      verifyNever(() => s.syncService.pushAllLocal(any()));
+      verifyNever(() => s.syncService.fullUploadEntries(any()));
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
       expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
     });
@@ -951,7 +1304,7 @@ void main() {
 
       verifyNever(() => s.syncService.pushPiece(any(), any()));
       verifyNever(() => s.syncService.uploadPhotoFile(any(), any()));
-      verifyNever(() => s.queue.remove(any()));
+      verifyNever(() => s.queue.acknowledgeAll(any()));
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
     });
 
@@ -969,7 +1322,7 @@ void main() {
       // Refused, and nothing was deleted: a wipe on the push path could land
       // in the middle of a later session, on the current account's own work.
       verifyNever(() => s.syncService.deleteLocalData());
-      verifyNever(() => s.syncService.pushAllLocal(any()));
+      verifyNever(() => s.syncService.fullUploadEntries(any()));
       expect(s.container.read(syncStateProvider).status, SyncStatus.blocked);
       expect(prefs.getBool(SyncNotifier.pendingWipeKey), isTrue);
     });
@@ -1005,7 +1358,9 @@ void main() {
 
         verifyInOrder([
           () => s.syncService.deleteLocalData(),
-          () => s.syncService.pushAllLocal('user-1'),
+          () => s.syncService.fullUploadEntries('user-1'),
+          () => s.syncService.checkServerReachability('user-1'),
+          () => s.syncService.pullAll('user-1'),
         ]);
         expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
         expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
@@ -1076,7 +1431,7 @@ void main() {
         async.elapse(const Duration(seconds: 1));
         async.flushMicrotasks();
 
-        verifyNever(() => s.syncService.pushAllLocal(any()));
+        verifyNever(() => s.syncService.fullUploadEntries(any()));
         expect(prefs!.getBool(SyncNotifier.pendingWipeKey), isTrue);
       });
     });
@@ -1144,7 +1499,9 @@ void main() {
 
         verifyInOrder([
           () => s.syncService.deleteLocalData(),
-          () => s.syncService.pushAllLocal('user-2'),
+          () => s.syncService.fullUploadEntries('user-2'),
+          () => s.syncService.checkServerReachability('user-2'),
+          () => s.syncService.pullAll('user-2'),
         ]);
         expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
       },
@@ -1168,6 +1525,42 @@ class _StubSyncClock extends SyncClock {
 
   @override
   Future<void> sleep(Duration duration) => Future<void>.value();
+}
+
+/// Backs [queue] with [entries] the way the persisted queue behaves: a staged
+/// snapshot adds only what is missing, stamping each addition with a fresh
+/// revision and leaving a queued entry's alone, and an acknowledgement retires
+/// only an entry still at the revision its push captured — [revisions], or 0
+/// for one never stamped.
+void _persistInto(
+  MockSyncQueue queue,
+  List<SyncQueueEntry> entries, {
+  Map<SyncQueueEntry, int>? revisions,
+}) {
+  final stamps = revisions ?? <SyncQueueEntry, int>{};
+  var lastStamp = 100;
+  when(() => queue.getAll()).thenAnswer((_) async => [...entries]);
+  when(() => queue.pendingCount).thenAnswer((_) async => entries.length);
+  when(
+    () => queue.revisionOf(any()),
+  ).thenAnswer((call) => stamps[call.positionalArguments.single] ?? 0);
+  when(() => queue.enqueueMissing(any())).thenAnswer((call) async {
+    final staged = call.positionalArguments.single as List<SyncQueueEntry>;
+    for (final entry in staged) {
+      if (entries.contains(entry)) continue;
+      stamps[entry] = ++lastStamp;
+      entries.add(entry);
+    }
+  });
+  when(() => queue.acknowledgeAll(any())).thenAnswer((call) async {
+    final delivered =
+        call.positionalArguments.single as Map<SyncQueueEntry, int>;
+    entries.removeWhere(
+      (entry) =>
+          delivered.containsKey(entry) &&
+          delivered[entry] == (stamps[entry] ?? 0),
+    );
+  });
 }
 
 /// Lets every zero-delay timer and microtask the notifier scheduled run out.

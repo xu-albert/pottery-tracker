@@ -111,6 +111,46 @@ void main() {
     );
   });
 
+  group('SyncQueue enqueueMissing', () {
+    test(
+      'adds only missing entries and leaves a queued one at its revision',
+      () async {
+        final queue = SyncQueue();
+        const piece = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
+        await queue.enqueue(piece);
+        final dispatched = queue.revisionOf(piece);
+
+        await queue.enqueueMissing(const [
+          SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'ph1'),
+          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: 'p1'),
+          SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: 'ph1'),
+        ]);
+
+        final all = await SyncQueue().getAll();
+        expect(all.map((e) => '${e.operation.name}:${e.entityId}'), [
+          'pushPiece:p1',
+          'pushPhoto:ph1',
+        ]);
+        expect(all.first.changedFields, ['title']);
+        expect(
+          queue.revisionOf(piece),
+          dispatched,
+          reason: 'a push already in flight for it still answers for it',
+        );
+
+        await queue.acknowledgeAll({piece: dispatched});
+        expect(
+          (await SyncQueue().getAll()).single.operation,
+          SyncOperation.pushPhoto,
+        );
+      },
+    );
+  });
+
   group('SyncQueue getAll / remove / clear / pendingCount', () {
     test('returns empty list when nothing enqueued', () async {
       final queue = SyncQueue();
@@ -150,6 +190,98 @@ void main() {
       final all = await queue.getAll();
       expect(all, isEmpty);
     });
+
+    test(
+      'acknowledgeAll retires only entries still at their dispatched revision',
+      () async {
+        final queue = SyncQueue();
+        const delivered = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
+        const revised = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 't1',
+        );
+        await queue.enqueueMissing([delivered, revised]);
+        final dispatched = {
+          delivered: queue.revisionOf(delivered),
+          revised: queue.revisionOf(revised),
+        };
+        await queue.enqueue(revised);
+
+        await queue.acknowledgeAll(dispatched);
+
+        expect(await queue.getAll(), [revised]);
+        expect(
+          await SyncQueue().getAll(),
+          [revised],
+          reason: 'the retirement is persisted, not only held in memory',
+        );
+      },
+    );
+
+    test(
+      'acknowledgements made while queue work is pending share one batch',
+      () async {
+        final queue = SyncQueue();
+        const first = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        );
+        const second = SyncQueueEntry(
+          operation: SyncOperation.pushTag,
+          entityId: 't1',
+        );
+        const kept = SyncQueueEntry(
+          operation: SyncOperation.pushClay,
+          entityId: 'c1',
+        );
+        await queue.enqueueMissing([first, second, kept]);
+
+        final retirement = queue.acknowledgeAll({
+          first: queue.revisionOf(first),
+        });
+        final joined = queue.acknowledgeAll({second: queue.revisionOf(second)});
+        expect(
+          joined,
+          same(retirement),
+          reason: 'the second retirement joins the batch the first started',
+        );
+        await joined;
+
+        expect(await SyncQueue().getAll(), [kept]);
+      },
+    );
+
+    test(
+      'an enqueue racing acknowledgement keeps the newer revision',
+      () async {
+        final queue = SyncQueue();
+        const first = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['title'],
+        );
+        const newer = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+          changedFields: ['notes'],
+        );
+        await queue.enqueue(first);
+        final dispatchedRevision = queue.revisionOf(first);
+
+        final enqueue = queue.enqueue(newer);
+        final acknowledged = queue.acknowledgeAll({first: dispatchedRevision});
+        await enqueue;
+        await acknowledged;
+
+        final remaining = await queue.getAll();
+        expect(remaining, hasLength(1));
+        expect(remaining.single.changedFields!.toSet(), {'title', 'notes'});
+      },
+    );
 
     test('clear empties the queue; pendingCount returns 0 after', () async {
       final queue = SyncQueue();

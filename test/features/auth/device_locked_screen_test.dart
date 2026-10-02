@@ -58,9 +58,14 @@ void main() {
     when(
       () => syncService.getLastPulledAt(any()),
     ).thenAnswer((_) async => null);
-    when(() => syncService.pushAllLocal(any())).thenAnswer((_) async {});
+    when(
+      () => syncService.checkServerReachability(any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => syncService.fullUploadEntries(any()),
+    ).thenAnswer((_) async => []);
     when(() => syncService.pullAll(any())).thenAnswer((_) async {});
-    when(() => syncService.retryMissingUploads(any())).thenAnswer((_) async {});
+    when(() => queue.enqueueMissing(any())).thenAnswer((_) async {});
     // The device belongs to somebody else — that is why the lock is up.
     when(
       () => syncService.getLocalDataOwner(),
