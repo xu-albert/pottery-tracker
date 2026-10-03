@@ -285,10 +285,16 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
+  /// Replaces the piece's glazes. [touchUpdatedAt] is false only for a sync
+  /// pull applying another device's links: the piece's `updatedAt` records
+  /// when its content was last established, and a pull that moved it to now
+  /// would make every remote piece edit that follows look older than this
+  /// device's copy.
   Future<void> setGlazesForPiece(
     String pieceId,
-    List<String> glazeOptionIds,
-  ) async {
+    List<String> glazeOptionIds, {
+    bool touchUpdatedAt = true,
+  }) async {
     // Find existing junction rows to detect removals
     final existing = await (select(
       pieceGlazes,
@@ -326,7 +332,22 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     }
 
     // Rebuild denormalized column
-    await _rebuildDenormalizedGlazesForPiece(pieceId);
+    await _rebuildDenormalizedGlazesForPiece(
+      pieceId,
+      touchUpdatedAt: touchUpdatedAt,
+    );
+  }
+
+  /// The piece's glaze option ids in display order, read from the junction
+  /// rows alone, so a link to an option this device has not pulled yet still
+  /// counts.
+  Future<List<String>> getGlazeIdsForPiece(String pieceId) async {
+    final rows =
+        await (select(pieceGlazes)
+              ..where((pg) => pg.pieceId.equals(pieceId))
+              ..orderBy([(pg) => OrderingTerm.asc(pg.sortOrder)]))
+            .get();
+    return rows.map((r) => r.glazeOptionId).toList();
   }
 
   // ── Tag library methods ──
@@ -463,10 +484,12 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
+  /// Replaces the piece's tags. [touchUpdatedAt] as for [setGlazesForPiece].
   Future<void> setTagsForPiece(
     String pieceId,
-    List<String> tagOptionIds,
-  ) async {
+    List<String> tagOptionIds, {
+    bool touchUpdatedAt = true,
+  }) async {
     // Find existing junction rows to detect removals
     final existing = await (select(
       pieceTags,
@@ -500,7 +523,18 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
       );
     }
 
-    await _rebuildDenormalizedTagsForPiece(pieceId);
+    await _rebuildDenormalizedTagsForPiece(
+      pieceId,
+      touchUpdatedAt: touchUpdatedAt,
+    );
+  }
+
+  /// The piece's tag option ids, read from the junction rows alone.
+  Future<List<String>> getTagIdsForPiece(String pieceId) async {
+    final rows = await (select(
+      pieceTags,
+    )..where((pt) => pt.pieceId.equals(pieceId))).get();
+    return rows.map((r) => r.tagOptionId).toList();
   }
 
   // ── Deleted junctions methods ──
@@ -534,17 +568,29 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
   // ── Private helpers ──
 
-  Future<void> _rebuildDenormalizedTagsForPiece(String pieceId) async {
+  Future<void> _rebuildDenormalizedTagsForPiece(
+    String pieceId, {
+    bool touchUpdatedAt = true,
+  }) async {
     final tagList = await getTagsForPiece(pieceId);
     final denormalized = tagList.isEmpty
         ? null
         : tagList.map((t) => t.name).join(', ');
+    final column = denormalized != null
+        ? Variable.withString(denormalized)
+        : const Variable<String>(null);
+    if (!touchUpdatedAt) {
+      await customUpdate(
+        'UPDATE pieces SET tags = ? WHERE id = ?',
+        variables: [column, Variable.withString(pieceId)],
+        updates: {pieces},
+      );
+      return;
+    }
     await customUpdate(
       'UPDATE pieces SET tags = ?, updated_at = ? WHERE id = ?',
       variables: [
-        denormalized != null
-            ? Variable.withString(denormalized)
-            : const Variable(null),
+        column,
         Variable.withDateTime(DateTime.now()),
         Variable.withString(pieceId),
       ],
@@ -552,17 +598,29 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  Future<void> _rebuildDenormalizedGlazesForPiece(String pieceId) async {
+  Future<void> _rebuildDenormalizedGlazesForPiece(
+    String pieceId, {
+    bool touchUpdatedAt = true,
+  }) async {
     final glazeList = await getGlazesForPiece(pieceId);
     final denormalized = glazeList.isEmpty
         ? null
         : glazeList.map((g) => g.name).join(', ');
+    final column = denormalized != null
+        ? Variable.withString(denormalized)
+        : const Variable<String>(null);
+    if (!touchUpdatedAt) {
+      await customUpdate(
+        'UPDATE pieces SET glazes = ? WHERE id = ?',
+        variables: [column, Variable.withString(pieceId)],
+        updates: {pieces},
+      );
+      return;
+    }
     await customUpdate(
       'UPDATE pieces SET glazes = ?, updated_at = ? WHERE id = ?',
       variables: [
-        denormalized != null
-            ? Variable.withString(denormalized)
-            : const Variable(null),
+        column,
         Variable.withDateTime(DateTime.now()),
         Variable.withString(pieceId),
       ],
