@@ -14,13 +14,15 @@ import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// A sync pulls even when its pushes failed with the server reachable —
-/// permission denied, App Check, an exhausted write quota. That pull must not
-/// revert the edit the failed push still owes the cloud, or the retry would
-/// send the reverted row and report it backed up (sync audit H2).
+/// How a sync orders its pulls around local work, run through the real
+/// notifier, service, queue and Drift against a fake Firestore.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // A sync pulls even when its pushes failed with the server reachable —
+  // permission denied, App Check, an exhausted write quota. That pull must
+  // not revert the edit the failed push still owes the cloud, or the retry
+  // would send the reverted row and report it backed up (sync audit H2).
   test('a pull after a failed push keeps the unpushed edit and its queue '
       'entry', () async {
     SharedPreferences.setMockInitialValues({
@@ -107,6 +109,81 @@ void main() {
     expect(result.status, SyncStatus.error);
     expect(result.lastSyncedAt, isNull);
   });
+
+  // A forced sync pushes every local row with a fresh server stamp. Pushed
+  // before the pull, a copy this device held out of date would replace the
+  // newer edit on every other device.
+  test('a forced sync from a stale device keeps the newer edit made '
+      'elsewhere', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = SyncService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final created = DateTime.now().subtract(const Duration(days: 7));
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p1'),
+        title: const Value('Bowl'),
+        createdAt: Value(created),
+        updatedAt: Value(created),
+      ),
+    );
+
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(
+          (_) => AuthNotifier.withState(
+            const AuthState(status: AuthStatus.unauthenticated),
+          ),
+        ),
+        syncQueueProvider.overrideWithValue(queue),
+        syncServiceProvider.overrideWithValue(service),
+        syncStateProvider.overrideWith(
+          (ref) =>
+              SyncNotifier(ref, queue, service, clock: const _ImmediateClock()),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = Completer<void>();
+    final sub = container.listen(syncStateProvider, (_, next) {
+      if (next.lastSyncedAt != null && !synced.isCompleted) synced.complete();
+    });
+    addTearDown(sub.close);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.future.timeout(const Duration(seconds: 5));
+    await Future<void>.delayed(Duration.zero);
+
+    // Another device edits the piece after this one last synced.
+    await firestore.doc('users/user-1/pieces/p1').set({
+      'title': 'Edited on another device',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await container
+        .read(syncStateProvider.notifier)
+        .syncNow(forceFullSync: true);
+
+    final remote = await firestore.doc('users/user-1/pieces/p1').get();
+    expect(remote['title'], 'Edited on another device');
+    expect(
+      (await db.piecesDao.getPieceById('p1'))!.title,
+      'Edited on another device',
+    );
+    expect(container.read(syncStateProvider).status, SyncStatus.idle);
+  });
 }
 
 class _RefusedPushService extends SyncService {
@@ -125,9 +202,9 @@ class _RefusedPushService extends SyncService {
   }
 
   @override
-  Future<void> pullChangedSince(String uid, DateTime since) async {
+  Future<void> pullChangedSince(String uid) async {
     pulls++;
-    await super.pullChangedSince(uid, since);
+    await super.pullChangedSince(uid);
   }
 }
 

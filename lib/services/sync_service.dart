@@ -426,10 +426,16 @@ class SyncService {
     ).doc('sync-reachability').get(const GetOptions(source: Source.server));
   }
 
+  /// Pushes the piece, then moves its local `updatedAt` onto the server time
+  /// the push was written with, so a pull compares server time with server
+  /// time rather than with this device's clock. A piece edited again while
+  /// the push was in the air keeps its newer stamp, and the queue entry that
+  /// edit revised sends it next.
   Future<void> pushPiece(String uid, String pieceId) async {
     final piece = await _db.piecesDao.getPieceById(pieceId);
     if (piece == null) return;
-    await _col(uid, 'pieces').doc(pieceId).set({
+    final ref = _col(uid, 'pieces').doc(pieceId);
+    await ref.set({
       'title': piece.title,
       'stage': piece.stage,
       'clayType': piece.clayType,
@@ -446,6 +452,15 @@ class SyncService {
       // other devices have already passed.
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    final written = await ref.get(const GetOptions(source: Source.server));
+    final stamp = (written.data() as Map<String, dynamic>?)?['updatedAt'];
+    if (stamp is! Timestamp) return;
+    await (_db.update(_db.pieces)..where(
+          (p) => p.id.equals(pieceId) & p.updatedAt.equals(piece.updatedAt),
+        ))
+        .write(
+          PiecesCompanion(updatedAt: Value(_wholeSeconds(stamp.toDate()))),
+        );
   }
 
   Future<void> pushPhoto(String uid, String photoId) async {
@@ -729,29 +744,25 @@ class SyncService {
   /// costs only the read.
   static const _pullOverlap = Duration(minutes: 1);
 
-  /// How far behind a watermark written by an earlier app version the first
-  /// incremental query of each collection starts. That watermark is this
-  /// device's clock at the end of a pull, so writes stamped by the server
-  /// while that pull ran, or ahead of a fast local clock, fell behind it.
-  static const _legacyWatermarkOverlap = Duration(days: 1);
-
   // Pulls must reach the server for every collection, including junctions.
   // A cache fallback can omit another device's edits; saving a successful
   // pull watermark after it would skip those edits on the next online sync.
   Future<void> pullAll(String uid) async {
     debugPrint('SyncService: full pull (first sync on this device)');
-    await _pull(uid, since: null);
+    await _pull(uid, full: true);
   }
 
-  /// Pulls what changed since this device's last pull. [since] is the
-  /// device-wide watermark the caller holds; each collection's own server-time
-  /// watermark supersedes it once a pull by this version has saved one.
-  Future<void> pullChangedSince(String uid, DateTime since) async {
-    debugPrint('SyncService: incremental pull since $since');
-    await _pull(uid, since: since);
+  /// Pulls what changed in each collection since that collection's own
+  /// server-time watermark. A collection without one — the first pull after
+  /// upgrading from a version that kept a single device-clock watermark — is
+  /// pulled in full, once, so edits and photo URLs that version's pulls
+  /// missed arrive however long ago they were made.
+  Future<void> pullChangedSince(String uid) async {
+    debugPrint('SyncService: incremental pull');
+    await _pull(uid, full: false);
   }
 
-  /// One pull, full when [since] is null.
+  /// One pull of every collection, in full when [full] is set.
   ///
   /// It never writes over local work that has not reached the cloud. An
   /// entity with a queued push or delete is skipped: that entry still owns
@@ -764,19 +775,17 @@ class SyncService {
   /// Remote piece stamps are server time, the time the cloud copy was last
   /// pushed. Pushes replace the whole row, so a device taking the newest push
   /// converges with the cloud instead of keeping an older copy of its own.
-  Future<void> _pull(String uid, {required DateTime? since}) async {
+  Future<void> _pull(String uid, {required bool full}) async {
     final prefs = await SharedPreferences.getInstance();
     final pieceStamps = {
       for (final piece in await _db.select(_db.pieces).get())
         piece.id: piece.updatedAt,
     };
     final watermarks = <String, DateTime>{};
+    final queriedAt = await _serverNow(uid);
 
     for (final collection in _pulledCollections) {
-      final from = since == null
-          ? null
-          : _collectionWatermark(prefs, uid, collection) ??
-                since.subtract(_legacyWatermarkOverlap);
+      final from = full ? null : _collectionWatermark(prefs, uid, collection);
       final collectionRef = _col(uid, collection);
       final query = from == null
           ? collectionRef
@@ -784,7 +793,6 @@ class SyncService {
               'updatedAt',
               isGreaterThan: Timestamp.fromDate(from.subtract(_pullOverlap)),
             );
-      final queriedAt = DateTime.now();
       final snap = await query.get(const GetOptions(source: Source.server));
       final isQueued = await _queuedCheck();
 
@@ -869,12 +877,13 @@ class SyncService {
   /// the server returned, which is server time, so a doc this query did not
   /// see was committed after it and carries a later one.
   ///
-  /// It is capped at this device's clock when the query started. Docs pushed
-  /// by an earlier app version carry their device's edit time instead, and
-  /// one from a fast clock must not carry the watermark past server-stamped
-  /// writes still to come. A query that returned nothing leaves the watermark
-  /// where it was; a full pull of an empty collection starts the next query
-  /// from the beginning, which costs nothing while it stays empty.
+  /// It is capped at the server's clock read before the query, [queriedAt].
+  /// Pieces pushed by an earlier app version carry their device's edit time
+  /// instead, and one from a fast clock must not carry the watermark past
+  /// server-stamped writes still to come. A query that returned nothing
+  /// leaves the watermark where it was; a full pull of an empty collection
+  /// starts the next query from the beginning, which costs nothing while it
+  /// stays empty.
   DateTime _nextWatermark(
     DateTime? from,
     List<QueryDocumentSnapshot> docs,
@@ -893,6 +902,19 @@ class SyncService {
     }
     final bounded = newest.isAfter(queriedAt) ? queriedAt : newest;
     return from != null && from.isAfter(bounded) ? from : bounded;
+  }
+
+  /// The server's clock now, read back from a document stamped with it. A
+  /// transaction rather than a plain write, because a transaction fails while
+  /// the device is offline where a write would wait for the network with the
+  /// pull still holding the sync.
+  Future<DateTime> _serverNow(String uid) async {
+    final clock = _col(uid, 'meta').doc('sync-clock');
+    await _firestore.runTransaction<void>((transaction) async {
+      transaction.set(clock, {'at': FieldValue.serverTimestamp()});
+    });
+    final read = await clock.get(const GetOptions(source: Source.server));
+    return ((read.data() as Map<String, dynamic>)['at'] as Timestamp).toDate();
   }
 
   /// A test for whether an entry is still waiting to reach the cloud: in the
@@ -1010,8 +1032,7 @@ class SyncService {
           );
           if (local == null) {
             await _insertPieceFromRemote(doc, remoteUpdatedAt);
-          } else if (!remoteUpdatedAt.isBefore(local.updatedAt) &&
-              !_samePieceContent(local, d)) {
+          } else if (!remoteUpdatedAt.isBefore(local.updatedAt)) {
             // A tie at the stored second goes to the remote: local work that
             // has not been pushed is queued, and was skipped above.
             await _updatePieceFromRemote(doc, remoteUpdatedAt);
@@ -1021,11 +1042,23 @@ class SyncService {
           pieceStamps[doc.id] = remoteUpdatedAt;
         });
       case 'photos':
-        final exists = await _db.photosDao.getPhotoById(doc.id) != null;
-        if (exists) {
-          await _updatePhotoFromRemote(doc);
-        } else {
+        final local = await _db.photosDao.getPhotoById(doc.id);
+        if (local == null) {
           await _insertPhotoFromRemote(doc);
+        } else {
+          await _updatePhotoFromRemote(doc);
+          // This device published the URL, and an earlier version's pushPhoto
+          // from a device that had not learned it wrote null over it. Pushing
+          // the photo again puts the URL back for every other device.
+          if (local.cloudUrl != null &&
+              (doc.data() as Map<String, dynamic>)['cloudUrl'] == null) {
+            await _queue.enqueue(
+              SyncQueueEntry(
+                operation: SyncOperation.pushPhoto,
+                entityId: doc.id,
+              ),
+            );
+          }
         }
       case 'clays':
         await _insertClayFromRemote(doc);
@@ -1036,22 +1069,9 @@ class SyncService {
     }
   }
 
-  /// Whether [remote] would change nothing a pull writes to [local]. This
-  /// device's own push comes back on its next pull with a later server
-  /// `updatedAt`, and must not be written again.
-  static bool _samePieceContent(Piece local, Map<String, dynamic> remote) =>
-      local.title == remote['title'] &&
-      local.stage == remote['stage'] &&
-      local.clayType == remote['clayType'] &&
-      local.notes == remote['notes'] &&
-      local.coverPhotoId == remote['coverPhotoId'] &&
-      local.isArchived == (remote['isArchived'] as bool? ?? false) &&
-      local.displayDate?.millisecondsSinceEpoch ==
-          (remote['displayDate'] as Timestamp?)?.millisecondsSinceEpoch;
-
   /// Truncated to the whole second the local database stores, so a piece
-  /// written from a remote doc compares equal to that doc on the next pull
-  /// rather than older than it.
+  /// written from a remote doc, or moved onto its push's server time,
+  /// compares equal to that doc on the next pull rather than older than it.
   static DateTime _wholeSeconds(DateTime at) =>
       DateTime.fromMillisecondsSinceEpoch(
         at.millisecondsSinceEpoch - at.millisecondsSinceEpoch % 1000,

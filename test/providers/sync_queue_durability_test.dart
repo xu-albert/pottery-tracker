@@ -125,7 +125,7 @@ void main() {
     when(() => service.checkServerReachability(any())).thenAnswer((_) async {});
     when(() => service.fullUploadEntries(any())).thenAnswer((_) async => []);
     when(() => service.pullAll(any())).thenAnswer((_) async {});
-    when(() => service.pullChangedSince(any(), any())).thenAnswer((_) async {});
+    when(() => service.pullChangedSince(any())).thenAnswer((_) async {});
     when(() => service.pushPiece(any(), any())).thenAnswer((call) async {
       final piece = await db.piecesDao.getPieceById(
         call.positionalArguments[1] as String,
@@ -223,13 +223,9 @@ void main() {
         await release.future;
       }
 
-      if (fullSync) {
-        when(() => service.pullAll(any())).thenAnswer((_) => stall());
-      } else {
-        when(
-          () => service.pullChangedSince(any(), any()),
-        ).thenAnswer((_) => stall());
-      }
+      // A first sync pulls in full before it pushes; the pull that follows
+      // its pushes is incremental, as for any other sync.
+      when(() => service.pullChangedSince(any())).thenAnswer((_) => stall());
       await writer.updateFields('p1', title: 'before sync');
       signIn();
       await entered.future;
@@ -297,8 +293,7 @@ void main() {
         reason: 'a Storage retry awaiting the server must not spin the tile',
       );
       expect(container.read(syncStateProvider).pendingCount, 1);
-      verifyNever(() => service.pullAll(any()));
-      verifyNever(() => service.pullChangedSince(any(), any()));
+      verifyNever(() => service.pullChangedSince(any()));
 
       await writer.updateFields('p1', title: 'edited during retry');
       clock.fire();
@@ -370,7 +365,8 @@ void main() {
     },
   );
 
-  test('first sign-in tombstones a queued deletion before it pulls', () async {
+  test('first sign-in pulls, then tombstones a queued deletion through the '
+      'drain that sends its snapshot', () async {
     when(() => service.getLastPulledAt(any())).thenAnswer((_) async => null);
     final calls = <String>[];
     when(() => service.fullUploadEntries('user-1')).thenAnswer((_) async {
@@ -409,10 +405,10 @@ void main() {
     );
 
     expect(calls, [
+      'pullAll',
       'fullUploadEntries',
       'pushDeletion',
       'pushPieceDeletion',
-      'pullAll',
     ], reason: 'full snapshots and tombstones use the same queue drain');
     expect(await queue.pendingCount, 0);
   });
@@ -745,7 +741,8 @@ void main() {
     expect(await queue.pendingCount, 0);
   });
 
-  group('a forced sync that did not finish is staged again later', () {
+  group('a forced sync that did not finish sends nothing, and a later one '
+      'pulls before it sends', () {
     late SyncNotifier notifier;
 
     setUp(() async {
@@ -765,13 +762,15 @@ void main() {
       pushedTitles.clear();
       clearInteractions(service);
       await notifier.syncNow(forceFullSync: true);
-      verify(() => service.fullUploadEntries('user-1')).called(1);
+      verifyInOrder([
+        () => service.pullAll('user-1'),
+        () => service.fullUploadEntries('user-1'),
+      ]);
       expect(
         pushedTitles,
         ['original'],
         reason: 're-upload everything has to re-upload, not only drain',
       );
-      verify(() => service.pullAll('user-1')).called(1);
     }
 
     test('after the server was out of reach', () async {
@@ -780,16 +779,15 @@ void main() {
       ).thenThrow(Exception('offline'));
       await notifier.syncNow(forceFullSync: true);
       expect(container.read(syncStateProvider).status, SyncStatus.error);
-      expect(await queue.pendingCount, 1);
+      expect(await queue.pendingCount, 0);
+      verifyNever(() => service.fullUploadEntries(any()));
 
-      // Back online, an ordinary sync delivers the staged snapshot and pulls
-      // incrementally.
+      // Back online, an ordinary sync has no snapshot to send.
       when(
         () => service.checkServerReachability(any()),
       ).thenAnswer((_) async {});
       await notifier.syncNow();
-      expect(pushedTitles, ['original']);
-      expect(await queue.pendingCount, 0);
+      expect(pushedTitles, isEmpty);
 
       await expectForcedSyncSendsSnapshot();
     });
@@ -798,7 +796,11 @@ void main() {
       when(() => service.pullAll(any())).thenThrow(Exception('pull failed'));
       await notifier.syncNow(forceFullSync: true);
       expect(container.read(syncStateProvider).status, SyncStatus.error);
-      expect(pushedTitles, ['original']);
+      expect(
+        pushedTitles,
+        isEmpty,
+        reason: 'nothing is pushed before the pull has brought rows up to date',
+      );
 
       // An ordinary retry pulls incrementally, and succeeds.
       when(() => service.pullAll(any())).thenAnswer((_) async {});

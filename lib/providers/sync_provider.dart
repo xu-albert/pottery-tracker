@@ -249,14 +249,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// holds up the new session or starts another push.
   int _generation = 0;
 
-  /// The session whose full snapshot is staged and still awaits a pull. Until
-  /// a pull of that session succeeds, a repeated or forced tap in it is
-  /// already covered by the snapshot: it attaches to the snapshot's flights,
-  /// or sends whatever of it is still queued, instead of staging it again, and
-  /// a forced request owed meanwhile is answered by the full pull rather than
-  /// replayed. A failed reachability read or pull leaves it standing, since
-  /// what the snapshot has not delivered is still queued; a new generation
-  /// makes it stale by itself.
+  /// The session whose full snapshot is staged, after the full pull that
+  /// precedes it, and still awaits the pull that follows its pushes. Until
+  /// that pull succeeds, a repeated or forced tap in it is already covered by
+  /// the snapshot: it attaches to the snapshot's flights, or sends whatever of
+  /// it is still queued, instead of pulling and staging it again, and a forced
+  /// request owed meanwhile is answered by the snapshot and the pulls around
+  /// it rather than replayed. A failed reachability read or pull leaves it
+  /// standing, since what the snapshot has not delivered is still queued; a
+  /// new generation makes it stale by itself.
   _Session? _unpulledSnapshot;
 
   /// Every dispatched drain whose writes have not all settled. The pull waits
@@ -463,25 +464,30 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     final uid = auth.uid!;
     final _Session session = (uid: uid, generation: _generation);
-    DateTime? lastPulled;
+    var pullInFull = false;
     var dispatched = false;
     try {
       if (await _claimOrBlock(uid)) return;
-      lastPulled = forceFullSync
-          ? null
-          : await _syncService.getLastPulledAt(uid);
-
-      if (lastPulled == null && _unpulledSnapshot != session) {
-        // Building and persisting the snapshot is local work. Do it before the
-        // reachability read so a first sync attempted offline still shows all
-        // work waiting and survives process death.
-        await _queue.enqueueMissing(await _syncService.fullUploadEntries(uid));
-        _unpulledSnapshot = session;
-        await _refreshPendingCount();
-      }
+      pullInFull =
+          forceFullSync || await _syncService.getLastPulledAt(uid) == null;
 
       await _syncService.checkServerReachability(uid);
       state = state.copyWith(status: SyncStatus.syncing);
+
+      if (pullInFull && _unpulledSnapshot != session) {
+        // A full sync pulls before it stages its snapshot. Every row the
+        // snapshot pushes is stamped with the server's time, so a row this
+        // device held out of date would replace the newer copy on every other
+        // device. The pull leaves rows with queued work alone, and the
+        // snapshot sends that work on top of what it brought in. Edits made
+        // here are queued as they happen, so they count as waiting offline
+        // without the snapshot.
+        await _syncService.pullAll(uid);
+        await _queue.enqueueMissing(await _syncService.fullUploadEntries(uid));
+        _unpulledSnapshot = session;
+        pullInFull = false;
+        await _refreshPendingCount();
+      }
 
       // A photo file an earlier attempt could not upload is retried from its
       // local row, which is its durable record, through the same single-flight
@@ -503,7 +509,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _releaseSyncing();
     }
     if (dispatched) {
-      await _pullOnceSettled(session, lastPulled, forceFullSync: forceFullSync);
+      await _pullOnceSettled(
+        session,
+        inFull: pullInFull,
+        forceFullSync: forceFullSync,
+      );
     }
     await _payOwedSync();
   }
@@ -516,8 +526,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// [_syncing] again because it writes local rows, which a wipe waits on; a
   /// run that finds it held owes the sync instead.
   Future<void> _pullOnceSettled(
-    _Session session,
-    DateTime? lastPulled, {
+    _Session session, {
+    required bool inFull,
     required bool forceFullSync,
   }) async {
     Object? drainFailure;
@@ -545,13 +555,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (await _claimOrBlock(session.uid)) return;
       await _refreshPendingCount();
       state = state.copyWith(status: SyncStatus.syncing);
-      if (lastPulled == null) {
+      if (inFull) {
         await _syncService.pullAll(session.uid);
-        if (_unpulledSnapshot == session) _owedSyncForcesFull = false;
       } else {
-        await _syncService.pullChangedSince(session.uid, lastPulled);
+        await _syncService.pullChangedSince(session.uid);
       }
-      if (_unpulledSnapshot == session && !_owedSyncForcesFull) {
+      if (_unpulledSnapshot == session) {
+        _owedSyncForcesFull = false;
         _unpulledSnapshot = null;
       }
 

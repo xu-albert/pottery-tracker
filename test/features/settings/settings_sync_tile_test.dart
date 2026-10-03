@@ -86,7 +86,7 @@ void main() {
     // ...and finds the server unreachable, which is what an offline launch
     // now leaves on the tile.
     when(
-      () => syncService.pullChangedSince(any(), any()),
+      () => syncService.pullChangedSince(any()),
     ).thenThrow(Exception('unavailable'));
   });
 
@@ -134,9 +134,7 @@ void main() {
     testWidgets('an unuploaded photo prevents the all-backed-up label', (
       tester,
     ) async {
-      when(
-        () => syncService.pullChangedSince(any(), any()),
-      ).thenAnswer((_) async {});
+      when(() => syncService.pullChangedSince(any())).thenAnswer((_) async {});
       when(
         () => syncService.pendingPhotoUploadIds(),
       ).thenAnswer((_) async => {'photo'});
@@ -314,7 +312,7 @@ void main() {
         pending = 0;
       });
       when(
-        () => syncService.pullChangedSince(any(), any()),
+        () => syncService.pullChangedSince(any()),
       ).thenAnswer((_) => Completer<void>().future);
 
       await pumpSettings(tester);

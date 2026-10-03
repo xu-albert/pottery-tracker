@@ -80,6 +80,9 @@ dev_dependencies:
   # Test-only: parses the Android backup rules and manifest into a semantic
   # model rather than grepping them. Already resolved transitively.
   xml: ^6.6.1
+  # Test-only: runs the fake Firestore's server clock apart from the device's.
+  # Already resolved transitively.
+  clock: ^1.1.2
 
 flutter:
   uses-material-design: true

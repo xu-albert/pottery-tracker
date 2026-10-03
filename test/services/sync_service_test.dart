@@ -724,41 +724,29 @@ void main() {
   });
 
   group('pullChangedSince', () {
-    test('only pulls docs with updatedAt after the given timestamp', () async {
-      final cutoff = DateTime(2025, 3, 1);
-      final before = DateTime(2025, 2, 1);
-      final after = DateTime(2025, 4, 1);
+    Future<void> remotePiece(String id, DateTime updatedAt) =>
+        col('pieces').doc(id).set({
+          'title': id,
+          'isArchived': false,
+          'createdAt': Timestamp.fromDate(updatedAt),
+          'updatedAt': Timestamp.fromDate(updatedAt),
+        });
 
-      // Old doc (should NOT be pulled)
-      await col('pieces').doc('old').set({
-        'title': 'Old',
-        'stage': null,
-        'clayType': null,
-        'notes': null,
-        'coverPhotoId': null,
-        'isArchived': false,
-        'createdAt': Timestamp.fromDate(before),
-        'updatedAt': Timestamp.fromDate(before),
-      });
+    test(
+      'only pulls docs with updatedAt after the collection\'s watermark',
+      () async {
+        await remotePiece('seen', DateTime(2025, 3, 1));
+        await syncService.pullAll(_uid);
 
-      // New doc (should be pulled)
-      await col('pieces').doc('new').set({
-        'title': 'New',
-        'stage': null,
-        'clayType': null,
-        'notes': null,
-        'coverPhotoId': null,
-        'isArchived': false,
-        'createdAt': Timestamp.fromDate(after),
-        'updatedAt': Timestamp.fromDate(after),
-      });
+        // Stamped behind the watermark the pull saved, and ahead of it.
+        await remotePiece('old', DateTime(2025, 2, 1));
+        await remotePiece('new', DateTime(2025, 4, 1));
+        await syncService.pullChangedSince(_uid);
 
-      await syncService.pullChangedSince(_uid, cutoff);
-
-      expect(await db.piecesDao.getPieceById('old'), isNull);
-      expect(await db.piecesDao.getPieceById('new'), isNotNull);
-      expect((await db.piecesDao.getPieceById('new'))!.title, 'New');
-    });
+        expect(await db.piecesDao.getPieceById('old'), isNull);
+        expect((await db.piecesDao.getPieceById('new'))!.title, 'new');
+      },
+    );
 
     test('handles remote deletions in incremental pull', () async {
       await insertPiece(id: 'p1');
@@ -769,7 +757,7 @@ void main() {
         'updatedAt': Timestamp.fromDate(after),
       });
 
-      await syncService.pullChangedSince(_uid, DateTime(2025, 3, 1));
+      await syncService.pullChangedSince(_uid);
 
       expect(await db.piecesDao.getPieceById('p1'), isNull);
     });

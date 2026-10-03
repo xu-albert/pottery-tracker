@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:clock/clock.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -133,11 +134,11 @@ void main() {
         'Edited on B while offline',
         DateTime.now().subtract(const Duration(hours: 1)),
       );
-      await a.pullChangedSince(_uid, (await a.getLastPulledAt(_uid))!);
+      await a.pullChangedSince(_uid);
       await Future<void>.delayed(const Duration(milliseconds: 5));
       await b.pushPiece(_uid, 'p1');
 
-      await a.pullChangedSince(_uid, (await a.getLastPulledAt(_uid))!);
+      await a.pullChangedSince(_uid);
       expect(await titleOn(dbA, 'p1'), 'Edited on B while offline');
     });
 
@@ -165,7 +166,7 @@ void main() {
         'Written after A pulled',
         serverNow.add(const Duration(minutes: 5)),
       );
-      await a.pullChangedSince(_uid, (await a.getLastPulledAt(_uid))!);
+      await a.pullChangedSince(_uid);
 
       expect(await titleOn(dbA, 'p2'), 'Written after A pulled');
     });
@@ -182,29 +183,107 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 5));
       await insertPiece(dbB, 'p2', title: 'Pushed later', at: DateTime(2025));
       await b.pushPiece(_uid, 'p2');
-      await a.pullChangedSince(_uid, (await a.getLastPulledAt(_uid))!);
+      await a.pullChangedSince(_uid);
 
       expect(await titleOn(dbA, 'p2'), 'Pushed later');
     });
 
-    test('after an upgrade, the first incremental pull reaches behind the '
-        'device-clock watermark the previous version saved', () async {
-      final legacyWatermark = DateTime.now();
+    test('a device whose clock runs ahead takes a later edit from another '
+        'device', () async {
+      await insertPiece(
+        dbB,
+        'p1',
+        title: 'Bowl',
+        at: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      await b.pushPiece(_uid, 'p1');
+      await a.pullAll(_uid);
+
+      // A's clock runs two hours ahead, so its edit carries a time two hours
+      // after the server's.
+      await retitle(
+        dbA,
+        'p1',
+        'Edited on A',
+        DateTime.now().add(const Duration(hours: 2)),
+      );
+      await a.pushPiece(_uid, 'p1');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await retitle(dbB, 'p1', 'Edited on B afterwards', DateTime.now());
+      await b.pushPiece(_uid, 'p1');
+
+      await a.pullChangedSince(_uid);
+      expect(await titleOn(dbA, 'p1'), 'Edited on B afterwards');
+    });
+
+    test('the watermark is capped at the server clock, not this device\'s: a '
+        'piece an earlier version dated ahead of the server but behind this '
+        'device does not carry it past later writes', () async {
+      // The server runs two hours behind this device.
+      final server = FakeFirebaseFirestore(
+        clock: Clock(() => DateTime.now().subtract(const Duration(hours: 2))),
+      );
+      final onA = SyncService(dbA, server, storage, queue: queueA);
+      final onB = SyncService(dbB, server, storage, queue: SyncQueue());
+      // Pushed by an earlier version on a device as fast as this one.
+      await server.doc('users/$_uid/pieces/legacy').set({
+        'title': 'From a fast clock',
+        'isArchived': false,
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'updatedAt': Timestamp.fromDate(
+          DateTime.now().subtract(const Duration(hours: 1)),
+        ),
+      });
+      await onA.pullAll(_uid);
+
+      await insertPiece(dbB, 'p2', title: 'Pushed later', at: DateTime(2025));
+      await onB.pushPiece(_uid, 'p2');
+      await onA.pullChangedSince(_uid);
+
+      expect(await titleOn(dbA, 'p2'), 'Pushed later');
+    });
+
+    test('after an upgrade, the first incremental pull heals an edit and a '
+        'photo URL the previous version missed a week ago', () async {
+      final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+      // The previous version kept one device-clock watermark, saved now.
       SharedPreferences.setMockInitialValues({
         '${SyncService.lastPulledAtPrefix}$_uid':
-            legacyWatermark.millisecondsSinceEpoch,
+            DateTime.now().millisecondsSinceEpoch,
       });
-      // Stamped by the server while the previous version's pull was running,
-      // so behind the watermark it saved at the end.
-      await remotePiece(
+      await insertPiece(
+        dbA,
         'p1',
-        'Written during the old pull',
-        legacyWatermark.subtract(const Duration(minutes: 10)),
+        title: 'Before the missed edit',
+        at: weekAgo.subtract(const Duration(days: 1)),
       );
+      await dbA.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: Value('${docsDir.path}/photos/p1/ph1.jpg'),
+          dateTaken: Value(weekAgo),
+          createdAt: Value(weekAgo),
+        ),
+      );
+      // Written by the server a week ago, behind every watermark since.
+      await remotePiece('p1', 'Edited a week ago', weekAgo);
+      await col('photos').doc('ph1').set({
+        'pieceId': 'p1',
+        'cloudUrl': 'https://example.test/ph1.jpg',
+        'dateTaken': Timestamp.fromDate(weekAgo),
+        'createdAt': Timestamp.fromDate(weekAgo),
+        'sortOrder': 0,
+        'updatedAt': Timestamp.fromDate(weekAgo),
+      });
 
-      await a.pullChangedSince(_uid, (await a.getLastPulledAt(_uid))!);
+      await a.pullChangedSince(_uid);
 
-      expect(await titleOn(dbA, 'p1'), 'Written during the old pull');
+      expect(await titleOn(dbA, 'p1'), 'Edited a week ago');
+      expect(
+        (await dbA.photosDao.getPhotoById('ph1'))!.cloudUrl,
+        'https://example.test/ph1.jpg',
+      );
     });
   });
 
@@ -218,17 +297,15 @@ void main() {
         await a.pushPiece(_uid, 'p1');
         await a.pullAll(_uid);
 
+        // Stamped after the watermark's overlap begins, so the pull reads it.
         await remotePiece(
           'p1',
           'Older remote edit',
-          DateTime.now().subtract(const Duration(hours: 1)),
+          DateTime.now().subtract(const Duration(seconds: 30)),
         );
         await retitle(dbA, 'p1', 'Newer local edit', DateTime.now());
 
-        await a.pullChangedSince(
-          _uid,
-          DateTime.now().subtract(const Duration(hours: 2)),
-        );
+        await a.pullChangedSince(_uid);
         expect(await titleOn(dbA, 'p1'), 'Newer local edit');
       });
 
@@ -259,21 +336,21 @@ void main() {
         await a.pushPiece(_uid, 'p1');
         await a.pushPieceGlazes(_uid, 'p1');
 
-        // The user swaps the glaze; the push has not happened yet.
+        // The user swaps the glaze, which queues the piece's links and the
+        // piece itself as the piece screen does; neither push has happened.
         await dbA.materialsDao.setGlazesForPiece('p1', ['g2']);
-        await dbA.piecesDao.updatePiece(
-          PiecesCompanion(id: const Value('p1'), updatedAt: Value(t0)),
-        );
-        await queueA.enqueue(
-          const SyncQueueEntry(
-            operation: SyncOperation.pushPieceGlazes,
-            entityId: 'p1',
-          ),
-        );
+        for (final operation in [
+          SyncOperation.pushPieceGlazes,
+          SyncOperation.pushPiece,
+        ]) {
+          await queueA.enqueue(
+            SyncQueueEntry(operation: operation, entityId: 'p1'),
+          );
+        }
 
         final stamp = (await dbA.piecesDao.getPieceById('p1'))!.updatedAt;
 
-        await a.pullChangedSince(_uid, DateTime.now());
+        await a.pullChangedSince(_uid);
 
         final glazes = await dbA.materialsDao.getGlazesForPiece('p1');
         expect(glazes.map((g) => g.id), ['g2']);
@@ -293,7 +370,7 @@ void main() {
 
         await dbB.materialsDao.setGlazesForPiece('p1', ['g1']);
         await b.pushPieceGlazes(_uid, 'p1');
-        await a.pullChangedSince(_uid, (await a.getLastPulledAt(_uid))!);
+        await a.pullChangedSince(_uid);
 
         expect(
           (await dbA.materialsDao.getGlazesForPiece('p1')).map((g) => g.id),
@@ -403,7 +480,6 @@ void main() {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       await b.pullAll(_uid);
-      final watermark = (await b.getLastPulledAt(_uid))!;
       expect((await dbB.photosDao.getPhotoById('ph1'))!.cloudUrl, isNull);
 
       await Future<void>.delayed(const Duration(milliseconds: 5));
@@ -411,7 +487,7 @@ void main() {
       final url = (await col('photos').doc('ph1').get())['cloudUrl'];
       expect(url, isNotNull);
 
-      await b.pullChangedSince(_uid, watermark);
+      await b.pullChangedSince(_uid);
       expect((await dbB.photosDao.getPhotoById('ph1'))!.cloudUrl, url);
 
       await b.pushPhoto(_uid, 'ph1');
@@ -435,7 +511,7 @@ void main() {
     });
 
     test('a remote null written by an earlier version does not replace a '
-        'local URL', () async {
+        'local URL, and the device holding it puts it back', () async {
       await photoOnA();
       await a.uploadPhotoFile(_uid, 'ph1');
       final url = (await dbA.photosDao.getPhotoById('ph1'))!.cloudUrl;
@@ -449,6 +525,13 @@ void main() {
       await a.pullAll(_uid);
 
       expect((await dbA.photosDao.getPhotoById('ph1'))!.cloudUrl, url);
+      const republish = SyncQueueEntry(
+        operation: SyncOperation.pushPhoto,
+        entityId: 'ph1',
+      );
+      expect(await queueA.getAll(), [republish]);
+      await a.pushPhoto(_uid, 'ph1');
+      expect((await col('photos').doc('ph1').get())['cloudUrl'], url);
     });
 
     test('a full pull recovers a URL an earlier version published without '
