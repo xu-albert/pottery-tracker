@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -62,21 +63,7 @@ void main() {
       'updatedAt': Timestamp.now(),
     });
 
-    final container = ProviderContainer(
-      overrides: [
-        authProvider.overrideWith(
-          (_) => AuthNotifier.withState(
-            const AuthState(status: AuthStatus.unauthenticated),
-          ),
-        ),
-        syncQueueProvider.overrideWithValue(queue),
-        syncServiceProvider.overrideWithValue(service),
-        syncStateProvider.overrideWith(
-          (ref) =>
-              SyncNotifier(ref, queue, service, clock: const _ImmediateClock()),
-        ),
-      ],
-    );
+    final container = _container(queue, service);
     addTearDown(() async {
       container.dispose();
       await db.close();
@@ -135,21 +122,7 @@ void main() {
       ),
     );
 
-    final container = ProviderContainer(
-      overrides: [
-        authProvider.overrideWith(
-          (_) => AuthNotifier.withState(
-            const AuthState(status: AuthStatus.unauthenticated),
-          ),
-        ),
-        syncQueueProvider.overrideWithValue(queue),
-        syncServiceProvider.overrideWithValue(service),
-        syncStateProvider.overrideWith(
-          (ref) =>
-              SyncNotifier(ref, queue, service, clock: const _ImmediateClock()),
-        ),
-      ],
-    );
+    final container = _container(queue, service);
     addTearDown(() async {
       container.dispose();
       await db.close();
@@ -184,6 +157,202 @@ void main() {
     );
     expect(container.read(syncStateProvider).status, SyncStatus.idle);
   });
+
+  // A snapshot push lands with the server's time whenever it gets through, so
+  // a copy of a row the cloud already held, sent after a dropped connection
+  // let it through late, would replace an edit made meanwhile elsewhere.
+  test('a first sync leaves out of its snapshot what its pull found in the '
+      'cloud', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = _HeldPushService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final created = DateTime.now().subtract(const Duration(days: 7));
+    // The cloud holds p1 as this device has it; p2 was made here.
+    await firestore.doc('users/user-1/pieces/p1').set({
+      'title': 'Bowl',
+      'isArchived': false,
+      'createdAt': Timestamp.fromDate(created),
+      'updatedAt': Timestamp.fromDate(created),
+    });
+    for (final (id, title) in [('p1', 'Bowl'), ('p2', 'Mug')]) {
+      await db.piecesDao.insertPiece(
+        PiecesCompanion(
+          id: Value(id),
+          title: Value(title),
+          createdAt: Value(created),
+          updatedAt: Value(created),
+        ),
+      );
+    }
+
+    final container = _container(queue, service);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = Completer<void>();
+    final sub = container.listen(syncStateProvider, (_, next) {
+      if (next.lastSyncedAt != null && !synced.isCompleted) synced.complete();
+    });
+    addTearDown(sub.close);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await _until(() async => service.heldPushes.isNotEmpty);
+
+    // Another device edits p1 while the snapshot's pushes are held up.
+    await firestore.doc('users/user-1/pieces/p1').set({
+      'title': 'Edited on another device',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    service.release.complete();
+    await synced.future.timeout(const Duration(seconds: 5));
+
+    expect(service.heldPushes, ['p2']);
+    final remote = await firestore.doc('users/user-1/pieces/p1').get();
+    expect(remote['title'], 'Edited on another device');
+    expect(
+      (await db.piecesDao.getPieceById('p1'))!.title,
+      'Edited on another device',
+    );
+  });
+
+  test('a photo URL a pull finds nulled is pushed back without waiting for '
+      'another sync', () async {
+    SharedPreferences.setMockInitialValues({
+      '${SyncService.lastPulledAtPrefix}user-1': DateTime(
+        2026,
+      ).millisecondsSinceEpoch,
+    });
+    final dir = Directory.systemTemp.createTempSync('url_repair_');
+    final file = File('${dir.path}/ph1.jpg')..writeAsBytesSync([1, 2, 3]);
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    const url = 'https://example.test/ph1.jpg';
+    final created = DateTime(2026);
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p1'),
+        createdAt: Value(created),
+        updatedAt: Value(created),
+      ),
+    );
+    await db.photosDao.insertPhoto(
+      PhotosCompanion(
+        id: const Value('ph1'),
+        pieceId: const Value('p1'),
+        localPath: Value(file.path),
+        cloudUrl: const Value(url),
+        dateTaken: Value(created),
+        createdAt: Value(created),
+      ),
+    );
+    // An earlier version's pushPhoto from a device without the URL.
+    await firestore.doc('users/user-1/photos/ph1').set({
+      'pieceId': 'p1',
+      'cloudUrl': null,
+      'dateTaken': Timestamp.fromDate(created),
+      'createdAt': Timestamp.fromDate(created),
+      'sortOrder': 0,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(
+          (_) => AuthNotifier.withState(
+            const AuthState(status: AuthStatus.unauthenticated),
+          ),
+        ),
+        syncQueueProvider.overrideWithValue(queue),
+        syncServiceProvider.overrideWith(
+          (ref) => SyncService(
+            db,
+            firestore,
+            MockFirebaseStorage(),
+            queue: queue,
+            trigger: ref.watch(syncTriggerProvider),
+          ),
+        ),
+        syncStateProvider.overrideWith(
+          (ref) => SyncNotifier(
+            ref,
+            queue,
+            ref.watch(syncServiceProvider),
+            clock: const _ImmediateClock(),
+          ),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+      dir.deleteSync(recursive: true);
+    });
+    container.read(syncStateProvider.notifier);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+
+    await _until(
+      () async =>
+          (await firestore.doc('users/user-1/photos/ph1').get())
+              .data()?['cloudUrl'] ==
+          url,
+    );
+    await _until(() async => (await queue.getAll()).isEmpty);
+  });
+}
+
+ProviderContainer _container(SyncQueue queue, SyncService service) =>
+    ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(
+          (_) => AuthNotifier.withState(
+            const AuthState(status: AuthStatus.unauthenticated),
+          ),
+        ),
+        syncQueueProvider.overrideWithValue(queue),
+        syncServiceProvider.overrideWithValue(service),
+        syncStateProvider.overrideWith(
+          (ref) =>
+              SyncNotifier(ref, queue, service, clock: const _ImmediateClock()),
+        ),
+      ],
+    );
+
+Future<void> _until(Future<bool> Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (!await condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('the condition never held');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+/// Holds every piece push until [release] completes, standing in for writes a
+/// dropped connection keeps from the server.
+class _HeldPushService extends SyncService {
+  _HeldPushService(super.db, super.firestore, super.storage, {super.queue});
+
+  final heldPushes = <String>[];
+  final release = Completer<void>();
+
+  @override
+  Future<void> pushPiece(String uid, String pieceId) async {
+    heldPushes.add(pieceId);
+    await release.future;
+    await super.pushPiece(uid, pieceId);
+  }
 }
 
 class _RefusedPushService extends SyncService {

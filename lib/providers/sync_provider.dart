@@ -475,15 +475,20 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(status: SyncStatus.syncing);
 
       if (pullInFull && _unpulledSnapshot != session) {
-        // A full sync pulls before it stages its snapshot. Every row the
-        // snapshot pushes is stamped with the server's time, so a row this
-        // device held out of date would replace the newer copy on every other
-        // device. The pull leaves rows with queued work alone, and the
-        // snapshot sends that work on top of what it brought in. Edits made
-        // here are queued as they happen, so they count as waiting offline
-        // without the snapshot.
-        await _syncService.pullAll(uid);
-        await _queue.enqueueMissing(await _syncService.fullUploadEntries(uid));
+        // A full sync pulls before it stages its snapshot, and the snapshot
+        // leaves out everything that pull found in the cloud. A snapshot push
+        // is stamped with the server's time whenever it lands, so a copy of a
+        // row the cloud already holds — out of date now, or by the time a
+        // dropped connection lets it through — would replace newer edits on
+        // every other device. What the pull found is the cloud's copy here or
+        // has queued work of its own; the snapshot uploads what the cloud
+        // lacks. Edits made here are queued as they happen, so they count as
+        // waiting offline without the snapshot.
+        final inCloud = await _syncService.pullAll(uid);
+        await _queue.enqueueMissing([
+          for (final entry in await _syncService.fullUploadEntries(uid))
+            if (!inCloud.contains(entry)) entry,
+        ]);
         _unpulledSnapshot = session;
         pullInFull = false;
         await _refreshPendingCount();
@@ -1352,7 +1357,7 @@ final syncQueueProvider = Provider<SyncQueue>((ref) {
   return SyncQueue();
 });
 
-final syncServiceProvider = Provider<SyncService>((ref) {
+final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
   return SyncService(
     db,
@@ -1360,6 +1365,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     FirebaseStorage.instance,
     keys: ref.watch(encryptionKeyServiceProvider),
     queue: ref.watch(syncQueueProvider),
+    trigger: ref.watch(syncTriggerProvider),
   );
 });
 

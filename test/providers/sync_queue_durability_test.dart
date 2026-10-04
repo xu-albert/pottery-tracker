@@ -124,7 +124,7 @@ void main() {
     ).thenAnswer((_) async => DateTime(2026));
     when(() => service.checkServerReachability(any())).thenAnswer((_) async {});
     when(() => service.fullUploadEntries(any())).thenAnswer((_) async => []);
-    when(() => service.pullAll(any())).thenAnswer((_) async {});
+    when(() => service.pullAll(any())).thenAnswer((_) async => {});
     when(() => service.pullChangedSince(any())).thenAnswer((_) async {});
     when(() => service.pushPiece(any(), any())).thenAnswer((call) async {
       final piece = await db.piecesDao.getPieceById(
@@ -385,6 +385,7 @@ void main() {
     });
     when(() => service.pullAll(any())).thenAnswer((_) async {
       calls.add('pullAll');
+      return {};
     });
     await queue.enqueue(
       const SyncQueueEntry(
@@ -418,6 +419,7 @@ void main() {
     var pulled = false;
     when(() => service.pullAll(any())).thenAnswer((_) async {
       pulled = true;
+      return {};
     });
     when(
       () => service.pushPieceDeletion('user-1', 'gone'),
@@ -498,6 +500,7 @@ void main() {
       ).thenAnswer((_) async => pulledAt);
       when(() => service.pullAll(any())).thenAnswer((_) async {
         pulledAt = DateTime(2026);
+        return {};
       });
       var pendingPhotos = {'photo-1'};
       when(
@@ -670,6 +673,7 @@ void main() {
     ).thenAnswer((_) async => pulledAt);
     when(() => service.pullAll(any())).thenAnswer((_) async {
       pulledAt = DateTime(2026);
+      return {};
     });
     when(() => service.fullUploadEntries('user-1')).thenAnswer(
       (_) async => const [
@@ -803,7 +807,7 @@ void main() {
       );
 
       // An ordinary retry pulls incrementally, and succeeds.
-      when(() => service.pullAll(any())).thenAnswer((_) async {});
+      when(() => service.pullAll(any())).thenAnswer((_) async => {});
       await notifier.syncNow();
       expect(container.read(syncStateProvider).status, SyncStatus.idle);
 

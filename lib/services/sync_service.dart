@@ -12,6 +12,7 @@ import '../database/database.dart';
 import '../database/transfer_key_backup.dart';
 import 'encryption_key_service.dart';
 import 'sync_queue.dart';
+import 'sync_trigger.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -75,14 +76,35 @@ class SyncService {
   /// revisions before the persisted queue catches up.
   final SyncQueue _queue;
 
+  /// Where a pull queues a push it finds this device owes the cloud, so the
+  /// app schedules a drain for it. The app passes the trigger its writers
+  /// use, which enqueues into [_queue].
+  final SyncTrigger _trigger;
+
   SyncService(
-    this._db,
-    this._firestore,
-    this._storage, {
+    AppDatabase db,
+    FirebaseFirestore firestore,
+    FirebaseStorage storage, {
     EncryptionKeyService? keys,
     SyncQueue? queue,
-  }) : _keys = keys ?? EncryptionKeyService(),
-       _queue = queue ?? SyncQueue();
+    SyncTrigger? trigger,
+  }) : this._(
+         db,
+         firestore,
+         storage,
+         keys ?? EncryptionKeyService(),
+         queue ?? SyncQueue(),
+         trigger,
+       );
+
+  SyncService._(
+    this._db,
+    this._firestore,
+    this._storage,
+    this._keys,
+    this._queue,
+    SyncTrigger? trigger,
+  ) : _trigger = trigger ?? SyncTrigger(_queue);
 
   DocumentReference _userDoc(String uid) => _firestore.doc('users/$uid');
 
@@ -652,9 +674,10 @@ class SyncService {
   // ════════════════════════════════════════════
 
   /// Describes a full local snapshot using the same durable operations as the
-  /// incremental queue. [SyncNotifier] enqueues these before dispatching them,
-  /// so first sync, forced sync and normal drains share acknowledgement,
-  /// revision and single-flight semantics.
+  /// incremental queue. [SyncNotifier] enqueues these, less what its full pull
+  /// found in the cloud ([pullAll]), before dispatching them, so first sync,
+  /// forced sync and normal drains share acknowledgement, revision and
+  /// single-flight semantics.
   Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
     final entries = <SyncQueueEntry>[];
     final allPieces = await _db.select(_db.pieces).get();
@@ -747,9 +770,14 @@ class SyncService {
   // Pulls must reach the server for every collection, including junctions.
   // A cache fallback can omit another device's edits; saving a successful
   // pull watermark after it would skip those edits on the next online sync.
-  Future<void> pullAll(String uid) async {
+  //
+  // Returns the entries of a full snapshot ([fullUploadEntries]) for what the
+  // cloud already holds: every live doc the pull read. Each such row is now
+  // the cloud's copy here, or has queued work of its own that sends it, so a
+  // snapshot that pushed it again could only carry an older copy.
+  Future<Set<SyncQueueEntry>> pullAll(String uid) {
     debugPrint('SyncService: full pull (first sync on this device)');
-    await _pull(uid, full: true);
+    return _pull(uid, full: true);
   }
 
   /// Pulls what changed in each collection since that collection's own
@@ -762,26 +790,36 @@ class SyncService {
     await _pull(uid, full: false);
   }
 
-  /// One pull of every collection, in full when [full] is set.
+  /// One pull of every collection, in full when [full] is set. Returns what
+  /// [pullAll] does.
   ///
   /// It never writes over local work that has not reached the cloud. An
   /// entity with a queued push or delete is skipped: that entry still owns
   /// it, and the push it makes is what the other devices will pull. A piece
-  /// is replaced only by a remote `updatedAt` no older than its own, checked
-  /// in the same transaction as the write, and a junction set only while its
+  /// that changed here while the pull ran is skipped too, checked in the same
+  /// transaction as the write, and a junction set is replaced only while its
   /// piece still carries the `updatedAt` this pull last saw, so an edit
-  /// landing while the pull runs wins even before its queue entry is written.
+  /// landing mid-pull wins even before its queue entry is written. A doc
+  /// skipped either way holds its collection's watermark behind it, so the
+  /// next pull reads it again.
   ///
   /// Remote piece stamps are server time, the time the cloud copy was last
   /// pushed. Pushes replace the whole row, so a device taking the newest push
   /// converges with the cloud instead of keeping an older copy of its own.
-  Future<void> _pull(String uid, {required bool full}) async {
+  Future<Set<SyncQueueEntry>> _pull(String uid, {required bool full}) async {
     final prefs = await SharedPreferences.getInstance();
     final pieceStamps = {
       for (final piece in await _db.select(_db.pieces).get())
         piece.id: piece.updatedAt,
     };
+    // Piece stamps here are comparable with the cloud's once a pull by this
+    // version has completed: each one is then a server stamp, pulled or
+    // moved onto its own push's, or an edit still queued. An earlier version
+    // moved them with this device's clock, on every pull among other writes,
+    // so until then a local stamp says nothing about the cloud copy.
+    final stampsComparable = _collectionWatermark(prefs, uid, 'pieces') != null;
     final watermarks = <String, DateTime>{};
+    final inCloud = <SyncQueueEntry>{};
     final queriedAt = await _serverNow(uid);
 
     for (final collection in _pulledCollections) {
@@ -795,6 +833,7 @@ class SyncService {
             );
       final snap = await query.get(const GetOptions(source: Source.server));
       final isQueued = await _queuedCheck();
+      DateTime? held;
 
       for (final doc in snap.docs) {
         final data = doc.data() as Map<String, dynamic>?;
@@ -804,12 +843,23 @@ class SyncService {
           await _handleRemoteDeletion(collection, doc.id);
           continue;
         }
-        if (_queuedEntriesFor(collection, doc.id).any(isQueued)) {
-          continue;
+        final push = _pushEntryFor(collection, doc.id);
+        inCloud.add(push);
+        final applied =
+            !isQueued(push) &&
+            !isQueued(_deletionEntryFor(collection, doc.id)) &&
+            await _mergeRemoteDoc(
+              collection,
+              doc,
+              pieceStamps,
+              stampsComparable: stampsComparable,
+            );
+        if (data['updatedAt'] case final Timestamp stamp when !applied) {
+          final at = stamp.toDate();
+          if (held == null || at.isBefore(held)) held = at;
         }
-        await _mergeRemoteDoc(collection, doc, pieceStamps);
       }
-      watermarks[collection] = _nextWatermark(from, snap.docs, queriedAt);
+      watermarks[collection] = _nextWatermark(from, snap.docs, queriedAt, held);
     }
 
     await _pullJunctions(
@@ -818,6 +868,7 @@ class SyncService {
       optionField: 'glazeOptionId',
       pushOperation: SyncOperation.pushPieceGlazes,
       pieceStamps: pieceStamps,
+      inCloud: inCloud,
     );
     await _pullJunctions(
       uid,
@@ -825,6 +876,7 @@ class SyncService {
       optionField: 'tagOptionId',
       pushOperation: SyncOperation.pushPieceTags,
       pieceStamps: pieceStamps,
+      inCloud: inCloud,
     );
 
     await _downloadMissingPhotos(uid);
@@ -839,6 +891,7 @@ class SyncService {
       );
     }
     await _saveLastPulledAt(uid);
+    return inCloud;
   }
 
   Future<DateTime?> getLastPulledAt(String uid) async {
@@ -880,14 +933,16 @@ class SyncService {
   /// It is capped at the server's clock read before the query, [queriedAt].
   /// Pieces pushed by an earlier app version carry their device's edit time
   /// instead, and one from a fast clock must not carry the watermark past
-  /// server-stamped writes still to come. A query that returned nothing
-  /// leaves the watermark where it was; a full pull of an empty collection
-  /// starts the next query from the beginning, which costs nothing while it
-  /// stays empty.
+  /// server-stamped writes still to come. It stays behind [held], the oldest
+  /// doc this pull read without applying, so the next query reads that doc
+  /// again. A query that returned nothing leaves the watermark where it was;
+  /// a full pull of an empty collection starts the next query from the
+  /// beginning, which costs nothing while it stays empty.
   DateTime _nextWatermark(
     DateTime? from,
     List<QueryDocumentSnapshot> docs,
     DateTime queriedAt,
+    DateTime? held,
   ) {
     DateTime? newest;
     for (final doc in docs) {
@@ -901,7 +956,10 @@ class SyncService {
       return from ?? DateTime.fromMicrosecondsSinceEpoch(0);
     }
     final bounded = newest.isAfter(queriedAt) ? queriedAt : newest;
-    return from != null && from.isAfter(bounded) ? from : bounded;
+    final next = from != null && from.isAfter(bounded) ? from : bounded;
+    return held != null && !next.isBefore(held)
+        ? held.subtract(const Duration(microseconds: 1))
+        : next;
   }
 
   /// The server's clock now, read back from a document stamped with it. A
@@ -925,48 +983,47 @@ class SyncService {
         persisted.contains(entry) || _queue.revisionOf(entry) != 0;
   }
 
-  /// The queue entries that own the local row a pulled [collection] doc
-  /// would overwrite.
-  static List<SyncQueueEntry> _queuedEntriesFor(String collection, String id) =>
-      switch (collection) {
-        'pieces' => [
-          SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: id),
-          SyncQueueEntry(operation: SyncOperation.deletePiece, entityId: id),
-        ],
-        'photos' => [
-          SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: id),
-          SyncQueueEntry(operation: SyncOperation.deletePhoto, entityId: id),
-        ],
-        'clays' => [
-          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: id),
-          _materialDeletion('clays', id),
-        ],
-        'glazes' => [
-          SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: id),
-          _materialDeletion('glazes', id),
-        ],
-        'tags' => [
-          SyncQueueEntry(operation: SyncOperation.pushTag, entityId: id),
-          _materialDeletion('tags', id),
-        ],
-        _ => const [],
-      };
-
-  static SyncQueueEntry _materialDeletion(String collection, String id) =>
+  /// The queue entry that pushes the local row a pulled [collection] doc
+  /// mirrors. It, or [_deletionEntryFor], owns that row while queued.
+  static SyncQueueEntry _pushEntryFor(String collection, String id) =>
       SyncQueueEntry(
-        operation: SyncOperation.deleteMaterial,
+        operation: switch (collection) {
+          'pieces' => SyncOperation.pushPiece,
+          'photos' => SyncOperation.pushPhoto,
+          'clays' => SyncOperation.pushClay,
+          'glazes' => SyncOperation.pushGlaze,
+          _ => SyncOperation.pushTag,
+        },
         entityId: id,
-        extraData: collection,
       );
 
+  static SyncQueueEntry _deletionEntryFor(String collection, String id) =>
+      switch (collection) {
+        'pieces' => SyncQueueEntry(
+          operation: SyncOperation.deletePiece,
+          entityId: id,
+        ),
+        'photos' => SyncQueueEntry(
+          operation: SyncOperation.deletePhoto,
+          entityId: id,
+        ),
+        _ => SyncQueueEntry(
+          operation: SyncOperation.deleteMaterial,
+          entityId: id,
+          extraData: collection,
+        ),
+      };
+
   /// Junctions have no `updatedAt`, so every pull reads them in full; a set
-  /// skipped here is simply looked at again next time.
+  /// skipped here is simply looked at again next time. Each piece with links
+  /// in the cloud goes into [inCloud], as [pullAll] describes.
   Future<void> _pullJunctions(
     String uid,
     String collection, {
     required String optionField,
     required SyncOperation pushOperation,
     required Map<String, DateTime> pieceStamps,
+    required Set<SyncQueueEntry> inCloud,
   }) async {
     final snap = await _col(
       uid,
@@ -979,6 +1036,10 @@ class SyncService {
       if (pieceId == null) continue;
       byPiece.putIfAbsent(pieceId, () => []).add(data!);
     }
+    inCloud.addAll([
+      for (final pieceId in byPiece.keys)
+        SyncQueueEntry(operation: pushOperation, entityId: pieceId),
+    ]);
     final isQueued = await _queuedCheck();
     for (final MapEntry(key: pieceId, value: docs) in byPiece.entries) {
       if (isQueued(
@@ -1015,16 +1076,25 @@ class SyncService {
   // Remote merge
   // ════════════════════════════════════════════
 
-  /// Applies one live remote doc whose local row has no queued work.
-  /// [pieceStamps] is told the `updatedAt` of every piece row written here.
-  Future<void> _mergeRemoteDoc(
+  /// Applies one live remote doc whose local row has no queued work, and
+  /// answers whether it did. [pieceStamps] is told the `updatedAt` of every
+  /// piece row written here.
+  ///
+  /// A piece is kept when it changed here while the pull ran, and, once
+  /// [stampsComparable], when its own stamp is newer than the remote one. A
+  /// copy kept for being newer has nothing queued to send it, so it is queued
+  /// here: the cloud takes the copy this device keeps, and the doc this pull
+  /// held its watermark behind is replaced.
+  Future<bool> _mergeRemoteDoc(
     String collection,
     QueryDocumentSnapshot doc,
-    Map<String, DateTime> pieceStamps,
-  ) async {
+    Map<String, DateTime> pieceStamps, {
+    required bool stampsComparable,
+  }) async {
     switch (collection) {
       case 'pieces':
-        await _db.transaction(() async {
+        var newerHere = false;
+        final applied = await _db.transaction(() async {
           final local = await _db.piecesDao.getPieceById(doc.id);
           final d = doc.data() as Map<String, dynamic>;
           final remoteUpdatedAt = _wholeSeconds(
@@ -1032,15 +1102,24 @@ class SyncService {
           );
           if (local == null) {
             await _insertPieceFromRemote(doc, remoteUpdatedAt);
-          } else if (!remoteUpdatedAt.isBefore(local.updatedAt)) {
+          } else {
+            final seen = pieceStamps[doc.id];
+            if (seen == null || !local.updatedAt.isAtSameMomentAs(seen)) {
+              return false;
+            }
             // A tie at the stored second goes to the remote: local work that
             // has not been pushed is queued, and was skipped above.
+            if (stampsComparable && remoteUpdatedAt.isBefore(local.updatedAt)) {
+              newerHere = true;
+              return false;
+            }
             await _updatePieceFromRemote(doc, remoteUpdatedAt);
-          } else {
-            return;
           }
           pieceStamps[doc.id] = remoteUpdatedAt;
+          return true;
         });
+        if (newerHere) await _trigger.afterPieceWrite(doc.id);
+        return applied;
       case 'photos':
         final local = await _db.photosDao.getPhotoById(doc.id);
         if (local == null) {
@@ -1052,12 +1131,7 @@ class SyncService {
           // the photo again puts the URL back for every other device.
           if (local.cloudUrl != null &&
               (doc.data() as Map<String, dynamic>)['cloudUrl'] == null) {
-            await _queue.enqueue(
-              SyncQueueEntry(
-                operation: SyncOperation.pushPhoto,
-                entityId: doc.id,
-              ),
-            );
+            await _trigger.afterPhotoWrite(doc.id);
           }
         }
       case 'clays':
@@ -1067,6 +1141,7 @@ class SyncService {
       case 'tags':
         await _insertTagFromRemote(doc);
     }
+    return true;
   }
 
   /// Truncated to the whole second the local database stores, so a piece

@@ -244,18 +244,21 @@ void main() {
     });
 
     test('after an upgrade, the first incremental pull heals an edit and a '
-        'photo URL the previous version missed a week ago', () async {
+        'photo URL the previous version missed a week ago, on a piece whose '
+        'stamp it moved since', () async {
       final weekAgo = DateTime.now().subtract(const Duration(days: 7));
       // The previous version kept one device-clock watermark, saved now.
       SharedPreferences.setMockInitialValues({
         '${SyncService.lastPulledAtPrefix}$_uid':
             DateTime.now().millisecondsSinceEpoch,
       });
+      // The previous version's pulls have moved this piece's stamp to their
+      // own clock since, as its glaze and tag merges did on every pull.
       await insertPiece(
         dbA,
         'p1',
         title: 'Before the missed edit',
-        at: weekAgo.subtract(const Duration(days: 1)),
+        at: DateTime.now().subtract(const Duration(hours: 1)),
       );
       await dbA.photosDao.insertPhoto(
         PhotosCompanion(
@@ -285,13 +288,94 @@ void main() {
         'https://example.test/ph1.jpg',
       );
     });
+
+    test(
+      'renaming or deleting a glaze or tag here leaves its pieces\' stamps '
+      'alone, so another device\'s edit made before it still arrives',
+      () async {
+        final pulledAt = DateTime.now().subtract(const Duration(minutes: 10));
+        await remotePiece('p1', 'Bowl', pulledAt);
+        await a.pullAll(_uid);
+        for (final (id, name) in [('g1', 'Celadon'), ('g2', 'Tenmoku')]) {
+          await insertGlaze(dbA, id, name);
+        }
+        for (final (id, name) in [('t1', 'Gift'), ('t2', 'Sold')]) {
+          await dbA
+              .into(dbA.tagOptions)
+              .insert(
+                TagOptionsCompanion.insert(
+                  id: id,
+                  name: name,
+                  createdAt: DateTime(2025),
+                ),
+              );
+        }
+        await dbA.materialsDao.setGlazesForPiece('p1', [
+          'g1',
+          'g2',
+        ], touchUpdatedAt: false);
+        await dbA.materialsDao.setTagsForPiece('p1', [
+          't1',
+          't2',
+        ], touchUpdatedAt: false);
+        final stamp = (await dbA.piecesDao.getPieceById('p1'))!.updatedAt;
+        // Another device retitles the piece after this one pulled it.
+        await remotePiece(
+          'p1',
+          'Retitled on B',
+          pulledAt.add(const Duration(minutes: 5)),
+        );
+
+        final materials = dbA.materialsDao;
+        await materials.updateGlazeName('g1', 'Celadon Blue');
+        await materials.deleteGlaze('g2');
+        await materials.updateTagName('t1', 'Gifted');
+        await materials.deleteTag('t2');
+
+        final piece = (await dbA.piecesDao.getPieceById('p1'))!;
+        expect(piece.updatedAt, stamp);
+        expect(piece.glazes, 'Celadon Blue');
+        expect(piece.tags, 'Gifted');
+        await a.pullChangedSince(_uid);
+        expect(await titleOn(dbA, 'p1'), 'Retitled on B');
+      },
+    );
+
+    test('a doc a pull skipped is read again by the next pull', () async {
+      await insertPiece(
+        dbA,
+        'p1',
+        title: 'Bowl',
+        at: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      await remotePiece(
+        'p1',
+        'Edited on B',
+        DateTime.now().subtract(const Duration(minutes: 10)),
+      );
+      // A later doc that would carry the watermark well past p1's.
+      await remotePiece('p2', 'Mug', DateTime.now());
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.pushPiece,
+        entityId: 'p1',
+      );
+      await queueA.enqueue(entry);
+      await a.pullAll(_uid);
+      expect(await titleOn(dbA, 'p1'), 'Bowl');
+
+      // The entry leaves the queue without its push replacing that doc.
+      await queueA.remove(entry);
+      await a.pullChangedSince(_uid);
+
+      expect(await titleOn(dbA, 'p1'), 'Edited on B');
+    });
   });
 
   group(
     'H2: a pull never overwrites local edits that have not been pushed',
     () {
       test('an incremental pull does not replace a newer local piece edit with '
-          'an older remote one', () async {
+          'an older remote one, and queues the copy it keeps', () async {
         final t0 = DateTime.now().subtract(const Duration(hours: 3));
         await insertPiece(dbA, 'p1', title: 'Bowl', at: t0);
         await a.pushPiece(_uid, 'p1');
@@ -307,6 +391,16 @@ void main() {
 
         await a.pullChangedSince(_uid);
         expect(await titleOn(dbA, 'p1'), 'Newer local edit');
+        expect(
+          await queueA.getAll(),
+          [
+            const SyncQueueEntry(
+              operation: SyncOperation.pushPiece,
+              entityId: 'p1',
+            ),
+          ],
+          reason: 'nothing else sends the copy kept here to the cloud',
+        );
       });
 
       test('a piece edit still queued is kept even against a newer remote '

@@ -60,7 +60,7 @@ void main() {
     when(
       () => syncService.fullUploadEntries(any()),
     ).thenAnswer((_) async => []);
-    when(() => syncService.pullAll(any())).thenAnswer((_) async {});
+    when(() => syncService.pullAll(any())).thenAnswer((_) async => {});
     when(() => queue.enqueueMissing(any())).thenAnswer((_) async {});
     when(() => syncService.setLocalDataOwner(any())).thenAnswer((_) async {});
     when(() => syncService.getDeviceContested()).thenAnswer((_) async => false);

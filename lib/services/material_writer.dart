@@ -3,7 +3,7 @@ import '../database/database.dart';
 import 'sync_trigger.dart';
 
 /// Finds or creates a material, and enqueues a sync for exactly the ones it
-/// created.
+/// created; renames a clay, and enqueues everything the rename rewrote.
 ///
 /// `MaterialsDao.findOrCreate*` returns an existing row untouched, so a caller
 /// that enqueues unconditionally reports a write that never happened and
@@ -35,5 +35,16 @@ class MaterialWriter {
     final (tag, created) = await _dao.findOrCreateTag(name);
     if (created) await _trigger.afterTagWrite(tag.id);
     return tag;
+  }
+
+  /// Renames a clay, and queues the clay and every piece the rename rewrote:
+  /// a piece's `clayType` is pushed content, and the rename moves its
+  /// `updatedAt`, which a pull compares with the cloud copy's.
+  Future<void> renameClay(String id, String newName) async {
+    final renamed = await _dao.updateClayName(id, newName);
+    await _trigger.afterClayWrite(id);
+    for (final pieceId in renamed) {
+      await _trigger.afterPieceWrite(pieceId);
+    }
   }
 }

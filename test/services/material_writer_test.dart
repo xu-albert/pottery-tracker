@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
@@ -59,5 +60,43 @@ void main() {
 
     expect([sameGlaze.id, sameTag.id], [glaze.id, tag.id]);
     expect(await queue.getAll(), isEmpty);
+  });
+
+  test('renaming a clay queues it and every piece it renamed', () async {
+    final clay = await writer.clay('Stoneware');
+    for (final (id, clayType) in [
+      ('p1', 'Stoneware'),
+      ('p2', 'Stoneware'),
+      ('p3', 'Porcelain'),
+    ]) {
+      await db.piecesDao.insertPiece(
+        PiecesCompanion(
+          id: Value(id),
+          clayType: Value(clayType),
+          createdAt: Value(DateTime(2025)),
+          updatedAt: Value(DateTime(2025)),
+        ),
+      );
+    }
+    await queue.clear();
+
+    await writer.renameClay(clay.id, 'B-Mix');
+
+    expect((await db.piecesDao.getPieceById('p1'))!.clayType, 'B-Mix');
+    expect(
+      await queue.getAll(),
+      [
+        SyncQueueEntry(operation: SyncOperation.pushClay, entityId: clay.id),
+        const SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        ),
+        const SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p2',
+        ),
+      ],
+      reason: 'a renamed piece carries a new stamp and new pushed content',
+    );
   });
 }

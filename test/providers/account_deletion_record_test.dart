@@ -45,7 +45,7 @@ void main() {
     when(
       () => syncService.fullUploadEntries(any()),
     ).thenAnswer((_) async => []);
-    when(() => syncService.pullAll(any())).thenAnswer((_) async {});
+    when(() => syncService.pullAll(any())).thenAnswer((_) async => {});
     when(() => queue.enqueueMissing(any())).thenAnswer((_) async {});
     when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
     when(() => syncService.deleteLocalData()).thenAnswer((_) async {});

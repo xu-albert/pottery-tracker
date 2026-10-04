@@ -642,7 +642,8 @@ void main() {
       expect(piece!.title, 'Updated Title');
     });
 
-    test('skips update when local piece is newer', () async {
+    test('skips update when local piece is newer, once this device has '
+        'pulled', () async {
       final newTime = DateTime(2025, 6, 1);
       await db.piecesDao.insertPiece(
         PiecesCompanion(
@@ -652,6 +653,9 @@ void main() {
           updatedAt: Value(newTime),
         ),
       );
+      // A pull by this version has completed, so this device's piece stamps
+      // are comparable with the cloud's.
+      await syncService.pullAll(_uid);
 
       // Remote has older timestamp
       final oldTime = DateTime(2025, 1, 1);

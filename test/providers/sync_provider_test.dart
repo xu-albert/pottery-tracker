@@ -56,7 +56,7 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
     () => syncService.checkServerReachability(any()),
   ).thenAnswer((_) async {});
   when(() => syncService.fullUploadEntries(any())).thenAnswer((_) async => []);
-  when(() => syncService.pullAll(any())).thenAnswer((_) async {});
+  when(() => syncService.pullAll(any())).thenAnswer((_) async => {});
   when(() => syncService.pullChangedSince(any())).thenAnswer((_) async {});
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
@@ -404,7 +404,7 @@ void main() {
         s.container.read(syncStateProvider).errorMessage,
         contains('second failure'),
       );
-      when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
+      when(() => s.syncService.pullAll(any())).thenAnswer((_) async => {});
       await s.notifier.syncNow();
       await _settle();
       expect(s.container.read(syncStateProvider).errorMessage, isNull);
@@ -425,6 +425,7 @@ void main() {
         if (running > 1) everOverlapped = true;
         await Future.delayed(const Duration(milliseconds: 50));
         running--;
+        return {};
       });
 
       // Fire two syncs concurrently
@@ -722,6 +723,7 @@ void main() {
         ).thenAnswer((_) async => pulledAt);
         when(() => s.syncService.pullAll('user-1')).thenAnswer((_) async {
           pulledAt = DateTime.utc(2026, 9, 1);
+          return {};
         });
         final entered = Completer<void>();
         final release = Completer<void>();
@@ -1409,9 +1411,9 @@ void main() {
 
         // A pull that outlives the wipe's bounded wait, still writing rows
         // behind the delete.
-        when(
-          () => s.syncService.pullAll(any()),
-        ).thenAnswer((_) => Future<void>.delayed(const Duration(minutes: 5)));
+        when(() => s.syncService.pullAll(any())).thenAnswer(
+          (_) => Future.delayed(const Duration(minutes: 5), () => {}),
+        );
         unawaited(s.notifier.syncNow(forceFullSync: true));
         async.elapse(Duration.zero);
         async.flushMicrotasks();
