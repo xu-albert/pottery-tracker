@@ -535,7 +535,6 @@ void main() {
         await b.pushDeletion(_uid, 'glazes', 'g1');
         await dbB.materialsDao.setTagsForPiece('p1', ['t2']);
         await b.pushPieceTags(_uid, 'p1');
-        await b.pushPiece(_uid, 'p1');
         await a.pullChangedSince(_uid);
 
         expect(
@@ -545,6 +544,48 @@ void main() {
         final piece = (await dbA.piecesDao.getPieceById('p1'))!;
         expect(piece.tags, 'Sold');
         expect(piece.glazes, isNull);
+      });
+
+      test('a tag deleted on another device does not hold back that '
+          "device's other link changes to its pieces", () async {
+        final t0 = DateTime.now().subtract(const Duration(days: 1));
+        for (final db in [dbA, dbB]) {
+          await insertPiece(db, 'p1', title: 'Bowl', at: t0);
+          for (final (id, name) in [('g1', 'Celadon'), ('g2', 'Tenmoku')]) {
+            await insertGlaze(db, id, name);
+          }
+          await db
+              .into(db.tagOptions)
+              .insert(
+                TagOptionsCompanion.insert(
+                  id: 't1',
+                  name: 'Gift',
+                  createdAt: DateTime(2025),
+                ),
+              );
+          await db.materialsDao.setGlazesForPiece('p1', [
+            'g1',
+          ], touchUpdatedAt: false);
+          await db.materialsDao.setTagsForPiece('p1', [
+            't1',
+          ], touchUpdatedAt: false);
+        }
+        await a.pullAll(_uid);
+
+        // On B the user deletes the tag and reglazes the piece.
+        await dbB.materialsDao.deleteTag('t1');
+        await b.pushDeletion(_uid, 'tags', 't1');
+        await dbB.materialsDao.setGlazesForPiece('p1', ['g2']);
+        await b.pushPieceGlazes(_uid, 'p1');
+        await a.pullChangedSince(_uid);
+
+        expect(
+          (await dbA.materialsDao.getGlazesForPiece('p1')).map((g) => g.id),
+          ['g2'],
+        );
+        final piece = (await dbA.piecesDao.getPieceById('p1'))!;
+        expect(piece.glazes, 'Tenmoku');
+        expect(piece.tags, isNull);
       });
 
       test('a piece deleted here with its deletion still queued is not brought '
