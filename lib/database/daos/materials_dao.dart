@@ -224,7 +224,7 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     )..where((pg) => pg.glazeOptionId.equals(id))).get();
     final affectedPieceIds = junctionRows.map((r) => r.pieceId).toSet();
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedGlazesForPiece(pieceId, touchUpdatedAt: false);
+      await _rebuildDenormalizedGlazesForPiece(pieceId);
     }
   }
 
@@ -243,7 +243,7 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
     // Rebuild denormalized column for affected pieces
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedGlazesForPiece(pieceId, touchUpdatedAt: false);
+      await _rebuildDenormalizedGlazesForPiece(pieceId);
     }
   }
 
@@ -411,7 +411,7 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     )..where((pt) => pt.tagOptionId.equals(id))).get();
     final affectedPieceIds = junctionRows.map((r) => r.pieceId).toSet();
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedTagsForPiece(pieceId, touchUpdatedAt: false);
+      await _rebuildDenormalizedTagsForPiece(pieceId);
     }
   }
 
@@ -431,7 +431,7 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     await (delete(tagOptions)..where((t) => t.id.equals(id))).go();
 
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedTagsForPiece(pieceId, touchUpdatedAt: false);
+      await _rebuildDenormalizedTagsForPiece(pieceId);
     }
   }
 
@@ -556,11 +556,9 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
   // ── Private helpers ──
 
-  /// Rewrites the piece's `tags` column; [touchUpdatedAt] as for
-  /// [_rebuildDenormalizedGlazesForPiece].
   Future<void> _rebuildDenormalizedTagsForPiece(
     String pieceId, {
-    required bool touchUpdatedAt,
+    bool touchUpdatedAt = true,
   }) async {
     final tagList = await getTagsForPiece(pieceId);
     final denormalized = tagList.isEmpty
@@ -588,13 +586,9 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  /// Rewrites the piece's `glazes` column. That column is derived and never
-  /// pushed, so a rename or deletion of a glaze passes [touchUpdatedAt] false:
-  /// the piece's pushed content is unchanged, and its stamp moves only with a
-  /// push of it queued.
   Future<void> _rebuildDenormalizedGlazesForPiece(
     String pieceId, {
-    required bool touchUpdatedAt,
+    bool touchUpdatedAt = true,
   }) async {
     final glazeList = await getGlazesForPiece(pieceId);
     final denormalized = glazeList.isEmpty

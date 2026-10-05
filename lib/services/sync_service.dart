@@ -448,15 +448,10 @@ class SyncService {
     ).doc('sync-reachability').get(const GetOptions(source: Source.server));
   }
 
-  /// Pushes the piece, then moves its local `updatedAt` onto the server time
-  /// the push was written with, so this copy carries the cloud copy's stamp.
-  /// A piece edited again while the push was in the air keeps its newer
-  /// stamp, and the queue entry that edit revised sends it next.
   Future<void> pushPiece(String uid, String pieceId) async {
     final piece = await _db.piecesDao.getPieceById(pieceId);
     if (piece == null) return;
-    final ref = _col(uid, 'pieces').doc(pieceId);
-    await ref.set({
+    await _col(uid, 'pieces').doc(pieceId).set({
       'title': piece.title,
       'stage': piece.stage,
       'clayType': piece.clayType,
@@ -473,15 +468,6 @@ class SyncService {
       // other devices have already passed.
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    final written = await ref.get(const GetOptions(source: Source.server));
-    final stamp = (written.data() as Map<String, dynamic>?)?['updatedAt'];
-    if (stamp is! Timestamp) return;
-    await (_db.update(_db.pieces)..where(
-          (p) => p.id.equals(pieceId) & p.updatedAt.equals(piece.updatedAt),
-        ))
-        .write(
-          PiecesCompanion(updatedAt: Value(_wholeSeconds(stamp.toDate()))),
-        );
   }
 
   Future<void> pushPhoto(String uid, String photoId) async {

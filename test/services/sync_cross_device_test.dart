@@ -313,57 +313,52 @@ void main() {
       );
     });
 
-    test(
-      'renaming or deleting a glaze or tag here leaves its pieces\' stamps '
-      'alone, so another device\'s edit made before it still arrives',
-      () async {
-        final pulledAt = DateTime.now().subtract(const Duration(minutes: 10));
-        await remotePiece('p1', 'Bowl', pulledAt);
-        await a.pullAll(_uid);
-        for (final (id, name) in [('g1', 'Celadon'), ('g2', 'Tenmoku')]) {
-          await insertGlaze(dbA, id, name);
-        }
-        for (final (id, name) in [('t1', 'Gift'), ('t2', 'Sold')]) {
-          await dbA
-              .into(dbA.tagOptions)
-              .insert(
-                TagOptionsCompanion.insert(
-                  id: id,
-                  name: name,
-                  createdAt: DateTime(2025),
-                ),
-              );
-        }
-        await dbA.materialsDao.setGlazesForPiece('p1', [
-          'g1',
-          'g2',
-        ], touchUpdatedAt: false);
-        await dbA.materialsDao.setTagsForPiece('p1', [
-          't1',
-          't2',
-        ], touchUpdatedAt: false);
-        final stamp = (await dbA.piecesDao.getPieceById('p1'))!.updatedAt;
-        // Another device retitles the piece after this one pulled it.
-        await remotePiece(
-          'p1',
-          'Retitled on B',
-          pulledAt.add(const Duration(minutes: 5)),
-        );
+    test('renaming or deleting a glaze or tag here does not keep out another '
+        'device\'s edit of its pieces', () async {
+      final pulledAt = DateTime.now().subtract(const Duration(minutes: 10));
+      await remotePiece('p1', 'Bowl', pulledAt);
+      await a.pullAll(_uid);
+      for (final (id, name) in [('g1', 'Celadon'), ('g2', 'Tenmoku')]) {
+        await insertGlaze(dbA, id, name);
+      }
+      for (final (id, name) in [('t1', 'Gift'), ('t2', 'Sold')]) {
+        await dbA
+            .into(dbA.tagOptions)
+            .insert(
+              TagOptionsCompanion.insert(
+                id: id,
+                name: name,
+                createdAt: DateTime(2025),
+              ),
+            );
+      }
+      await dbA.materialsDao.setGlazesForPiece('p1', [
+        'g1',
+        'g2',
+      ], touchUpdatedAt: false);
+      await dbA.materialsDao.setTagsForPiece('p1', [
+        't1',
+        't2',
+      ], touchUpdatedAt: false);
+      // Another device retitles the piece after this one pulled it.
+      await remotePiece(
+        'p1',
+        'Retitled on B',
+        pulledAt.add(const Duration(minutes: 5)),
+      );
 
-        final materials = dbA.materialsDao;
-        await materials.updateGlazeName('g1', 'Celadon Blue');
-        await materials.deleteGlaze('g2');
-        await materials.updateTagName('t1', 'Gifted');
-        await materials.deleteTag('t2');
+      final materials = dbA.materialsDao;
+      await materials.updateGlazeName('g1', 'Celadon Blue');
+      await materials.deleteGlaze('g2');
+      await materials.updateTagName('t1', 'Gifted');
+      await materials.deleteTag('t2');
 
-        final piece = (await dbA.piecesDao.getPieceById('p1'))!;
-        expect(piece.updatedAt, stamp);
-        expect(piece.glazes, 'Celadon Blue');
-        expect(piece.tags, 'Gifted');
-        await a.pullChangedSince(_uid);
-        expect(await titleOn(dbA, 'p1'), 'Retitled on B');
-      },
-    );
+      final piece = (await dbA.piecesDao.getPieceById('p1'))!;
+      expect(piece.glazes, 'Celadon Blue');
+      expect(piece.tags, 'Gifted');
+      await a.pullChangedSince(_uid);
+      expect(await titleOn(dbA, 'p1'), 'Retitled on B');
+    });
 
     test('a glaze and a tag renamed on another device show in the album row '
         'and search', () async {

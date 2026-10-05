@@ -1150,8 +1150,6 @@ void main() {
   });
 }
 
-/// Records every `PRAGMA rekey` the database receives, in order — the seam
-/// where SQLCipher would re-encrypt the file; plain sqlite3 ignores it.
 /// Records every photo download the sync starts, by the URL it resolves.
 class _DownloadCountingStorage extends MockFirebaseStorage {
   final lookups = <String>[];
@@ -1163,6 +1161,8 @@ class _DownloadCountingStorage extends MockFirebaseStorage {
   }
 }
 
+/// Records every `PRAGMA rekey` the database receives, in order — the seam
+/// where SQLCipher would re-encrypt the file; plain sqlite3 ignores it.
 class _RekeyLog extends QueryInterceptor {
   final List<String> keys = [];
 

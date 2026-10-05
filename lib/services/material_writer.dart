@@ -38,8 +38,8 @@ class MaterialWriter {
   }
 
   /// Renames a clay, and queues the clay and every piece the rename rewrote:
-  /// a piece's `clayType` is pushed content, and the rename moves its
-  /// `updatedAt`, which a pull compares with the cloud copy's.
+  /// a piece's `clayType` is pushed content, and a pull replaces a piece with
+  /// nothing queued by the cloud's copy, which would put the old name back.
   Future<void> renameClay(String id, String newName) async {
     final renamed = await _dao.updateClayName(id, newName);
     await _trigger.afterClayWrite(id);
