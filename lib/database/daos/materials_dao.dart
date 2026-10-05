@@ -295,10 +295,9 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Replaces the piece's glazes. [touchUpdatedAt] is false only for a sync
-  /// pull applying another device's links: the piece's `updatedAt` records
-  /// when its content was last established, and a pull that moved it to now
-  /// would make every remote piece edit that follows look older than this
-  /// device's copy.
+  /// pull applying another device's links: the pull tells its own writes from
+  /// a local edit by the piece's `updatedAt`, so it leaves the stamp where it
+  /// found it.
   Future<void> setGlazesForPiece(
     String pieceId,
     List<String> glazeOptionIds, {
@@ -345,18 +344,6 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
       pieceId,
       touchUpdatedAt: touchUpdatedAt,
     );
-  }
-
-  /// The piece's glaze option ids in display order, read from the junction
-  /// rows alone, so a link to an option this device has not pulled yet still
-  /// counts.
-  Future<List<String>> getGlazeIdsForPiece(String pieceId) async {
-    final rows =
-        await (select(pieceGlazes)
-              ..where((pg) => pg.pieceId.equals(pieceId))
-              ..orderBy([(pg) => OrderingTerm.asc(pg.sortOrder)]))
-            .get();
-    return rows.map((r) => r.glazeOptionId).toList();
   }
 
   // ── Tag library methods ──
@@ -538,14 +525,6 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  /// The piece's tag option ids, read from the junction rows alone.
-  Future<List<String>> getTagIdsForPiece(String pieceId) async {
-    final rows = await (select(
-      pieceTags,
-    )..where((pt) => pt.pieceId.equals(pieceId))).get();
-    return rows.map((r) => r.tagOptionId).toList();
-  }
-
   // ── Deleted junctions methods ──
 
   Future<List<DeletedJunction>> getDeletedJunctions({
@@ -611,8 +590,8 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
   /// Rewrites the piece's `glazes` column. That column is derived and never
   /// pushed, so a rename or deletion of a glaze passes [touchUpdatedAt] false:
-  /// a stamp moved with nothing queued to push would make every remote edit
-  /// of the piece made before it look older than this copy.
+  /// the piece's pushed content is unchanged, and its stamp moves only with a
+  /// push of it queued.
   Future<void> _rebuildDenormalizedGlazesForPiece(
     String pieceId, {
     required bool touchUpdatedAt,

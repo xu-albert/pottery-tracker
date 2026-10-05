@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart' show Reference;
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'dart:io';
 
@@ -642,8 +643,8 @@ void main() {
       expect(piece!.title, 'Updated Title');
     });
 
-    test('skips update when local piece is newer, once this device has '
-        'pulled', () async {
+    test('replaces a piece with nothing queued even when its local stamp is '
+        'later than the cloud copy\'s', () async {
       final newTime = DateTime(2025, 6, 1);
       await db.piecesDao.insertPiece(
         PiecesCompanion(
@@ -653,9 +654,6 @@ void main() {
           updatedAt: Value(newTime),
         ),
       );
-      // A pull by this version has completed, so this device's piece stamps
-      // are comparable with the cloud's.
-      await syncService.pullAll(_uid);
 
       // Remote has older timestamp
       final oldTime = DateTime(2025, 1, 1);
@@ -673,7 +671,32 @@ void main() {
       await syncService.pullAll(_uid);
 
       final piece = await db.piecesDao.getPieceById('p1');
-      expect(piece!.title, 'Local Title');
+      expect(piece!.title, 'Old Remote Title');
+    });
+
+    test('downloads no photos; the incremental pull after it does', () async {
+      final downloads = _DownloadCountingStorage();
+      final service = SyncService(db, firestore, downloads);
+      await insertPiece(id: 'p1');
+      await col('photos').doc('ph1').set({
+        'pieceId': 'p1',
+        'cloudUrl': 'https://example.test/ph1.jpg',
+        'dateTaken': Timestamp.fromDate(DateTime(2025)),
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'sortOrder': 0,
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await service.pullAll(_uid);
+      expect(await db.photosDao.getPhotoById('ph1'), isNotNull);
+      expect(
+        downloads.lookups,
+        isEmpty,
+        reason: 'the snapshot staged after a full pull must not wait on these',
+      );
+
+      await service.pullChangedSince(_uid);
+      expect(downloads.lookups, ['https://example.test/ph1.jpg']);
     });
 
     test('handles remotely deleted docs by removing from local DB', () async {
@@ -1129,6 +1152,17 @@ void main() {
 
 /// Records every `PRAGMA rekey` the database receives, in order — the seam
 /// where SQLCipher would re-encrypt the file; plain sqlite3 ignores it.
+/// Records every photo download the sync starts, by the URL it resolves.
+class _DownloadCountingStorage extends MockFirebaseStorage {
+  final lookups = <String>[];
+
+  @override
+  Reference refFromURL(String url) {
+    lookups.add(url);
+    return super.refFromURL(url);
+  }
+}
+
 class _RekeyLog extends QueryInterceptor {
   final List<String> keys = [];
 

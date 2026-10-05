@@ -188,6 +188,30 @@ void main() {
       expect(await titleOn(dbA, 'p2'), 'Pushed later');
     });
 
+    test(
+      'a piece an earlier version dated ahead on a fast clock still takes '
+      'a later edit from another device, and nothing pushes it back',
+      () async {
+        // An earlier version on a fast clock pushed p1 an hour ahead of the
+        // server, and A's copy carries that stamp from its pull.
+        await remotePiece(
+          'p1',
+          'From a fast clock',
+          DateTime.now().add(const Duration(hours: 1)),
+        );
+        await a.pullAll(_uid);
+
+        // B edits p1; the server stamps the edit behind that hour.
+        await insertPiece(dbB, 'p1', title: 'Edited on B', at: DateTime(2025));
+        await b.pushPiece(_uid, 'p1');
+        await a.pullChangedSince(_uid);
+
+        expect(await titleOn(dbA, 'p1'), 'Edited on B');
+        expect(await queueA.getAll(), isEmpty);
+        expect((await col('pieces').doc('p1').get())['title'], 'Edited on B');
+      },
+    );
+
     test('a device whose clock runs ahead takes a later edit from another '
         'device', () async {
       await insertPiece(
@@ -341,6 +365,46 @@ void main() {
       },
     );
 
+    test('a glaze and a tag renamed on another device show in the album row '
+        'and search', () async {
+      await insertPiece(dbA, 'p1', title: 'Bowl', at: DateTime(2025));
+      await insertGlaze(dbA, 'g1', 'Celadon');
+      await dbA
+          .into(dbA.tagOptions)
+          .insert(
+            TagOptionsCompanion.insert(
+              id: 't1',
+              name: 'Gift',
+              createdAt: DateTime(2025),
+            ),
+          );
+      await dbA.materialsDao.setGlazesForPiece('p1', ['g1']);
+      await dbA.materialsDao.setTagsForPiece('p1', ['t1']);
+      await a.pushPiece(_uid, 'p1');
+      await a.pushGlaze(_uid, 'g1');
+      await a.pushTag(_uid, 't1');
+      await a.pushPieceGlazes(_uid, 'p1');
+      await a.pushPieceTags(_uid, 'p1');
+      await b.pullAll(_uid);
+      expect((await dbB.piecesDao.getPieceById('p1'))!.glazes, 'Celadon');
+
+      await dbA.materialsDao.updateGlazeName('g1', 'Celadon Blue');
+      await dbA.materialsDao.updateTagName('t1', 'Gifted');
+      await a.pushGlaze(_uid, 'g1');
+      await a.pushTag(_uid, 't1');
+      await b.pullChangedSince(_uid);
+
+      final piece = (await dbB.piecesDao.getPieceById('p1'))!;
+      expect(piece.glazes, 'Celadon Blue');
+      expect(piece.tags, 'Gifted');
+      for (final query in ['Celadon Blue', 'Gifted']) {
+        final found = await dbB.piecesDao
+            .watchAllPieces(searchQuery: query)
+            .first;
+        expect(found.map((p) => p.piece.id), ['p1'], reason: query);
+      }
+    });
+
     test('a doc a pull skipped is read again by the next pull', () async {
       await insertPiece(
         dbA,
@@ -374,35 +438,6 @@ void main() {
   group(
     'H2: a pull never overwrites local edits that have not been pushed',
     () {
-      test('an incremental pull does not replace a newer local piece edit with '
-          'an older remote one, and queues the copy it keeps', () async {
-        final t0 = DateTime.now().subtract(const Duration(hours: 3));
-        await insertPiece(dbA, 'p1', title: 'Bowl', at: t0);
-        await a.pushPiece(_uid, 'p1');
-        await a.pullAll(_uid);
-
-        // Stamped after the watermark's overlap begins, so the pull reads it.
-        await remotePiece(
-          'p1',
-          'Older remote edit',
-          DateTime.now().subtract(const Duration(seconds: 30)),
-        );
-        await retitle(dbA, 'p1', 'Newer local edit', DateTime.now());
-
-        await a.pullChangedSince(_uid);
-        expect(await titleOn(dbA, 'p1'), 'Newer local edit');
-        expect(
-          await queueA.getAll(),
-          [
-            const SyncQueueEntry(
-              operation: SyncOperation.pushPiece,
-              entityId: 'p1',
-            ),
-          ],
-          reason: 'nothing else sends the copy kept here to the cloud',
-        );
-      });
-
       test('a piece edit still queued is kept even against a newer remote '
           'edit, and stays queued', () async {
         final t0 = DateTime.now().subtract(const Duration(hours: 3));

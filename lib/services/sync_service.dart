@@ -449,10 +449,9 @@ class SyncService {
   }
 
   /// Pushes the piece, then moves its local `updatedAt` onto the server time
-  /// the push was written with, so a pull compares server time with server
-  /// time rather than with this device's clock. A piece edited again while
-  /// the push was in the air keeps its newer stamp, and the queue entry that
-  /// edit revised sends it next.
+  /// the push was written with, so this copy carries the cloud copy's stamp.
+  /// A piece edited again while the push was in the air keeps its newer
+  /// stamp, and the queue entry that edit revised sends it next.
   Future<void> pushPiece(String uid, String pieceId) async {
     final piece = await _db.piecesDao.getPieceById(pieceId);
     if (piece == null) return;
@@ -777,10 +776,11 @@ class SyncService {
   // here, or has queued work of its own that sends it, so a snapshot that
   // pushed it again could only carry an older copy.
   //
-  // It does not record that this device has pulled ([getLastPulledAt]). A
-  // full pull comes before the snapshot it trims is queued, and a device that
-  // stops between the two must pull in full and stage that snapshot again;
-  // the incremental pull that follows the snapshot's pushes records it.
+  // It does not record that this device has pulled ([getLastPulledAt]), nor
+  // download missing photos. A full pull comes before the snapshot it trims
+  // is queued: a device that stops between the two must pull in full and
+  // stage that snapshot again, and the snapshot must not wait behind the
+  // downloads. The incremental pull that follows its pushes does both.
   Future<Set<SyncQueueEntry>> pullAll(String uid) {
     debugPrint('SyncService: full pull (first sync on this device)');
     return _pull(uid, full: true);
@@ -794,6 +794,7 @@ class SyncService {
   Future<void> pullChangedSince(String uid) async {
     debugPrint('SyncService: incremental pull');
     await _pull(uid, full: false);
+    await _downloadMissingPhotos(uid);
     await _saveLastPulledAt(uid);
   }
 
@@ -821,12 +822,6 @@ class SyncService {
       for (final piece in await _db.select(_db.pieces).get())
         piece.id: piece.updatedAt,
     };
-    // Piece stamps here are comparable with the cloud's once a pull by this
-    // version has completed: each one is then a server stamp, pulled or
-    // moved onto its own push's, or an edit still queued. An earlier version
-    // moved them with this device's clock, on every pull among other writes,
-    // so until then a local stamp says nothing about the cloud copy.
-    final stampsComparable = _collectionWatermark(prefs, uid, 'pieces') != null;
     final watermarks = <String, DateTime>{};
     final inCloud = <SyncQueueEntry>{};
     final queriedAt = await _serverNow(uid);
@@ -869,12 +864,7 @@ class SyncService {
         final applied =
             !isQueued(push) &&
             !isQueued(_deletionEntryFor(collection, doc.id)) &&
-            await _mergeRemoteDoc(
-              collection,
-              doc,
-              pieceStamps,
-              stampsComparable: stampsComparable,
-            );
+            await _mergeRemoteDoc(collection, doc, pieceStamps);
         if (data['updatedAt'] case final Timestamp stamp when !applied) {
           final at = stamp.toDate();
           if (held == null || at.isBefore(held)) held = at;
@@ -897,8 +887,6 @@ class SyncService {
       pushOperation: SyncOperation.pushPieceTags,
       pieceStamps: pieceStamps,
     );
-
-    await _downloadMissingPhotos(uid);
 
     // Saved only once the whole pull succeeded: a pull that throws part-way
     // reads the same docs again next time, which the merges tolerate.
@@ -1093,21 +1081,17 @@ class SyncService {
   /// answers whether it did. [pieceStamps] is told the `updatedAt` of every
   /// piece row written here.
   ///
-  /// A piece is kept when it changed here while the pull ran, and, once
-  /// [stampsComparable], when its own stamp is newer than the remote one. A
-  /// copy kept for being newer has nothing queued to send it, so it is queued
-  /// here: the cloud takes the copy this device keeps, and the doc this pull
-  /// held its watermark behind is replaced.
+  /// A piece is kept only when it changed here while the pull ran; otherwise
+  /// the cloud's copy replaces it, whatever either stamp says. Local work not
+  /// yet pushed is queued, and was skipped before this was called.
   Future<bool> _mergeRemoteDoc(
     String collection,
     QueryDocumentSnapshot doc,
-    Map<String, DateTime> pieceStamps, {
-    required bool stampsComparable,
-  }) async {
+    Map<String, DateTime> pieceStamps,
+  ) async {
     switch (collection) {
       case 'pieces':
-        var newerHere = false;
-        final applied = await _db.transaction(() async {
+        return _db.transaction(() async {
           final local = await _db.piecesDao.getPieceById(doc.id);
           final d = doc.data() as Map<String, dynamic>;
           final remoteUpdatedAt = _wholeSeconds(
@@ -1120,19 +1104,11 @@ class SyncService {
             if (seen == null || !local.updatedAt.isAtSameMomentAs(seen)) {
               return false;
             }
-            // A tie at the stored second goes to the remote: local work that
-            // has not been pushed is queued, and was skipped above.
-            if (stampsComparable && remoteUpdatedAt.isBefore(local.updatedAt)) {
-              newerHere = true;
-              return false;
-            }
             await _updatePieceFromRemote(doc, remoteUpdatedAt);
           }
           pieceStamps[doc.id] = remoteUpdatedAt;
           return true;
         });
-        if (newerHere) await _trigger.afterPieceWrite(doc.id);
-        return applied;
       case 'photos':
         final local = await _db.photosDao.getPhotoById(doc.id);
         if (local == null) {
@@ -1157,18 +1133,19 @@ class SyncService {
     return true;
   }
 
-  /// Truncated to the whole second the local database stores, so a piece
-  /// written from a remote doc, or moved onto its push's server time,
-  /// compares equal to that doc on the next pull rather than older than it.
+  /// Truncated to the whole second the local database stores, so the stamp a
+  /// pull records in `pieceStamps` for a piece it wrote is the one the
+  /// junction merge reads back.
   static DateTime _wholeSeconds(DateTime at) =>
       DateTime.fromMillisecondsSinceEpoch(
         at.millisecondsSinceEpoch - at.millisecondsSinceEpoch % 1000,
       );
 
-  /// Replaces a piece's glaze or tag links with [remoteIds] when they differ,
-  /// unless the piece changed locally since [expectedStamp] was read: every
-  /// local link edit moves the piece's `updatedAt`, and this pull's own
-  /// writes do not.
+  /// Rewrites a piece's glaze or tag links from [remoteIds], which also
+  /// rebuilds its `glazes` or `tags` text from the option names this pull
+  /// brought in, unless the piece changed locally since [expectedStamp] was
+  /// read: every local link edit moves the piece's `updatedAt`, and this
+  /// pull's own writes do not.
   Future<void> _mergeRemoteJunctions(
     String collection,
     String pieceId,
@@ -1183,24 +1160,12 @@ class SyncService {
         return;
       }
       if (collection == 'pieceGlazes') {
-        if (listEquals(
-          await materials.getGlazeIdsForPiece(pieceId),
-          remoteIds,
-        )) {
-          return;
-        }
         await materials.setGlazesForPiece(
           pieceId,
           remoteIds,
           touchUpdatedAt: false,
         );
       } else {
-        if (setEquals(
-          (await materials.getTagIdsForPiece(pieceId)).toSet(),
-          remoteIds.toSet(),
-        )) {
-          return;
-        }
         await materials.setTagsForPiece(
           pieceId,
           remoteIds,
