@@ -800,15 +800,17 @@ class SyncService {
   /// One pull of every collection, in full when [full] is set. Returns what
   /// [pullAll] does.
   ///
-  /// It never writes over local work that has not reached the cloud. An
-  /// entity with a queued push or delete is skipped: that entry still owns
-  /// it, and the push it makes is what the other devices will pull. A piece
-  /// that changed here while the pull ran is skipped too, checked in the same
-  /// transaction as the write, and a junction set is replaced only while its
-  /// piece still carries the `updatedAt` this pull last saw, so an edit
-  /// landing mid-pull wins even before its queue entry is written. A doc
-  /// skipped either way holds its collection's watermark behind it, so the
-  /// next pull reads it again.
+  /// It never writes over local work that is queued for the cloud. An entity
+  /// with a queued push or delete is skipped: that entry still owns it, and
+  /// the push it makes is what the other devices will pull. Pieces and their
+  /// junctions are guarded further: a piece that changed here while the pull
+  /// ran is skipped too, checked in the same transaction as the write, and a
+  /// junction set is replaced only while its piece still carries the
+  /// `updatedAt` this pull last saw, so a piece edit landing mid-pull wins
+  /// even before its queue entry is written. Photos and materials rely on
+  /// the queued-entry check alone. A doc skipped by either check holds its
+  /// collection's watermark behind it, so the next pull reads it again;
+  /// junctions are read in full every time.
   ///
   /// Remote piece stamps are server time, the time the cloud copy was last
   /// pushed. Pushes replace the whole row, so a device taking the newest push

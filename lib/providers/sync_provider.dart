@@ -288,7 +288,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// Without it the sign-in sync is simply dropped: a drain only empties the
   /// queue — it never stages a full snapshot, pulls or writes a watermark —
   /// yet it would report the device idle. The mode travels with the debt
-  /// because the tile's long-press is the only re-upload-everything
+  /// because the tile's long-press is the only full pull-and-resync
   /// affordance in the app, and it races a drain scheduled 500ms after any
   /// edit.
   bool _syncOwed = false;
