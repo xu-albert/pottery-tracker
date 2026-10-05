@@ -646,6 +646,62 @@ void main() {
         final glazes = await dbA.materialsDao.getAllGlazes();
         expect(glazes.map((g) => g.name), ['Celadon Blue']);
       });
+
+      test('a push that lands while the pull reads its collection does not '
+          'let the copy read before it replace the edit', () async {
+        final hooked = _QueryHookFirestore();
+        final service = SyncService(dbA, hooked, storage, queue: queueA);
+        final t0 = DateTime.now().subtract(const Duration(hours: 1));
+        await insertPiece(dbA, 'p1', title: 'Edited here', at: t0);
+        await insertGlaze(dbA, 'g1', 'Celadon');
+        await insertGlaze(dbA, 'g2', 'Tenmoku');
+        await dbA.materialsDao.setGlazesForPiece('p1', [
+          'g2',
+        ], touchUpdatedAt: false);
+        // The cloud as it was before this device's pushes.
+        await hooked.doc('users/$_uid/pieces/p1').set({
+          'title': 'Before the edit',
+          'isArchived': false,
+          'createdAt': Timestamp.fromDate(t0),
+          'updatedAt': Timestamp.fromDate(t0),
+        });
+        await hooked.doc('users/$_uid/pieceGlazes/old').set({
+          'pieceId': 'p1',
+          'glazeOptionId': 'g1',
+          'sortOrder': 0,
+        });
+        const piece = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        );
+        const links = SyncQueueEntry(
+          operation: SyncOperation.pushPieceGlazes,
+          entityId: 'p1',
+        );
+        await queueA.enqueue(piece);
+        await queueA.enqueue(links);
+        // Each push lands, and its entry is retired, once the pull's query of
+        // its collection has already read the cloud's earlier copy.
+        hooked.afterQuery = (collection) async {
+          final landed = switch (collection) {
+            'pieces' => piece,
+            'pieceGlazes' => links,
+            _ => null,
+          };
+          if (landed != null) {
+            await queueA.acknowledgeAll({landed: queueA.revisionOf(landed)});
+          }
+        };
+
+        await service.pullAll(_uid);
+
+        expect(await queueA.getAll(), isEmpty);
+        expect(await titleOn(dbA, 'p1'), 'Edited here');
+        expect(
+          (await dbA.materialsDao.getGlazesForPiece('p1')).map((g) => g.id),
+          ['g2'],
+        );
+      });
     },
   );
 
@@ -758,4 +814,57 @@ void main() {
       );
     });
   });
+}
+
+/// A fake Firestore that runs [afterQuery] once a read of a collection in a
+/// user's tree has returned, before the reader sees it — standing in for a
+/// push that lands while a pull's query is in the air.
+class _QueryHookFirestore extends FakeFirebaseFirestore {
+  Future<void> Function(String collection)? afterQuery;
+
+  @override
+  DocumentReference<Map<String, dynamic>> doc(String path) {
+    final inner = super.doc(path);
+    return path.split('/').length == 2 ? _HookedUserDoc(inner, this) : inner;
+  }
+}
+
+// ignore: subtype_of_sealed_class
+class _HookedUserDoc implements DocumentReference<Map<String, dynamic>> {
+  _HookedUserDoc(this._inner, this._firestore);
+
+  final DocumentReference<Map<String, dynamic>> _inner;
+  final _QueryHookFirestore _firestore;
+
+  @override
+  CollectionReference<Map<String, dynamic>> collection(String path) =>
+      _HookedCollection(_inner.collection(path), _firestore);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+// ignore: subtype_of_sealed_class
+class _HookedCollection implements CollectionReference<Map<String, dynamic>> {
+  _HookedCollection(this._inner, this._firestore);
+
+  final CollectionReference<Map<String, dynamic>> _inner;
+  final _QueryHookFirestore _firestore;
+
+  @override
+  String get id => _inner.id;
+
+  @override
+  DocumentReference<Map<String, dynamic>> doc([String? path]) =>
+      _inner.doc(path);
+
+  @override
+  Future<QuerySnapshot<Map<String, dynamic>>> get([GetOptions? options]) async {
+    final snap = await _inner.get(options);
+    await _firestore.afterQuery?.call(id);
+    return snap;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

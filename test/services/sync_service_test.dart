@@ -227,6 +227,42 @@ void main() {
       final doc = await col('pieces').doc('nonexistent').get();
       expect(doc.exists, false);
     });
+
+    test('a field-scoped push writes only those fields', () async {
+      await insertPiece(id: 'p1', title: 'Stale title', clayType: 'B-Mix');
+      await col('pieces').doc('p1').set({
+        'title': 'Edited elsewhere',
+        'clayType': 'Stoneware',
+        'isArchived': false,
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await syncService.pushPiece(_uid, 'p1', fields: ['clayType']);
+
+      final data =
+          (await col('pieces').doc('p1').get()).data() as Map<String, dynamic>;
+      expect(data['title'], 'Edited elsewhere');
+      expect(data['clayType'], 'B-Mix');
+      expect(
+        (data['updatedAt'] as Timestamp).toDate().isAfter(DateTime(2025)),
+        isTrue,
+        reason: 'the pushed field must reach devices that already pulled it',
+      );
+    });
+
+    test('a field-scoped push of a piece the cloud does not hold yet uploads '
+        'it whole', () async {
+      await insertPiece(id: 'p1', title: 'Made offline', clayType: 'B-Mix');
+
+      await syncService.pushPiece(_uid, 'p1', fields: ['clayType']);
+
+      final data =
+          (await col('pieces').doc('p1').get()).data() as Map<String, dynamic>;
+      expect(data['title'], 'Made offline');
+      expect(data['clayType'], 'B-Mix');
+      expect(data['createdAt'], isA<Timestamp>());
+    });
   });
 
   group('pushPhoto', () {

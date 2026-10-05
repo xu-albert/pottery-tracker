@@ -1813,9 +1813,13 @@ class _FlakyWipeSyncService extends SyncService {
   bool pushPieceIsStalled = false;
 
   @override
-  Future<void> pushPiece(String uid, String pieceId) async {
+  Future<void> pushPiece(
+    String uid,
+    String pieceId, {
+    List<String>? fields,
+  }) async {
     pushLog.add('pushPiece:$pieceId');
-    await super.pushPiece(uid, pieceId);
+    await super.pushPiece(uid, pieceId, fields: fields);
     final gate = pushPieceGate;
     if (gate != null) {
       pushPieceIsStalled = true;

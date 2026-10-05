@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
+import 'package:pottery_tracker/services/material_writer.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -156,6 +157,68 @@ void main() {
       'Edited on another device',
     );
     expect(container.read(syncStateProvider).status, SyncStatus.idle);
+  });
+
+  // A clay rename queues every piece it renamed, and the drain sends them with
+  // no pull first. Sent whole, this device's copy of such a piece would
+  // replace an edit another device made to it since this one last pulled.
+  test('a clay rename on a stale device keeps the edit another device made '
+      'to a renamed piece', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = SyncService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final (clay, _) = await db.materialsDao.findOrCreateClay('Stoneware');
+    final created = DateTime.now().subtract(const Duration(days: 7));
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p1'),
+        notes: const Value('Bisque at 04'),
+        clayType: const Value('Stoneware'),
+        createdAt: Value(created),
+        updatedAt: Value(created),
+      ),
+    );
+
+    final container = _container(queue, service);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = _syncedOnce(container);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.timeout(const Duration(seconds: 5));
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    // On the iPad the user edits the piece's notes, and the iPad pushes.
+    await firestore.doc('users/user-1/pieces/p1').update({
+      'notes': 'Glazed in celadon',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    // On this phone, which has not pulled since, the user renames the clay.
+    await MaterialWriter(
+      db.materialsDao,
+      container.read(syncTriggerProvider),
+    ).renameClay(clay.id, 'B-Mix');
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    final remote = await firestore.doc('users/user-1/pieces/p1').get();
+    expect(remote['notes'], 'Glazed in celadon');
+    expect(remote['clayType'], 'B-Mix');
+
+    await container.read(syncStateProvider.notifier).syncNow();
+    final piece = (await db.piecesDao.getPieceById('p1'))!;
+    expect(piece.notes, 'Glazed in celadon');
+    expect(piece.clayType, 'B-Mix');
   });
 
   // A snapshot push lands with the server's time whenever it gets through, so
@@ -516,10 +579,14 @@ class _HeldPushService extends SyncService {
   final release = Completer<void>();
 
   @override
-  Future<void> pushPiece(String uid, String pieceId) async {
+  Future<void> pushPiece(
+    String uid,
+    String pieceId, {
+    List<String>? fields,
+  }) async {
     heldPushes.add(pieceId);
     await release.future;
-    await super.pushPiece(uid, pieceId);
+    await super.pushPiece(uid, pieceId, fields: fields);
   }
 }
 
@@ -530,7 +597,11 @@ class _RefusedPushService extends SyncService {
   int pulls = 0;
 
   @override
-  Future<void> pushPiece(String uid, String pieceId) async {
+  Future<void> pushPiece(
+    String uid,
+    String pieceId, {
+    List<String>? fields,
+  }) async {
     pushAttempts++;
     throw FirebaseException(
       plugin: 'cloud_firestore',

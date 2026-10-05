@@ -813,7 +813,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _processEntry(String uid, SyncQueueEntry entry) async {
     switch (entry.operation) {
       case SyncOperation.pushPiece:
-        await _syncService.pushPiece(uid, entry.entityId);
+        await _syncService.pushPiece(
+          uid,
+          entry.entityId,
+          fields: entry.changedFields,
+        );
       case SyncOperation.pushPhoto:
         await _syncService.pushPhoto(uid, entry.entityId);
       case SyncOperation.pushPhotoFile:

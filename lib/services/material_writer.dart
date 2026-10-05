@@ -40,11 +40,19 @@ class MaterialWriter {
   /// Renames a clay, and queues the clay and every piece the rename rewrote:
   /// a piece's `clayType` is pushed content, and a pull replaces a piece with
   /// nothing queued by the cloud's copy, which would put the old name back.
+  ///
+  /// Each piece is queued for its `clayType` alone. This device may not have
+  /// pulled another device's edit to the rest of the piece, and a rename must
+  /// not send its older copy over it. A piece also queued for an edit of its
+  /// own still pushes whole.
   Future<void> renameClay(String id, String newName) async {
     final renamed = await _dao.updateClayName(id, newName);
     await _trigger.afterClayWrite(id);
     for (final pieceId in renamed) {
-      await _trigger.afterPieceWrite(pieceId);
+      await _trigger.afterPieceWrite(
+        pieceId,
+        changedFields: const ['clayType'],
+      );
     }
   }
 }

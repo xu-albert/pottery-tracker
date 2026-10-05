@@ -448,10 +448,20 @@ class SyncService {
     ).doc('sync-reachability').get(const GetOptions(source: Source.server));
   }
 
-  Future<void> pushPiece(String uid, String pieceId) async {
+  /// Pushes the whole row, or only [fields] of it when its queue entry names
+  /// them. A field-scoped push updates just those fields, so a device that
+  /// has not pulled another device's edit to the rest of the piece cannot
+  /// write its older copy over it. A piece the cloud does not hold yet has no
+  /// fields to keep, and is uploaded whole.
+  Future<void> pushPiece(
+    String uid,
+    String pieceId, {
+    List<String>? fields,
+  }) async {
     final piece = await _db.piecesDao.getPieceById(pieceId);
     if (piece == null) return;
-    await _col(uid, 'pieces').doc(pieceId).set({
+    final doc = _col(uid, 'pieces').doc(pieceId);
+    final data = {
       'title': piece.title,
       'stage': piece.stage,
       'clayType': piece.clayType,
@@ -467,7 +477,19 @@ class SyncService {
       // pushed later would otherwise carry a time older than the watermarks
       // other devices have already passed.
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    if (fields != null) {
+      try {
+        await doc.update({
+          for (final field in fields) field: data[field],
+          'updatedAt': data['updatedAt'],
+        });
+        return;
+      } on FirebaseException catch (e) {
+        if (e.code != 'not-found') rethrow;
+      }
+    }
+    await doc.set(data, SetOptions(merge: true));
   }
 
   Future<void> pushPhoto(String uid, String photoId) async {
@@ -800,8 +822,8 @@ class SyncService {
   /// junctions are read in full every time.
   ///
   /// Remote piece stamps are server time, the time the cloud copy was last
-  /// pushed. Pushes replace the whole row, so a device taking the newest push
-  /// converges with the cloud instead of keeping an older copy of its own.
+  /// pushed. A device taking the cloud copy converges with it instead of
+  /// keeping an older copy of its own.
   Future<Set<SyncQueueEntry>> _pull(String uid, {required bool full}) async {
     final prefs = await SharedPreferences.getInstance();
     final pieceStamps = {
@@ -821,8 +843,8 @@ class SyncService {
               'updatedAt',
               isGreaterThan: Timestamp.fromDate(from.subtract(_pullOverlap)),
             );
-      final snap = await query.get(const GetOptions(source: Source.server));
       final isQueued = await _queuedCheck();
+      final snap = await query.get(const GetOptions(source: Source.server));
       DateTime? held;
 
       for (final doc in snap.docs) {
@@ -970,6 +992,10 @@ class SyncService {
 
   /// A test for whether an entry is still waiting to reach the cloud: in the
   /// persisted queue, or enqueued by this process since that was read.
+  ///
+  /// Read it before the query whose docs it judges. An entry whose push lands
+  /// while that query is in the air then still counts as queued, so the copy
+  /// the query read from before that push is not written over it.
   Future<bool Function(SyncQueueEntry)> _queuedCheck() async {
     final persisted = (await _queue.getAll()).toSet();
     return (entry) =>
@@ -1016,6 +1042,7 @@ class SyncService {
     required SyncOperation pushOperation,
     required Map<String, DateTime> pieceStamps,
   }) async {
+    final isQueued = await _queuedCheck();
     final snap = await _col(
       uid,
       collection,
@@ -1027,7 +1054,6 @@ class SyncService {
       if (pieceId == null) continue;
       byPiece.putIfAbsent(pieceId, () => []).add(data!);
     }
-    final isQueued = await _queuedCheck();
     for (final MapEntry(key: pieceId, value: docs) in byPiece.entries) {
       if (isQueued(
             SyncQueueEntry(operation: pushOperation, entityId: pieceId),

@@ -117,7 +117,7 @@ cd functions && npm ci && npm test
 
 ### Offline-First + Cloud Sync
 
-All data lives in local SQLite first. Writes never block on the network: every DAO write enqueues an entry via `SyncTrigger`, and `SyncNotifier` drains the queue on a short debounce, on sign-in, and on explicit `syncNow()`. Failed operations retry with exponential backoff and are re-attempted on the next full sync, so there is no connectivity listener — offline is just a failed attempt that stays queued. Conflict resolution is last-write-wins based on `updatedAt`.
+All data lives in local SQLite first. Writes never block on the network: every DAO write enqueues an entry via `SyncTrigger`, and `SyncNotifier` drains the queue on a short debounce, on sign-in, and on explicit `syncNow()`. Failed operations retry with exponential backoff and are re-attempted on the next full sync, so there is no connectivity listener — offline is just a failed attempt that stays queued. The last push wins, in server order; a pull never writes over an entity with queued work, and otherwise takes the cloud copy whatever the stamps say.
 
 Every write path must go through `SyncTrigger`; a DAO write without one silently never reaches the cloud.
 
