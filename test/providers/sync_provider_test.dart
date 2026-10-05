@@ -721,9 +721,10 @@ void main() {
         when(
           () => s.syncService.getLastPulledAt('user-1'),
         ).thenAnswer((_) async => pulledAt);
-        when(() => s.syncService.pullAll('user-1')).thenAnswer((_) async {
+        when(() => s.syncService.pullChangedSince('user-1')).thenAnswer((
+          _,
+        ) async {
           pulledAt = DateTime.utc(2026, 9, 1);
-          return {};
         });
         final entered = Completer<void>();
         final release = Completer<void>();

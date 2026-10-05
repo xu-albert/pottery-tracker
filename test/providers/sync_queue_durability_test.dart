@@ -498,9 +498,8 @@ void main() {
       when(
         () => service.getLastPulledAt(any()),
       ).thenAnswer((_) async => pulledAt);
-      when(() => service.pullAll(any())).thenAnswer((_) async {
+      when(() => service.pullChangedSince(any())).thenAnswer((_) async {
         pulledAt = DateTime(2026);
-        return {};
       });
       var pendingPhotos = {'photo-1'};
       when(
@@ -671,9 +670,8 @@ void main() {
     when(
       () => service.getLastPulledAt(any()),
     ).thenAnswer((_) async => pulledAt);
-    when(() => service.pullAll(any())).thenAnswer((_) async {
+    when(() => service.pullChangedSince(any())).thenAnswer((_) async {
       pulledAt = DateTime(2026);
-      return {};
     });
     when(() => service.fullUploadEntries('user-1')).thenAnswer(
       (_) async => const [
