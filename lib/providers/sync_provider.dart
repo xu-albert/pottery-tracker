@@ -51,9 +51,10 @@ class _FlightKey {
 
 class _InFlightPush {
   final int revision;
+  final List<String>? fields;
   final Future<void> acknowledgement;
 
-  const _InFlightPush(this.revision, this.acknowledgement);
+  const _InFlightPush(this.revision, this.fields, this.acknowledgement);
 }
 
 class _PushOutcome {
@@ -713,6 +714,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     SyncQueueEntry entry,
   ) async {
     final revision = _queue.revisionOf(entry);
+    final fields = _queue.fieldsOwed(entry);
     // A lane whose session has ended starts nothing more: the device may have
     // been wiped under it, and a push read from the emptied copy would delete
     // what the account backed up. The entry is left for its own session.
@@ -723,7 +725,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
     if (entry.operation == SyncOperation.pushPhotoFile) {
       if (!_isCurrent(session)) return skipped;
-      final flight = _singleFlightPush(session, entry, revision);
+      final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
       } catch (e) {
@@ -745,7 +747,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       if (!_isCurrent(session)) return skipped;
-      final flight = _singleFlightPush(session, entry, revision);
+      final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
         return _PushOutcome(
@@ -770,30 +772,37 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
   }
 
-  /// Starts [entry]'s push at [revision], or returns the flight already
-  /// carrying that revision: an entry is never sent again while the future
-  /// that sent it is alive. A different revision waits for the one in the
-  /// air, because that acknowledgement cannot speak for data edited after its
-  /// push captured its revision, and the two writes must not overlap.
+  /// Starts [entry]'s push of [fields] at [revision], or returns the flight
+  /// already carrying that revision and those fields: an entry is never sent
+  /// again while the future that sent it is alive. A different revision or
+  /// scope waits for the one in the air, because that acknowledgement cannot
+  /// speak for data edited after its push captured its revision, nor for
+  /// fields it did not send, and the two writes must not overlap.
   _InFlightPush _singleFlightPush(
     _Session session,
     SyncQueueEntry entry,
     int revision,
+    List<String>? fields,
   ) {
     final key = _FlightKey(session.uid, entry);
     final existing = _inFlightPushes[key];
-    if (existing != null && existing.revision == revision) return existing;
+    if (existing != null &&
+        existing.revision == revision &&
+        listEquals(existing.fields, fields)) {
+      return existing;
+    }
 
     final predecessor =
         existing?.acknowledgement.then<void>((_) {}, onError: (_) {}) ??
         Future<void>.value();
     final flight = _InFlightPush(
       revision,
+      fields,
       predecessor.then((_) {
         if (!_isCurrent(session)) {
           throw StateError('the session that queued this push has ended');
         }
-        return _processEntry(session.uid, entry);
+        return _processEntry(session.uid, entry, fields);
       }),
     );
     _inFlightPushes[key] = flight;
@@ -810,14 +819,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return flight;
   }
 
-  Future<void> _processEntry(String uid, SyncQueueEntry entry) async {
+  Future<void> _processEntry(
+    String uid,
+    SyncQueueEntry entry,
+    List<String>? fields,
+  ) async {
     switch (entry.operation) {
       case SyncOperation.pushPiece:
-        await _syncService.pushPiece(
-          uid,
-          entry.entityId,
-          fields: entry.changedFields,
-        );
+        await _syncService.pushPiece(uid, entry.entityId, fields: fields);
       case SyncOperation.pushPhoto:
         await _syncService.pushPhoto(uid, entry.entityId);
       case SyncOperation.pushPhotoFile:

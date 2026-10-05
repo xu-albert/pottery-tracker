@@ -14,6 +14,7 @@ import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/services/material_writer.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:pottery_tracker/services/sync_trigger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// How a sync orders its pulls around local work, run through the real
@@ -219,6 +220,68 @@ void main() {
     final piece = (await db.piecesDao.getPieceById('p1'))!;
     expect(piece.notes, 'Glazed in celadon');
     expect(piece.clayType, 'B-Mix');
+  });
+
+  // A drain reads the queue once, then reaches each entry when its lane does.
+  // An edit made in between widens the queued rename to the whole row, and a
+  // push sending only the clay must not be the one that answers for it.
+  test('an edit made while a clay rename waits in its lane behind a held '
+      'link push is pushed', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = _HeldLinksService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final (clay, _) = await db.materialsDao.findOrCreateClay('Stoneware');
+    final created = DateTime.now().subtract(const Duration(days: 7));
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p1'),
+        notes: const Value('Bisque at 04'),
+        clayType: const Value('Stoneware'),
+        createdAt: Value(created),
+        updatedAt: Value(created),
+      ),
+    );
+
+    final container = _container(queue, service);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = _syncedOnce(container);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.timeout(const Duration(seconds: 5));
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    // Writes whose own drains have not fired yet, so one drain reads them all.
+    final pending = SyncTrigger(queue);
+    final release = Completer<void>();
+    service.hold = release.future;
+    await pending.afterPieceGlazesWrite('p1');
+    await MaterialWriter(db.materialsDao, pending).renameClay(clay.id, 'B-Mix');
+    container.read(syncStateProvider.notifier).scheduleProcessQueue();
+    await _until(() async => service.held);
+
+    // The user edits the notes while the rename waits behind the link push.
+    await db.piecesDao.updatePiece(
+      const PiecesCompanion(id: Value('p1'), notes: Value('Glazed in celadon')),
+    );
+    await pending.afterPieceWrite('p1');
+    release.complete();
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    final remote = await firestore.doc('users/user-1/pieces/p1').get();
+    expect(remote['notes'], 'Glazed in celadon');
+    expect(remote['clayType'], 'B-Mix');
   });
 
   // A snapshot push lands with the server's time whenever it gets through, so
@@ -567,6 +630,25 @@ class _InterruptedSnapshotService extends SyncService {
   @override
   Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
     throw StateError('the app died before the snapshot was queued');
+  }
+}
+
+/// Holds every glaze-link push while [hold] is set, standing in for one a
+/// slow or flapping connection keeps in the air.
+class _HeldLinksService extends SyncService {
+  _HeldLinksService(super.db, super.firestore, super.storage, {super.queue});
+
+  Future<void>? hold;
+  bool held = false;
+
+  @override
+  Future<void> pushPieceGlazes(String uid, String pieceId) async {
+    final gate = hold;
+    if (gate != null) {
+      held = true;
+      await gate;
+    }
+    await super.pushPieceGlazes(uid, pieceId);
   }
 }
 
