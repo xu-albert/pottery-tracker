@@ -715,8 +715,16 @@ void main() {
       expect(glazes.map((g) => g.id).toList(), ['g2', 'g1']);
     });
 
-    test('saves lastPulledAt after successful pull', () async {
+    test('a full pull leaves lastPulledAt unset; the incremental pull after '
+        'it saves it', () async {
       await syncService.pullAll(_uid);
+      expect(
+        await syncService.getLastPulledAt(_uid),
+        isNull,
+        reason: 'the snapshot a full pull trims is not queued yet',
+      );
+
+      await syncService.pullChangedSince(_uid);
 
       final lastPulled = await syncService.getLastPulledAt(_uid);
       expect(lastPulled, isNotNull);
@@ -944,15 +952,15 @@ void main() {
       expect(result, isNull);
     });
 
-    test('returns stored timestamp after pullAll', () async {
-      await syncService.pullAll(_uid);
+    test('returns stored timestamp after an incremental pull', () async {
+      await syncService.pullChangedSince(_uid);
 
       final result = await syncService.getLastPulledAt(_uid);
       expect(result, isNotNull);
     });
 
     test('is per-user', () async {
-      await syncService.pullAll(_uid);
+      await syncService.pullChangedSince(_uid);
 
       final other = await syncService.getLastPulledAt('other-user');
       expect(other, isNull);
@@ -977,8 +985,8 @@ void main() {
     });
 
     test('clears every pull watermark, not just the current uid', () async {
-      await syncService.pullAll(_uid);
-      await syncService.pullAll('other-user');
+      await syncService.pullChangedSince(_uid);
+      await syncService.pullChangedSince('other-user');
       expect(await syncService.getLastPulledAt(_uid), isNotNull);
 
       await syncService.deleteLocalData();

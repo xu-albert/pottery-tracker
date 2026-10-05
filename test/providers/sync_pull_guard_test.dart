@@ -225,6 +225,144 @@ void main() {
     );
   });
 
+  // Links are pushed as a whole set: pushing this device's links for a piece
+  // the cloud already holds would restore one another device removed.
+  test('a first sync does not push the links of a piece its pull found in '
+      'the cloud', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = SyncService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final created = DateTime.now().subtract(const Duration(days: 7));
+    // Another device removed p1's glaze and tag, so the cloud has no links.
+    await firestore.doc('users/user-1/pieces/p1').set({
+      'title': 'Bowl',
+      'isArchived': false,
+      'createdAt': Timestamp.fromDate(created),
+      'updatedAt': Timestamp.fromDate(created),
+    });
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p1'),
+        title: const Value('Bowl'),
+        createdAt: Value(created),
+        updatedAt: Value(created),
+      ),
+    );
+    await db
+        .into(db.glazeOptions)
+        .insert(
+          GlazeOptionsCompanion.insert(
+            id: 'g1',
+            name: 'Celadon',
+            createdAt: created,
+          ),
+        );
+    await db
+        .into(db.tagOptions)
+        .insert(
+          TagOptionsCompanion.insert(
+            id: 't1',
+            name: 'Gift',
+            createdAt: created,
+          ),
+        );
+    await db.materialsDao.setGlazesForPiece('p1', [
+      'g1',
+    ], touchUpdatedAt: false);
+    await db.materialsDao.setTagsForPiece('p1', ['t1'], touchUpdatedAt: false);
+
+    final container = _container(queue, service);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = _syncedOnce(container);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.timeout(const Duration(seconds: 5));
+
+    for (final links in ['pieceGlazes', 'pieceTags']) {
+      expect(
+        (await firestore.collection('users/user-1/$links').get()).docs,
+        isEmpty,
+        reason: 'the removal made elsewhere must stand',
+      );
+    }
+  });
+
+  // A row only the snapshot uploads — like the glaze a schema backfill
+  // creates, with no queue entry of its own — stays local for good if a first
+  // sync is recorded as done before its snapshot is queued.
+  test('a first sync interrupted after its pull stages its snapshot on the '
+      'next launch', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final firestore = FakeFirebaseFirestore();
+    await db
+        .into(db.glazeOptions)
+        .insert(
+          GlazeOptionsCompanion.insert(
+            id: 'g1',
+            name: 'Celadon',
+            createdAt: DateTime(2025),
+          ),
+        );
+
+    final interruptedQueue = SyncQueue();
+    final interrupted = _container(
+      interruptedQueue,
+      _InterruptedSnapshotService(
+        db,
+        firestore,
+        MockFirebaseStorage(),
+        queue: interruptedQueue,
+      ),
+    );
+    final failed = Completer<void>();
+    final sub = interrupted.listen(syncStateProvider, (_, next) {
+      if (next.status == SyncStatus.error && !failed.isCompleted) {
+        failed.complete();
+      }
+    });
+    interrupted.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await failed.future.timeout(const Duration(seconds: 5));
+    sub.close();
+    interrupted.dispose();
+
+    final queue = SyncQueue();
+    final service = SyncService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    expect(await service.getLastPulledAt('user-1'), isNull);
+    final relaunched = _container(queue, service);
+    addTearDown(relaunched.dispose);
+    final synced = _syncedOnce(relaunched);
+    relaunched.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.timeout(const Duration(seconds: 5));
+
+    final glaze = await firestore.doc('users/user-1/glazes/g1').get();
+    expect(glaze.data()?['name'], 'Celadon');
+  });
+
   test('a photo URL a pull finds nulled is pushed back without waiting for '
       'another sync', () async {
     SharedPreferences.setMockInitialValues({
@@ -331,11 +469,41 @@ ProviderContainer _container(SyncQueue queue, SyncService service) =>
       ],
     );
 
+/// Completes the first time a sync stamps Last synced, which it does only
+/// after its closing pull.
+Future<void> _syncedOnce(ProviderContainer container) {
+  final synced = Completer<void>();
+  late final ProviderSubscription<SyncState> sub;
+  sub = container.listen(syncStateProvider, (_, next) {
+    if (next.lastSyncedAt != null && !synced.isCompleted) {
+      synced.complete();
+      sub.close();
+    }
+  });
+  return synced.future;
+}
+
 Future<void> _until(Future<bool> Function() condition) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (!await condition()) {
     if (DateTime.now().isAfter(deadline)) fail('the condition never held');
     await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+/// Fails staging its first snapshot, standing in for the app dying between a
+/// first sync's pull and the snapshot reaching the queue.
+class _InterruptedSnapshotService extends SyncService {
+  _InterruptedSnapshotService(
+    super.db,
+    super.firestore,
+    super.storage, {
+    super.queue,
+  });
+
+  @override
+  Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
+    throw StateError('the app died before the snapshot was queued');
   }
 }
 

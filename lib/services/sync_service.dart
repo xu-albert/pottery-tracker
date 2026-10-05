@@ -772,9 +772,15 @@ class SyncService {
   // pull watermark after it would skip those edits on the next online sync.
   //
   // Returns the entries of a full snapshot ([fullUploadEntries]) for what the
-  // cloud already holds: every live doc the pull read. Each such row is now
-  // the cloud's copy here, or has queued work of its own that sends it, so a
-  // snapshot that pushed it again could only carry an older copy.
+  // cloud already holds: every live doc the pull read, and for each piece
+  // among them its glaze and tag links. Each such row is now the cloud's copy
+  // here, or has queued work of its own that sends it, so a snapshot that
+  // pushed it again could only carry an older copy.
+  //
+  // It does not record that this device has pulled ([getLastPulledAt]). A
+  // full pull comes before the snapshot it trims is queued, and a device that
+  // stops between the two must pull in full and stage that snapshot again;
+  // the incremental pull that follows the snapshot's pushes records it.
   Future<Set<SyncQueueEntry>> pullAll(String uid) {
     debugPrint('SyncService: full pull (first sync on this device)');
     return _pull(uid, full: true);
@@ -788,6 +794,7 @@ class SyncService {
   Future<void> pullChangedSince(String uid) async {
     debugPrint('SyncService: incremental pull');
     await _pull(uid, full: false);
+    await _saveLastPulledAt(uid);
   }
 
   /// One pull of every collection, in full when [full] is set. Returns what
@@ -845,6 +852,18 @@ class SyncService {
         }
         final push = _pushEntryFor(collection, doc.id);
         inCloud.add(push);
+        if (collection == 'pieces') {
+          inCloud.addAll([
+            SyncQueueEntry(
+              operation: SyncOperation.pushPieceGlazes,
+              entityId: doc.id,
+            ),
+            SyncQueueEntry(
+              operation: SyncOperation.pushPieceTags,
+              entityId: doc.id,
+            ),
+          ]);
+        }
         final applied =
             !isQueued(push) &&
             !isQueued(_deletionEntryFor(collection, doc.id)) &&
@@ -868,7 +887,6 @@ class SyncService {
       optionField: 'glazeOptionId',
       pushOperation: SyncOperation.pushPieceGlazes,
       pieceStamps: pieceStamps,
-      inCloud: inCloud,
     );
     await _pullJunctions(
       uid,
@@ -876,7 +894,6 @@ class SyncService {
       optionField: 'tagOptionId',
       pushOperation: SyncOperation.pushPieceTags,
       pieceStamps: pieceStamps,
-      inCloud: inCloud,
     );
 
     await _downloadMissingPhotos(uid);
@@ -890,7 +907,6 @@ class SyncService {
         watermark.microsecondsSinceEpoch,
       );
     }
-    await _saveLastPulledAt(uid);
     return inCloud;
   }
 
@@ -901,9 +917,10 @@ class SyncService {
     return DateTime.fromMillisecondsSinceEpoch(ms);
   }
 
-  /// Records that a pull for [uid] completed, on this device's clock. The
-  /// caller uses it to choose between a full and an incremental pull; the
-  /// queries themselves start from the per-collection watermarks.
+  /// Records, on this device's clock, that an incremental pull for [uid]
+  /// completed, which a device only runs once its full snapshot is queued.
+  /// The caller uses it to choose between a full and an incremental pull;
+  /// the queries themselves start from the per-collection watermarks.
   Future<void> _saveLastPulledAt(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(
@@ -1015,15 +1032,13 @@ class SyncService {
       };
 
   /// Junctions have no `updatedAt`, so every pull reads them in full; a set
-  /// skipped here is simply looked at again next time. Each piece with links
-  /// in the cloud goes into [inCloud], as [pullAll] describes.
+  /// skipped here is simply looked at again next time.
   Future<void> _pullJunctions(
     String uid,
     String collection, {
     required String optionField,
     required SyncOperation pushOperation,
     required Map<String, DateTime> pieceStamps,
-    required Set<SyncQueueEntry> inCloud,
   }) async {
     final snap = await _col(
       uid,
@@ -1036,10 +1051,6 @@ class SyncService {
       if (pieceId == null) continue;
       byPiece.putIfAbsent(pieceId, () => []).add(data!);
     }
-    inCloud.addAll([
-      for (final pieceId in byPiece.keys)
-        SyncQueueEntry(operation: pushOperation, entityId: pieceId),
-    ]);
     final isQueued = await _queuedCheck();
     for (final MapEntry(key: pieceId, value: docs) in byPiece.entries) {
       if (isQueued(

@@ -464,11 +464,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     final uid = auth.uid!;
     final _Session session = (uid: uid, generation: _generation);
-    var pullInFull = false;
     var dispatched = false;
     try {
       if (await _claimOrBlock(uid)) return;
-      pullInFull =
+      final pullInFull =
           forceFullSync || await _syncService.getLastPulledAt(uid) == null;
 
       await _syncService.checkServerReachability(uid);
@@ -490,7 +489,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
             if (!inCloud.contains(entry)) entry,
         ]);
         _unpulledSnapshot = session;
-        pullInFull = false;
         await _refreshPendingCount();
       }
 
@@ -514,11 +512,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _releaseSyncing();
     }
     if (dispatched) {
-      await _pullOnceSettled(
-        session,
-        inFull: pullInFull,
-        forceFullSync: forceFullSync,
-      );
+      await _pullOnceSettled(session, forceFullSync: forceFullSync);
     }
     await _payOwedSync();
   }
@@ -530,9 +524,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// covers this run's entries and every overlapping drain's. It takes
   /// [_syncing] again because it writes local rows, which a wipe waits on; a
   /// run that finds it held owes the sync instead.
+  ///
+  /// The pull is incremental: a full sync pulled in full before it staged its
+  /// snapshot, in this run or the earlier one in this session that set
+  /// [_unpulledSnapshot]. It is what records that this device has pulled.
   Future<void> _pullOnceSettled(
     _Session session, {
-    required bool inFull,
     required bool forceFullSync,
   }) async {
     Object? drainFailure;
@@ -560,11 +557,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (await _claimOrBlock(session.uid)) return;
       await _refreshPendingCount();
       state = state.copyWith(status: SyncStatus.syncing);
-      if (inFull) {
-        await _syncService.pullAll(session.uid);
-      } else {
-        await _syncService.pullChangedSince(session.uid);
-      }
+      await _syncService.pullChangedSince(session.uid);
       if (_unpulledSnapshot == session) {
         _owedSyncForcesFull = false;
         _unpulledSnapshot = null;
