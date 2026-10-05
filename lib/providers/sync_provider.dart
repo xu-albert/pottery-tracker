@@ -239,8 +239,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   bool _syncing = false;
   bool _wiping = false;
 
-  /// The one live push per operation and revision. A drain that reaches an
-  /// entry already here attaches to it, and a newer revision waits behind
+  /// The one live push per entry. A drain that reaches an entry already here
+  /// at the same revision and scope attaches to it; any other waits behind
   /// it. A delivered flight stays until its entry has been retired from the
   /// queue, so an overlapping drain cannot send that revision twice.
   final Map<_FlightKey, _InFlightPush> _inFlightPushes = {};
