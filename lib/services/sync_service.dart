@@ -1171,9 +1171,9 @@ class SyncService {
       case 'clays':
         await _db.materialsDao.deleteClay(docId);
       case 'glazes':
-        await _db.materialsDao.deleteGlaze(docId);
+        await _db.materialsDao.deleteGlaze(docId, touchUpdatedAt: false);
       case 'tags':
-        await _db.materialsDao.deleteTag(docId);
+        await _db.materialsDao.deleteTag(docId, touchUpdatedAt: false);
     }
   }
 

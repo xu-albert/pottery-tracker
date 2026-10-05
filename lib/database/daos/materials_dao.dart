@@ -228,7 +228,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     }
   }
 
-  Future<void> deleteGlaze(String id) async {
+  /// Deletes the glaze and its links. [touchUpdatedAt] is false only for a
+  /// sync pull applying another device's deletion, as for
+  /// [setGlazesForPiece].
+  Future<void> deleteGlaze(String id, {bool touchUpdatedAt = true}) async {
     // Find affected pieces before deleting
     final junctionRows = await (select(
       pieceGlazes,
@@ -243,7 +246,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
     // Rebuild denormalized column for affected pieces
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedGlazesForPiece(pieceId);
+      await _rebuildDenormalizedGlazesForPiece(
+        pieceId,
+        touchUpdatedAt: touchUpdatedAt,
+      );
     }
   }
 
@@ -421,7 +427,8 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  Future<void> deleteTag(String id) async {
+  /// Deletes the tag and its links. [touchUpdatedAt] as for [deleteGlaze].
+  Future<void> deleteTag(String id, {bool touchUpdatedAt = true}) async {
     final junctionRows = await (select(
       pieceTags,
     )..where((pt) => pt.tagOptionId.equals(id))).get();
@@ -431,7 +438,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     await (delete(tagOptions)..where((t) => t.id.equals(id))).go();
 
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedTagsForPiece(pieceId);
+      await _rebuildDenormalizedTagsForPiece(
+        pieceId,
+        touchUpdatedAt: touchUpdatedAt,
+      );
     }
   }
 
