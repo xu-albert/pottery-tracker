@@ -130,7 +130,7 @@ User data should be backed up and synced to the cloud.
 
 - Use Firebase (Firestore + Cloud Storage) for cross-platform sync
 - Automatic background sync when connectivity available
-- Conflict resolution: most recent edit wins
+- Conflict resolution: the last change to sync wins, in server order — an edit made offline wins when it syncs, even over a newer edit pushed earlier
 - User authentication via Firebase Auth (Google Sign-In, Apple Sign-In, or anonymous)
 - Sync status indicator in settings
 
