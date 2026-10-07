@@ -215,8 +215,9 @@ rekeys the live keyed connection in place. The Android path has never run on a d
 Native startup never deletes a Keychain item. `AppDelegate` once cleared every Keychain class
 whenever a `keychain_cleared_v1` UserDefaults marker was missing; the marker, the key and the
 database live in three separate stores, so losing only the marker erased the key and left the
-journal unopenable. It was removed (core audit PT-CORE-01); nothing in the suite can launch the
-Runner, so this is guarded by the device check alone: on an install
+journal unopenable. It was removed (core audit PT-CORE-01) and `test/ios/app_delegate_test.dart`
+keeps any native Runner source from calling `SecItemDelete`. Nothing in the suite can launch the
+Runner, so the launch itself is the device check: on an install
 whose journal has pieces, remove `keychain_cleared_v1` from the app's preferences plist (Xcode ›
 Devices › Download Container, edit `Library/Preferences/`, Replace Container), relaunch, and
 confirm the album opens with no recovery screen.

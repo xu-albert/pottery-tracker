@@ -826,6 +826,24 @@ abstract class AppLocalizations {
   /// **'Could not sign out — you are still signed in. Try again.'**
   String get signOutIncomplete;
 
+  /// Shown when Sign Out & Erase erased this device but Firebase kept the session. Says both: the erase already happened, and the account is still signed in
+  ///
+  /// In en, this message translates to:
+  /// **'The pottery on this device was erased, but you are still signed in. Try signing out again.'**
+  String get signOutIncompleteDeviceErased;
+
+  /// Shown when Sign Out & Erase neither ended the session nor finished the wipe. Carries both outcomes in one message, since a second message would hide the first
+  ///
+  /// In en, this message translates to:
+  /// **'Could not sign out — you are still signed in — and some data on this device could not be deleted. This device stays locked until the erase finishes; then sign out again.'**
+  String get signOutIncompleteWipeFailed;
+
+  /// Shown when Sign Out & Erase removed every row and photo but could not secure the device, and Firebase kept the session. Carries both outcomes in one message, since a second message would hide the first
+  ///
+  /// In en, this message translates to:
+  /// **'Everything on this device was erased, but it could not be fully secured for whoever uses it next, and you are still signed in. The erase is still owed, so try again to finish it, then sign out again.'**
+  String get signOutIncompleteDeviceNotSecured;
+
   /// Shown when the local wipe on sign-out did not finish. Names the lock rather than a later sign-in: the owed wipe locks the router, and the lock screen is what retries it
   ///
   /// In en, this message translates to:

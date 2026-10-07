@@ -405,6 +405,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not sign out — you are still signed in. Try again.';
 
   @override
+  String get signOutIncompleteDeviceErased =>
+      'The pottery on this device was erased, but you are still signed in. Try signing out again.';
+
+  @override
+  String get signOutIncompleteWipeFailed =>
+      'Could not sign out — you are still signed in — and some data on this device could not be deleted. This device stays locked until the erase finishes; then sign out again.';
+
+  @override
+  String get signOutIncompleteDeviceNotSecured =>
+      'Everything on this device was erased, but it could not be fully secured for whoever uses it next, and you are still signed in. The erase is still owed, so try again to finish it, then sign out again.';
+
+  @override
   String get signOutWipeFailed =>
       'Signed out, but some data on this device could not be deleted. This device stays locked until the erase finishes.';
 

@@ -243,11 +243,66 @@ void main() {
       }
 
       verify(() => syncService.deleteLocalData()).called(1);
-      expect(find.textContaining('Could not sign out'), findsOneWidget);
+      // The erase already happened; a bare "could not sign out" would leave
+      // the user believing their pottery is still here.
+      expect(
+        find.textContaining(RegExp('was erased.*still signed in')),
+        findsOneWidget,
+      );
       final container = ProviderScope.containerOf(
         tester.element(find.byType(SettingsScreen)),
       );
       expect(container.read(authProvider).isSignedIn, isTrue);
+    });
+
+    testWidgets('a failed wipe is still reported when Firebase also kept the '
+        'session', (tester) async {
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+      await pumpSettings(tester, sessionHeld: true);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.textContaining(
+          RegExp('still signed in.*could not be deleted.*stays locked'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Signed out'),
+        findsNothing,
+        reason: 'Firebase kept the session',
+      );
+    });
+
+    testWidgets('an unsecured wipe is still reported when Firebase also kept '
+        'the session', (tester) async {
+      when(() => syncService.deleteLocalData()).thenThrow(
+        LocalDeviceNotSecuredException([Exception('the key store is full')]),
+      );
+      await pumpSettings(tester, sessionHeld: true);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.textContaining(
+          RegExp('could not be fully secured.*still signed in'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('could not be deleted'), findsNothing);
     });
 
     testWidgets('a failed wipe is reported instead of passing silently', (

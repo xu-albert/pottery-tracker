@@ -165,6 +165,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (confirmed != true || !mounted) return;
 
     setState(() => _isSigningOut = true);
+    // Replaces whatever the wipe reported if the session outlives it, so the
+    // message left up still carries the wipe's outcome as well.
+    var stillSignedInMessage = l10n.signOutIncompleteDeviceErased;
     try {
       await ref
           .read(syncStateProvider.notifier)
@@ -174,6 +177,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // would be false: what is owed is the securing, which is what the lock
       // screen's retry does — and it says the same thing there.
       debugPrint('SettingsScreen: sign-out left the device unsecured: $e');
+      stillSignedInMessage = l10n.signOutIncompleteDeviceNotSecured;
       if (mounted) {
         AppSnackbar.show(
           context,
@@ -182,10 +186,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       }
     } catch (e) {
-      // The session is already gone and the wipe is still flagged pending, so
-      // the lock screen takes over and retries it. Say so rather than implying
-      // the device is clean.
+      // The wipe is still flagged pending, so the lock screen takes over and
+      // retries it. Say so rather than implying the device is clean.
       debugPrint('SettingsScreen: sign-out wipe failed: $e');
+      stillSignedInMessage = l10n.signOutIncompleteWipeFailed;
       if (mounted) {
         AppSnackbar.show(
           context,
@@ -203,7 +207,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (mounted) {
           AppSnackbar.show(
             context,
-            message: l10n.signOutIncomplete,
+            message: stillSignedInMessage,
             duration: _partialOutcomeDuration,
           );
         }
