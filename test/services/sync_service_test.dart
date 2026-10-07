@@ -281,6 +281,38 @@ void main() {
     });
   });
 
+  group('uploadPhotoFile', () {
+    test(
+      'uploads at the photo path storage.rules admits, as image/jpeg',
+      () async {
+        final file = File('${docsDir.path}/ph1.jpg')..writeAsBytesSync([1, 2]);
+        final now = DateTime(2025);
+        await db.photosDao.insertPhoto(
+          PhotosCompanion(
+            id: const Value('ph1'),
+            pieceId: const Value('p1'),
+            localPath: Value(file.path),
+            dateTaken: Value(now),
+            createdAt: Value(now),
+          ),
+        );
+        await col('photos').doc('ph1').set({'pieceId': 'p1'});
+
+        await syncService.uploadPhotoFile(_uid, 'ph1');
+
+        const path = 'users/$_uid/photos/p1/ph1.jpg';
+        expect(storage.storedFilesMap.keys, [path]);
+        expect(SyncService.photoStoragePath(_uid, 'p1', 'ph1'), path);
+        expect(
+          storage.storedSettableMetadataMap[path]!['contentType'],
+          'image/jpeg',
+        );
+        final data = (await col('photos').doc('ph1').get()).data() as Map;
+        expect(data['cloudUrl'], isNotNull);
+      },
+    );
+  });
+
   group('pushClay', () {
     test('writes clay data to Firestore', () async {
       await insertClay(id: 'c1', name: 'Porcelain', sortOrder: 3);
