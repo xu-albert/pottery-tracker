@@ -89,6 +89,13 @@ class SyncQueue {
   /// so a revision captured before a push cannot be matched by a later one.
   final Map<SyncQueueEntry, int> _revisions = {};
   int _lastRevision = 0;
+
+  /// The entries whose current revision owes the whole row, recorded in the
+  /// same step as that revision's stamp. Equality ignores
+  /// [SyncQueueEntry.changedFields], and the persisted merge lands later, so
+  /// neither a drain's earlier read of the queue nor the queue itself can say
+  /// in time that an edit has widened a field-scoped entry.
+  final Set<SyncQueueEntry> _wholeRowOwed = {};
   Future<void> _mutationTail = Future<void>.value();
   Map<SyncQueueEntry, int> _unretired = {};
   Future<void>? _retiring;
@@ -97,10 +104,18 @@ class SyncQueue {
   /// pushes and may only acknowledge the entry while it still reads the same.
   int revisionOf(SyncQueueEntry entry) => _revisions[entry] ?? 0;
 
+  /// The fields a push of [entry] at its current [revisionOf] must send, or
+  /// null for the whole row. A drain reads it together with the revision, as
+  /// [entry] — read from the queue earlier — may name fewer fields than an
+  /// edit since then owes.
+  List<String>? fieldsOwed(SyncQueueEntry entry) =>
+      _wholeRowOwed.contains(entry) ? null : entry.changedFields;
+
   Future<void> enqueue(SyncQueueEntry entry) async {
     // Stamped before the first await: a push acknowledging between the two
     // would otherwise drop the revision this call is about to merge in.
     _revisions[entry] = ++_lastRevision;
+    if (entry.changedFields == null) _wholeRowOwed.add(entry);
     await _mutate(() async {
       final entries = await getAll();
       final existingIndex = entries.indexWhere((e) => e == entry);
@@ -129,6 +144,7 @@ class SyncQueue {
       if (missing.isEmpty) return;
       for (final entry in missing) {
         _revisions[entry] = ++_lastRevision;
+        if (entry.changedFields == null) _wholeRowOwed.add(entry);
       }
       await _save([...entries, ...missing]);
     });
@@ -149,6 +165,7 @@ class SyncQueue {
   Future<void> remove(SyncQueueEntry entry) async {
     await _mutate(() async {
       _revisions.remove(entry);
+      _wholeRowOwed.remove(entry);
       final entries = await getAll();
       entries.remove(entry);
       await _save(entries);
@@ -178,6 +195,7 @@ class SyncQueue {
       };
       if (delivered.isEmpty) return;
       delivered.forEach(_revisions.remove);
+      _wholeRowOwed.removeAll(delivered);
       final entries = await getAll();
       entries.removeWhere(delivered.contains);
       await _save(entries);
@@ -193,6 +211,7 @@ class SyncQueue {
   Future<void> clear() async {
     await _mutate(() async {
       _revisions.clear();
+      _wholeRowOwed.clear();
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(storageKey);
     });

@@ -77,29 +77,38 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     return (created, true);
   }
 
-  Future<void> updateClayName(String id, String newName) async {
+  /// Renames the clay and every piece carrying its name, and returns those
+  /// pieces' ids. Their `clayType` is pushed content, so each one is owed a
+  /// push — see `MaterialWriter.renameClay`.
+  Future<List<String>> updateClayName(String id, String newName) {
     final trimmed = newName.trim();
-    // Get the old name first
-    final old = await (select(
-      clayOptions,
-    )..where((c) => c.id.equals(id))).getSingleOrNull();
-    if (old == null) return;
+    return transaction(() async {
+      // Get the old name first
+      final old = await (select(
+        clayOptions,
+      )..where((c) => c.id.equals(id))).getSingleOrNull();
+      if (old == null) return const [];
 
-    // Update the clay option
-    await (update(clayOptions)..where((c) => c.id.equals(id))).write(
-      ClayOptionsCompanion(name: Value(trimmed)),
-    );
+      // Update the clay option
+      await (update(clayOptions)..where((c) => c.id.equals(id))).write(
+        ClayOptionsCompanion(name: Value(trimmed)),
+      );
 
-    // Propagate rename to all pieces using this clay
-    await customUpdate(
-      'UPDATE pieces SET clay_type = ?, updated_at = ? WHERE clay_type = ?',
-      variables: [
-        Variable.withString(trimmed),
-        Variable.withDateTime(DateTime.now()),
-        Variable.withString(old.name),
-      ],
-      updates: {pieces},
-    );
+      // Propagate rename to all pieces using this clay
+      final renamed = await (select(
+        pieces,
+      )..where((p) => p.clayType.equals(old.name))).get();
+      await customUpdate(
+        'UPDATE pieces SET clay_type = ?, updated_at = ? WHERE clay_type = ?',
+        variables: [
+          Variable.withString(trimmed),
+          Variable.withDateTime(DateTime.now()),
+          Variable.withString(old.name),
+        ],
+        updates: {pieces},
+      );
+      return [for (final piece in renamed) piece.id];
+    });
   }
 
   Future<void> deleteClay(String id) {
@@ -219,7 +228,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     }
   }
 
-  Future<void> deleteGlaze(String id) async {
+  /// Deletes the glaze and its links. [touchUpdatedAt] is false only for a
+  /// sync pull applying another device's deletion, as for
+  /// [setGlazesForPiece].
+  Future<void> deleteGlaze(String id, {bool touchUpdatedAt = true}) async {
     // Find affected pieces before deleting
     final junctionRows = await (select(
       pieceGlazes,
@@ -234,7 +246,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
     // Rebuild denormalized column for affected pieces
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedGlazesForPiece(pieceId);
+      await _rebuildDenormalizedGlazesForPiece(
+        pieceId,
+        touchUpdatedAt: touchUpdatedAt,
+      );
     }
   }
 
@@ -285,10 +300,15 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
+  /// Replaces the piece's glazes. [touchUpdatedAt] is false only for a sync
+  /// pull applying another device's links: the pull tells its own writes from
+  /// a local edit by the piece's `updatedAt`, so it leaves the stamp where it
+  /// found it.
   Future<void> setGlazesForPiece(
     String pieceId,
-    List<String> glazeOptionIds,
-  ) async {
+    List<String> glazeOptionIds, {
+    bool touchUpdatedAt = true,
+  }) async {
     // Find existing junction rows to detect removals
     final existing = await (select(
       pieceGlazes,
@@ -326,7 +346,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     }
 
     // Rebuild denormalized column
-    await _rebuildDenormalizedGlazesForPiece(pieceId);
+    await _rebuildDenormalizedGlazesForPiece(
+      pieceId,
+      touchUpdatedAt: touchUpdatedAt,
+    );
   }
 
   // ── Tag library methods ──
@@ -404,7 +427,8 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  Future<void> deleteTag(String id) async {
+  /// Deletes the tag and its links. [touchUpdatedAt] as for [deleteGlaze].
+  Future<void> deleteTag(String id, {bool touchUpdatedAt = true}) async {
     final junctionRows = await (select(
       pieceTags,
     )..where((pt) => pt.tagOptionId.equals(id))).get();
@@ -414,7 +438,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     await (delete(tagOptions)..where((t) => t.id.equals(id))).go();
 
     for (final pieceId in affectedPieceIds) {
-      await _rebuildDenormalizedTagsForPiece(pieceId);
+      await _rebuildDenormalizedTagsForPiece(
+        pieceId,
+        touchUpdatedAt: touchUpdatedAt,
+      );
     }
   }
 
@@ -463,10 +490,12 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
+  /// Replaces the piece's tags. [touchUpdatedAt] as for [setGlazesForPiece].
   Future<void> setTagsForPiece(
     String pieceId,
-    List<String> tagOptionIds,
-  ) async {
+    List<String> tagOptionIds, {
+    bool touchUpdatedAt = true,
+  }) async {
     // Find existing junction rows to detect removals
     final existing = await (select(
       pieceTags,
@@ -500,7 +529,10 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
       );
     }
 
-    await _rebuildDenormalizedTagsForPiece(pieceId);
+    await _rebuildDenormalizedTagsForPiece(
+      pieceId,
+      touchUpdatedAt: touchUpdatedAt,
+    );
   }
 
   // ── Deleted junctions methods ──
@@ -534,17 +566,29 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
 
   // ── Private helpers ──
 
-  Future<void> _rebuildDenormalizedTagsForPiece(String pieceId) async {
+  Future<void> _rebuildDenormalizedTagsForPiece(
+    String pieceId, {
+    bool touchUpdatedAt = true,
+  }) async {
     final tagList = await getTagsForPiece(pieceId);
     final denormalized = tagList.isEmpty
         ? null
         : tagList.map((t) => t.name).join(', ');
+    final column = denormalized != null
+        ? Variable.withString(denormalized)
+        : const Variable<String>(null);
+    if (!touchUpdatedAt) {
+      await customUpdate(
+        'UPDATE pieces SET tags = ? WHERE id = ?',
+        variables: [column, Variable.withString(pieceId)],
+        updates: {pieces},
+      );
+      return;
+    }
     await customUpdate(
       'UPDATE pieces SET tags = ?, updated_at = ? WHERE id = ?',
       variables: [
-        denormalized != null
-            ? Variable.withString(denormalized)
-            : const Variable(null),
+        column,
         Variable.withDateTime(DateTime.now()),
         Variable.withString(pieceId),
       ],
@@ -552,17 +596,29 @@ class MaterialsDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  Future<void> _rebuildDenormalizedGlazesForPiece(String pieceId) async {
+  Future<void> _rebuildDenormalizedGlazesForPiece(
+    String pieceId, {
+    bool touchUpdatedAt = true,
+  }) async {
     final glazeList = await getGlazesForPiece(pieceId);
     final denormalized = glazeList.isEmpty
         ? null
         : glazeList.map((g) => g.name).join(', ');
+    final column = denormalized != null
+        ? Variable.withString(denormalized)
+        : const Variable<String>(null);
+    if (!touchUpdatedAt) {
+      await customUpdate(
+        'UPDATE pieces SET glazes = ? WHERE id = ?',
+        variables: [column, Variable.withString(pieceId)],
+        updates: {pieces},
+      );
+      return;
+    }
     await customUpdate(
       'UPDATE pieces SET glazes = ?, updated_at = ? WHERE id = ?',
       variables: [
-        denormalized != null
-            ? Variable.withString(denormalized)
-            : const Variable(null),
+        column,
         Variable.withDateTime(DateTime.now()),
         Variable.withString(pieceId),
       ],

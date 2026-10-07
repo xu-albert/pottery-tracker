@@ -51,9 +51,10 @@ class _FlightKey {
 
 class _InFlightPush {
   final int revision;
+  final List<String>? fields;
   final Future<void> acknowledgement;
 
-  const _InFlightPush(this.revision, this.acknowledgement);
+  const _InFlightPush(this.revision, this.fields, this.acknowledgement);
 }
 
 class _PushOutcome {
@@ -238,8 +239,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   bool _syncing = false;
   bool _wiping = false;
 
-  /// The one live push per operation and revision. A drain that reaches an
-  /// entry already here attaches to it, and a newer revision waits behind
+  /// The one live push per entry. A drain that reaches an entry already here
+  /// at the same revision and scope attaches to it; any other waits behind
   /// it. A delivered flight stays until its entry has been retired from the
   /// queue, so an overlapping drain cannot send that revision twice.
   final Map<_FlightKey, _InFlightPush> _inFlightPushes = {};
@@ -249,14 +250,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// holds up the new session or starts another push.
   int _generation = 0;
 
-  /// The session whose full snapshot is staged and still awaits a pull. Until
-  /// a pull of that session succeeds, a repeated or forced tap in it is
-  /// already covered by the snapshot: it attaches to the snapshot's flights,
-  /// or sends whatever of it is still queued, instead of staging it again, and
-  /// a forced request owed meanwhile is answered by the full pull rather than
-  /// replayed. A failed reachability read or pull leaves it standing, since
-  /// what the snapshot has not delivered is still queued; a new generation
-  /// makes it stale by itself.
+  /// The session whose full snapshot is staged, after the full pull that
+  /// precedes it, and still awaits the pull that follows its pushes. Until
+  /// that pull succeeds, a repeated or forced tap in it is already covered by
+  /// the snapshot: it attaches to the snapshot's flights, or sends whatever of
+  /// it is still queued, instead of pulling and staging it again, and a forced
+  /// request owed meanwhile is answered by the snapshot and the pulls around
+  /// it rather than replayed. A failed reachability read or pull leaves it
+  /// standing, since what the snapshot has not delivered is still queued; a
+  /// new generation makes it stale by itself.
   _Session? _unpulledSnapshot;
 
   /// Every dispatched drain whose writes have not all settled. The pull waits
@@ -287,7 +289,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// Without it the sign-in sync is simply dropped: a drain only empties the
   /// queue — it never stages a full snapshot, pulls or writes a watermark —
   /// yet it would report the device idle. The mode travels with the debt
-  /// because the tile's long-press is the only re-upload-everything
+  /// because the tile's long-press is the only full pull-and-resync
   /// affordance in the app, and it races a drain scheduled 500ms after any
   /// edit.
   bool _syncOwed = false;
@@ -463,25 +465,33 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     final uid = auth.uid!;
     final _Session session = (uid: uid, generation: _generation);
-    DateTime? lastPulled;
     var dispatched = false;
     try {
       if (await _claimOrBlock(uid)) return;
-      lastPulled = forceFullSync
-          ? null
-          : await _syncService.getLastPulledAt(uid);
-
-      if (lastPulled == null && _unpulledSnapshot != session) {
-        // Building and persisting the snapshot is local work. Do it before the
-        // reachability read so a first sync attempted offline still shows all
-        // work waiting and survives process death.
-        await _queue.enqueueMissing(await _syncService.fullUploadEntries(uid));
-        _unpulledSnapshot = session;
-        await _refreshPendingCount();
-      }
+      final pullInFull =
+          forceFullSync || await _syncService.getLastPulledAt(uid) == null;
 
       await _syncService.checkServerReachability(uid);
       state = state.copyWith(status: SyncStatus.syncing);
+
+      if (pullInFull && _unpulledSnapshot != session) {
+        // A full sync pulls before it stages its snapshot, and the snapshot
+        // leaves out everything that pull found in the cloud. A snapshot push
+        // is stamped with the server's time whenever it lands, so a copy of a
+        // row the cloud already holds — out of date now, or by the time a
+        // dropped connection lets it through — would replace newer edits on
+        // every other device. What the pull found is the cloud's copy here or
+        // has queued work of its own; the snapshot uploads what the cloud
+        // lacks. Edits made here are queued as they happen, so they count as
+        // waiting offline without the snapshot.
+        final inCloud = await _syncService.pullAll(uid);
+        await _queue.enqueueMissing([
+          for (final entry in await _syncService.fullUploadEntries(uid))
+            if (!inCloud.contains(entry)) entry,
+        ]);
+        _unpulledSnapshot = session;
+        await _refreshPendingCount();
+      }
 
       // A photo file an earlier attempt could not upload is retried from its
       // local row, which is its durable record, through the same single-flight
@@ -503,7 +513,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _releaseSyncing();
     }
     if (dispatched) {
-      await _pullOnceSettled(session, lastPulled, forceFullSync: forceFullSync);
+      await _pullOnceSettled(session, forceFullSync: forceFullSync);
     }
     await _payOwedSync();
   }
@@ -515,9 +525,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// covers this run's entries and every overlapping drain's. It takes
   /// [_syncing] again because it writes local rows, which a wipe waits on; a
   /// run that finds it held owes the sync instead.
+  ///
+  /// The pull is incremental: a full sync pulled in full before it staged its
+  /// snapshot, in this run or the earlier one in this session that set
+  /// [_unpulledSnapshot]. It is what records that this device has pulled.
   Future<void> _pullOnceSettled(
-    _Session session,
-    DateTime? lastPulled, {
+    _Session session, {
     required bool forceFullSync,
   }) async {
     Object? drainFailure;
@@ -545,13 +558,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (await _claimOrBlock(session.uid)) return;
       await _refreshPendingCount();
       state = state.copyWith(status: SyncStatus.syncing);
-      if (lastPulled == null) {
-        await _syncService.pullAll(session.uid);
-        if (_unpulledSnapshot == session) _owedSyncForcesFull = false;
-      } else {
-        await _syncService.pullChangedSince(session.uid, lastPulled);
-      }
-      if (_unpulledSnapshot == session && !_owedSyncForcesFull) {
+      await _syncService.pullChangedSince(session.uid);
+      if (_unpulledSnapshot == session) {
+        _owedSyncForcesFull = false;
         _unpulledSnapshot = null;
       }
 
@@ -705,6 +714,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     SyncQueueEntry entry,
   ) async {
     final revision = _queue.revisionOf(entry);
+    final fields = _queue.fieldsOwed(entry);
     // A lane whose session has ended starts nothing more: the device may have
     // been wiped under it, and a push read from the emptied copy would delete
     // what the account backed up. The entry is left for its own session.
@@ -715,7 +725,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
     if (entry.operation == SyncOperation.pushPhotoFile) {
       if (!_isCurrent(session)) return skipped;
-      final flight = _singleFlightPush(session, entry, revision);
+      final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
       } catch (e) {
@@ -737,7 +747,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       if (!_isCurrent(session)) return skipped;
-      final flight = _singleFlightPush(session, entry, revision);
+      final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
         return _PushOutcome(
@@ -762,30 +772,37 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
   }
 
-  /// Starts [entry]'s push at [revision], or returns the flight already
-  /// carrying that revision: an entry is never sent again while the future
-  /// that sent it is alive. A different revision waits for the one in the
-  /// air, because that acknowledgement cannot speak for data edited after its
-  /// push captured its revision, and the two writes must not overlap.
+  /// Starts [entry]'s push of [fields] at [revision], or returns the flight
+  /// already carrying that revision and those fields: an entry is never sent
+  /// again while the future that sent it is alive. A different revision or
+  /// scope waits for the one in the air, because that acknowledgement cannot
+  /// speak for data edited after its push captured its revision, nor for
+  /// fields it did not send, and the two writes must not overlap.
   _InFlightPush _singleFlightPush(
     _Session session,
     SyncQueueEntry entry,
     int revision,
+    List<String>? fields,
   ) {
     final key = _FlightKey(session.uid, entry);
     final existing = _inFlightPushes[key];
-    if (existing != null && existing.revision == revision) return existing;
+    if (existing != null &&
+        existing.revision == revision &&
+        listEquals(existing.fields, fields)) {
+      return existing;
+    }
 
     final predecessor =
         existing?.acknowledgement.then<void>((_) {}, onError: (_) {}) ??
         Future<void>.value();
     final flight = _InFlightPush(
       revision,
+      fields,
       predecessor.then((_) {
         if (!_isCurrent(session)) {
           throw StateError('the session that queued this push has ended');
         }
-        return _processEntry(session.uid, entry);
+        return _processEntry(session.uid, entry, fields);
       }),
     );
     _inFlightPushes[key] = flight;
@@ -802,10 +819,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return flight;
   }
 
-  Future<void> _processEntry(String uid, SyncQueueEntry entry) async {
+  Future<void> _processEntry(
+    String uid,
+    SyncQueueEntry entry,
+    List<String>? fields,
+  ) async {
     switch (entry.operation) {
       case SyncOperation.pushPiece:
-        await _syncService.pushPiece(uid, entry.entityId);
+        await _syncService.pushPiece(uid, entry.entityId, fields: fields);
       case SyncOperation.pushPhoto:
         await _syncService.pushPhoto(uid, entry.entityId);
       case SyncOperation.pushPhotoFile:
@@ -1342,13 +1363,15 @@ final syncQueueProvider = Provider<SyncQueue>((ref) {
   return SyncQueue();
 });
 
-final syncServiceProvider = Provider<SyncService>((ref) {
+final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
   return SyncService(
     db,
     FirebaseFirestore.instance,
     FirebaseStorage.instance,
     keys: ref.watch(encryptionKeyServiceProvider),
+    queue: ref.watch(syncQueueProvider),
+    trigger: ref.watch(syncTriggerProvider),
   );
 });
 

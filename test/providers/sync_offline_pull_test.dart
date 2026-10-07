@@ -43,6 +43,11 @@ class _Network {
     when(() => firestore.doc('users/user-1')).thenReturn(user);
     when(() => firestore.batch()).thenReturn(batch);
     when(() => batch.commit()).thenAnswer((_) async => []);
+    when(() => firestore.runTransaction<void>(any())).thenAnswer(
+      (call) => server.runTransaction<void>(
+        call.positionalArguments.single as TransactionHandler<void>,
+      ),
+    );
     for (final name in [
       'pieces',
       'photos',
@@ -109,7 +114,11 @@ class _Network {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(() => registerFallbackValue(const GetOptions()));
+  setUpAll(() {
+    registerFallbackValue(const GetOptions());
+    Future<void> handler(Transaction _) async {}
+    registerFallbackValue(handler);
+  });
 
   for (final fullSync in [true, false]) {
     for (final unavailable in [

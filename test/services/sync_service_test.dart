@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart' show Reference;
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'dart:io';
 
@@ -225,6 +226,42 @@ void main() {
       await syncService.pushPiece(_uid, 'nonexistent');
       final doc = await col('pieces').doc('nonexistent').get();
       expect(doc.exists, false);
+    });
+
+    test('a field-scoped push writes only those fields', () async {
+      await insertPiece(id: 'p1', title: 'Stale title', clayType: 'B-Mix');
+      await col('pieces').doc('p1').set({
+        'title': 'Edited elsewhere',
+        'clayType': 'Stoneware',
+        'isArchived': false,
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await syncService.pushPiece(_uid, 'p1', fields: ['clayType']);
+
+      final data =
+          (await col('pieces').doc('p1').get()).data() as Map<String, dynamic>;
+      expect(data['title'], 'Edited elsewhere');
+      expect(data['clayType'], 'B-Mix');
+      expect(
+        (data['updatedAt'] as Timestamp).toDate().isAfter(DateTime(2025)),
+        isTrue,
+        reason: 'the pushed field must reach devices that already pulled it',
+      );
+    });
+
+    test('a field-scoped push of a piece the cloud does not hold yet uploads '
+        'it whole', () async {
+      await insertPiece(id: 'p1', title: 'Made offline', clayType: 'B-Mix');
+
+      await syncService.pushPiece(_uid, 'p1', fields: ['clayType']);
+
+      final data =
+          (await col('pieces').doc('p1').get()).data() as Map<String, dynamic>;
+      expect(data['title'], 'Made offline');
+      expect(data['clayType'], 'B-Mix');
+      expect(data['createdAt'], isA<Timestamp>());
     });
   });
 
@@ -642,7 +679,8 @@ void main() {
       expect(piece!.title, 'Updated Title');
     });
 
-    test('skips update when local piece is newer', () async {
+    test('replaces a piece with nothing queued even when its local stamp is '
+        'later than the cloud copy\'s', () async {
       final newTime = DateTime(2025, 6, 1);
       await db.piecesDao.insertPiece(
         PiecesCompanion(
@@ -669,7 +707,32 @@ void main() {
       await syncService.pullAll(_uid);
 
       final piece = await db.piecesDao.getPieceById('p1');
-      expect(piece!.title, 'Local Title');
+      expect(piece!.title, 'Old Remote Title');
+    });
+
+    test('downloads no photos; the incremental pull after it does', () async {
+      final downloads = _DownloadCountingStorage();
+      final service = SyncService(db, firestore, downloads);
+      await insertPiece(id: 'p1');
+      await col('photos').doc('ph1').set({
+        'pieceId': 'p1',
+        'cloudUrl': 'https://example.test/ph1.jpg',
+        'dateTaken': Timestamp.fromDate(DateTime(2025)),
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'sortOrder': 0,
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await service.pullAll(_uid);
+      expect(await db.photosDao.getPhotoById('ph1'), isNotNull);
+      expect(
+        downloads.lookups,
+        isEmpty,
+        reason: 'the snapshot staged after a full pull must not wait on these',
+      );
+
+      await service.pullChangedSince(_uid);
+      expect(downloads.lookups, ['https://example.test/ph1.jpg']);
     });
 
     test('handles remotely deleted docs by removing from local DB', () async {
@@ -711,8 +774,16 @@ void main() {
       expect(glazes.map((g) => g.id).toList(), ['g2', 'g1']);
     });
 
-    test('saves lastPulledAt after successful pull', () async {
+    test('a full pull leaves lastPulledAt unset; the incremental pull after '
+        'it saves it', () async {
       await syncService.pullAll(_uid);
+      expect(
+        await syncService.getLastPulledAt(_uid),
+        isNull,
+        reason: 'the snapshot a full pull trims is not queued yet',
+      );
+
+      await syncService.pullChangedSince(_uid);
 
       final lastPulled = await syncService.getLastPulledAt(_uid);
       expect(lastPulled, isNotNull);
@@ -724,41 +795,29 @@ void main() {
   });
 
   group('pullChangedSince', () {
-    test('only pulls docs with updatedAt after the given timestamp', () async {
-      final cutoff = DateTime(2025, 3, 1);
-      final before = DateTime(2025, 2, 1);
-      final after = DateTime(2025, 4, 1);
+    Future<void> remotePiece(String id, DateTime updatedAt) =>
+        col('pieces').doc(id).set({
+          'title': id,
+          'isArchived': false,
+          'createdAt': Timestamp.fromDate(updatedAt),
+          'updatedAt': Timestamp.fromDate(updatedAt),
+        });
 
-      // Old doc (should NOT be pulled)
-      await col('pieces').doc('old').set({
-        'title': 'Old',
-        'stage': null,
-        'clayType': null,
-        'notes': null,
-        'coverPhotoId': null,
-        'isArchived': false,
-        'createdAt': Timestamp.fromDate(before),
-        'updatedAt': Timestamp.fromDate(before),
-      });
+    test(
+      'only pulls docs with updatedAt after the collection\'s watermark',
+      () async {
+        await remotePiece('seen', DateTime(2025, 3, 1));
+        await syncService.pullAll(_uid);
 
-      // New doc (should be pulled)
-      await col('pieces').doc('new').set({
-        'title': 'New',
-        'stage': null,
-        'clayType': null,
-        'notes': null,
-        'coverPhotoId': null,
-        'isArchived': false,
-        'createdAt': Timestamp.fromDate(after),
-        'updatedAt': Timestamp.fromDate(after),
-      });
+        // Stamped behind the watermark the pull saved, and ahead of it.
+        await remotePiece('old', DateTime(2025, 2, 1));
+        await remotePiece('new', DateTime(2025, 4, 1));
+        await syncService.pullChangedSince(_uid);
 
-      await syncService.pullChangedSince(_uid, cutoff);
-
-      expect(await db.piecesDao.getPieceById('old'), isNull);
-      expect(await db.piecesDao.getPieceById('new'), isNotNull);
-      expect((await db.piecesDao.getPieceById('new'))!.title, 'New');
-    });
+        expect(await db.piecesDao.getPieceById('old'), isNull);
+        expect((await db.piecesDao.getPieceById('new'))!.title, 'new');
+      },
+    );
 
     test('handles remote deletions in incremental pull', () async {
       await insertPiece(id: 'p1');
@@ -769,7 +828,7 @@ void main() {
         'updatedAt': Timestamp.fromDate(after),
       });
 
-      await syncService.pullChangedSince(_uid, DateTime(2025, 3, 1));
+      await syncService.pullChangedSince(_uid);
 
       expect(await db.piecesDao.getPieceById('p1'), isNull);
     });
@@ -952,15 +1011,15 @@ void main() {
       expect(result, isNull);
     });
 
-    test('returns stored timestamp after pullAll', () async {
-      await syncService.pullAll(_uid);
+    test('returns stored timestamp after an incremental pull', () async {
+      await syncService.pullChangedSince(_uid);
 
       final result = await syncService.getLastPulledAt(_uid);
       expect(result, isNotNull);
     });
 
     test('is per-user', () async {
-      await syncService.pullAll(_uid);
+      await syncService.pullChangedSince(_uid);
 
       final other = await syncService.getLastPulledAt('other-user');
       expect(other, isNull);
@@ -985,8 +1044,8 @@ void main() {
     });
 
     test('clears every pull watermark, not just the current uid', () async {
-      await syncService.pullAll(_uid);
-      await syncService.pullAll('other-user');
+      await syncService.pullChangedSince(_uid);
+      await syncService.pullChangedSince('other-user');
       expect(await syncService.getLastPulledAt(_uid), isNotNull);
 
       await syncService.deleteLocalData();
@@ -1125,6 +1184,17 @@ void main() {
       },
     );
   });
+}
+
+/// Records every photo download the sync starts, by the URL it resolves.
+class _DownloadCountingStorage extends MockFirebaseStorage {
+  final lookups = <String>[];
+
+  @override
+  Reference refFromURL(String url) {
+    lookups.add(url);
+    return super.refFromURL(url);
+  }
 }
 
 /// Records every `PRAGMA rekey` the database receives, in order — the seam

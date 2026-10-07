@@ -27,8 +27,10 @@ class _Service extends SyncService {
   /// Runs once a snapshot has been read and before it is staged.
   Future<void> Function()? afterSnapshotRead;
 
-  /// Completes once the next pull has finished, which a sync only starts
-  /// after its photo uploads have settled.
+  /// Completes once the next incremental pull has finished: the pull that
+  /// follows a sync's pushes, which it only starts after its photo uploads
+  /// have settled. A first sync's full pull, made before it pushes, does not
+  /// count.
   Future<void> expectPull() {
     _pulled = Completer<void>();
     return _pulled!.future;
@@ -58,14 +60,8 @@ class _Service extends SyncService {
   }
 
   @override
-  Future<void> pullAll(String uid) async {
-    await super.pullAll(uid);
-    _notifyPulled();
-  }
-
-  @override
-  Future<void> pullChangedSince(String uid, DateTime since) async {
-    await super.pullChangedSince(uid, since);
+  Future<void> pullChangedSince(String uid) async {
+    await super.pullChangedSince(uid);
     _notifyPulled();
   }
 }

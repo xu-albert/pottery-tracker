@@ -56,10 +56,8 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
     () => syncService.checkServerReachability(any()),
   ).thenAnswer((_) async {});
   when(() => syncService.fullUploadEntries(any())).thenAnswer((_) async => []);
-  when(() => syncService.pullAll(any())).thenAnswer((_) async {});
-  when(
-    () => syncService.pullChangedSince(any(), any()),
-  ).thenAnswer((_) async {});
+  when(() => syncService.pullAll(any())).thenAnswer((_) async => {});
+  when(() => syncService.pullChangedSince(any())).thenAnswer((_) async {});
   when(() => syncService.deleteCloudData(any())).thenAnswer((_) async {});
   when(() => syncService.deleteLocalData()).thenAnswer((_) async {});
   // Unowned by default: the device belongs to whoever signs in first.
@@ -207,7 +205,8 @@ void main() {
     });
 
     test(
-      'first sync: stages a full upload then pulls when no watermark exists',
+      'first sync: pulls in full, then stages a full upload, when no watermark '
+      'exists',
       () async {
         final s = _setup(auth: _signedIn);
         addTearDown(s.container.dispose);
@@ -220,10 +219,11 @@ void main() {
         await s.notifier.syncNow();
 
         verifyInOrder([
-          () => s.syncService.fullUploadEntries('user-1'),
-          () => s.queue.enqueueMissing(any()),
           () => s.syncService.checkServerReachability('user-1'),
           () => s.syncService.pullAll('user-1'),
+          () => s.syncService.fullUploadEntries('user-1'),
+          () => s.queue.enqueueMissing(any()),
+          () => s.syncService.pullChangedSince('user-1'),
         ]);
 
         final state = s.container.read(syncStateProvider);
@@ -238,19 +238,19 @@ void main() {
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
 
-      final lastPulled = DateTime(2025, 1, 1);
+      // The constructor's first sync staged one full snapshot.
+      verify(() => s.syncService.fullUploadEntries('user-1')).called(1);
+      clearInteractions(s.syncService);
       when(
         () => s.syncService.getLastPulledAt('user-1'),
-      ).thenAnswer((_) async => lastPulled);
+      ).thenAnswer((_) async => DateTime(2025, 1, 1));
 
       await s.notifier.syncNow();
 
-      verify(
-        () => s.syncService.pullChangedSince('user-1', lastPulled),
-      ).called(1);
-      // The constructor's first sync staged one full snapshot. This
-      // incremental sync does not stage another one.
-      verify(() => s.syncService.fullUploadEntries('user-1')).called(1);
+      verify(() => s.syncService.pullChangedSince('user-1')).called(1);
+      // This incremental sync neither pulls in full nor stages another one.
+      verifyNever(() => s.syncService.pullAll(any()));
+      verifyNever(() => s.syncService.fullUploadEntries(any()));
     });
 
     test('does not advance lastSyncedAt when the upload half fails', () async {
@@ -283,10 +283,12 @@ void main() {
       );
     });
 
-    test('forceFullSync ignores lastPulledAt and does full sync', () async {
+    test('forceFullSync ignores lastPulledAt and pulls in full before it '
+        'stages the snapshot', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
+      clearInteractions(s.syncService);
 
       // Even though lastPulledAt would return a date, forceFullSync skips it
       when(
@@ -295,10 +297,13 @@ void main() {
 
       await s.notifier.syncNow(forceFullSync: true);
 
-      // called(2): once from the constructor's auto-sync, once from this test
-      verify(() => s.syncService.fullUploadEntries('user-1')).called(2);
-      verify(() => s.syncService.pullAll('user-1')).called(2);
-      verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+      // The snapshot is read only once the full pull has brought this
+      // device's rows up to date; the pull after its pushes is incremental.
+      verifyInOrder([
+        () => s.syncService.pullAll('user-1'),
+        () => s.syncService.fullUploadEntries('user-1'),
+        () => s.syncService.pullChangedSince('user-1'),
+      ]);
     });
 
     test(
@@ -323,8 +328,8 @@ void main() {
         await s.notifier.syncNow();
 
         verifyInOrder([
-          () => s.syncService.fullUploadEntries('user-1'),
           () => s.syncService.checkServerReachability('user-1'),
+          () => s.syncService.fullUploadEntries('user-1'),
           () => s.queue.getAll(),
           () => s.queue.revisionOf(entry),
           () => s.syncService.pushPiece('user-1', 'p1'),
@@ -334,7 +339,8 @@ void main() {
       },
     );
 
-    test('full sync sends a queued deletion before it pulls', () async {
+    test('full sync pulls in full first, and sends a queued deletion before '
+        'its closing pull', () async {
       final s = _setup(auth: _signedIn);
       addTearDown(s.container.dispose);
       await Future<void>.delayed(Duration.zero);
@@ -353,11 +359,12 @@ void main() {
       await s.notifier.syncNow();
 
       verifyInOrder([
-        () => s.syncService.fullUploadEntries('user-1'),
         () => s.syncService.checkServerReachability('user-1'),
+        () => s.syncService.pullAll('user-1'),
+        () => s.syncService.fullUploadEntries('user-1'),
         () => s.syncService.pushPieceDeletion('user-1', 'gone'),
         () => s.queue.acknowledgeAll({entry: 0}),
-        () => s.syncService.pullAll('user-1'),
+        () => s.syncService.pullChangedSince('user-1'),
       ]);
     });
 
@@ -397,7 +404,7 @@ void main() {
         s.container.read(syncStateProvider).errorMessage,
         contains('second failure'),
       );
-      when(() => s.syncService.pullAll(any())).thenAnswer((_) async {});
+      when(() => s.syncService.pullAll(any())).thenAnswer((_) async => {});
       await s.notifier.syncNow();
       await _settle();
       expect(s.container.read(syncStateProvider).errorMessage, isNull);
@@ -418,6 +425,7 @@ void main() {
         if (running > 1) everOverlapped = true;
         await Future.delayed(const Duration(milliseconds: 50));
         running--;
+        return {};
       });
 
       // Fire two syncs concurrently
@@ -555,7 +563,7 @@ void main() {
       expect(state.errorMessage, SyncState.unavailableErrorCode);
       expect(state.pendingCount, 1);
       verifyNever(() => s.syncService.pushPiece(any(), any()));
-      verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+      verifyNever(() => s.syncService.pullChangedSince(any()));
     });
 
     test(
@@ -600,7 +608,7 @@ void main() {
         await _settle();
         expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
         verify(() => s.syncService.pushPiece('user-1', 'piece-1')).called(1);
-        verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+        verifyNever(() => s.syncService.pullChangedSince(any()));
 
         release.complete();
         await Future.wait([first, second]);
@@ -713,7 +721,9 @@ void main() {
         when(
           () => s.syncService.getLastPulledAt('user-1'),
         ).thenAnswer((_) async => pulledAt);
-        when(() => s.syncService.pullAll('user-1')).thenAnswer((_) async {
+        when(() => s.syncService.pullChangedSince('user-1')).thenAnswer((
+          _,
+        ) async {
           pulledAt = DateTime.utc(2026, 9, 1);
         });
         final entered = Completer<void>();
@@ -742,7 +752,9 @@ void main() {
           () => s.syncService.pushPieceGlazes('user-1', 'piece-1'),
         ).called(1);
         verify(() => s.syncService.fullUploadEntries('user-1')).called(1);
-        verifyNever(() => s.syncService.pullAll(any()));
+        // Only the first sync's pull before its snapshot: the second neither
+        // pulls nor stages again while that snapshot is undelivered.
+        verify(() => s.syncService.pullAll('user-1')).called(1);
         release.complete();
         await Future.wait([first, second]);
         expect(maxRunning, 1);
@@ -806,14 +818,14 @@ void main() {
       expect(entries, [
         entry,
       ], reason: 'the first acknowledgement cannot retire revision 2');
-      verifyNever(() => s.syncService.pullChangedSince(any(), any()));
+      verifyNever(() => s.syncService.pullChangedSince(any()));
 
       releases.last.complete();
       await tap;
       expect(maxRunning, 1);
       expect(entries, isEmpty);
       verify(() => s.syncService.pushPiece('user-1', 'piece-1')).called(2);
-      verify(() => s.syncService.pullChangedSince('user-1', any())).called(1);
+      verify(() => s.syncService.pullChangedSince('user-1')).called(1);
     });
   });
 
@@ -850,7 +862,7 @@ void main() {
         () => s.syncService.getLastPulledAt('user-1'),
       ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
       when(
-        () => s.syncService.pullChangedSince(any(), any()),
+        () => s.syncService.pullChangedSince(any()),
       ).thenThrow(Exception('network unreachable'));
 
       await s.notifier.syncNow();
@@ -1358,9 +1370,9 @@ void main() {
 
         verifyInOrder([
           () => s.syncService.deleteLocalData(),
-          () => s.syncService.fullUploadEntries('user-1'),
           () => s.syncService.checkServerReachability('user-1'),
           () => s.syncService.pullAll('user-1'),
+          () => s.syncService.fullUploadEntries('user-1'),
         ]);
         expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
         expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
@@ -1400,9 +1412,9 @@ void main() {
 
         // A pull that outlives the wipe's bounded wait, still writing rows
         // behind the delete.
-        when(
-          () => s.syncService.pullAll(any()),
-        ).thenAnswer((_) => Future<void>.delayed(const Duration(minutes: 5)));
+        when(() => s.syncService.pullAll(any())).thenAnswer(
+          (_) => Future.delayed(const Duration(minutes: 5), () => {}),
+        );
         unawaited(s.notifier.syncNow(forceFullSync: true));
         async.elapse(Duration.zero);
         async.flushMicrotasks();
@@ -1499,9 +1511,9 @@ void main() {
 
         verifyInOrder([
           () => s.syncService.deleteLocalData(),
-          () => s.syncService.fullUploadEntries('user-2'),
           () => s.syncService.checkServerReachability('user-2'),
           () => s.syncService.pullAll('user-2'),
+          () => s.syncService.fullUploadEntries('user-2'),
         ]);
         expect(prefs.getBool(SyncNotifier.pendingWipeKey), isNull);
       },
