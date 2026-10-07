@@ -317,7 +317,7 @@ declaration light — don't add permissions that aren't needed.
 
 ## 7. Producing an upload artifact — the short version
 
-Once sections 1–3 are done:
+Once sections 1–4 are done (the strict build also checks section 4's web OAuth client):
 
 ```bash
 flutter clean
