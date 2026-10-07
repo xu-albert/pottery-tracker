@@ -41,12 +41,14 @@ class PieceWriter {
     required List<ImageResult> photos,
   }) async {
     final now = _now();
-    final title = nextUntitledTitle(await _pieces.getUntitledPieceTitles());
+    late final String title;
 
-    // One transaction, so a failed insert leaves no partial piece behind,
-    // and the files go with it: nothing else would ever reference them.
+    // One transaction, so a failed read or insert leaves no partial piece
+    // behind, and the files go with it: nothing else would ever reference
+    // them.
     await _adoptOrDiscard(photos, () async {
       await _pieces.transaction(() async {
+        title = nextUntitledTitle(await _pieces.getUntitledPieceTitles());
         await _pieces.insertPiece(
           PiecesCompanion(
             id: Value(pieceId),

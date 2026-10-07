@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,10 +45,32 @@ class _FakeAuthNotifier extends AuthNotifier {
   /// The real one ends the Firebase session over a method channel that has
   /// no handler in a widget test and never answers. Here the session simply
   /// ends — or, with [sessionHeld], does not, as the real one reports it.
+  /// Either way a frame passes first, as it does while the real one waits on
+  /// that channel.
   @override
   Future<void> signOut() async {
+    await SchedulerBinding.instance.endOfFrame;
     if (sessionHeld) throw SignOutIncompleteException(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+}
+
+/// Stands in for `routerProvider`, which mints a fresh router — and with it a
+/// fresh Settings branch — whenever a provider it watches changes. A wipe
+/// changes them, so the Settings that started a sign-out is gone before the
+/// sign-out finishes.
+class _RouterRebuildHost extends ConsumerWidget {
+  const _RouterRebuildHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return KeyedSubtree(
+      key: ValueKey((
+        ref.watch(deviceStampedProvider),
+        ref.watch(deviceLockedProvider),
+      )),
+      child: const SettingsScreen(),
+    );
   }
 }
 
@@ -91,16 +114,26 @@ void main() {
   });
 
   /// [localOnly] is the session "Skip for now" leaves behind: authenticated
-  /// in the app's own sense, with no account behind it.
+  /// in the app's own sense, with no account behind it. [underRouter] stamps
+  /// the device for the signed-in account and lets the wipe take Settings
+  /// away, as the router does.
   Future<void> pumpSettings(
     WidgetTester tester, {
     Set<String> linkedProviders = const {'google.com', 'apple.com'},
     bool localOnly = false,
     bool sessionHeld = false,
+    bool underRouter = false,
   }) async {
+    if (underRouter) {
+      when(
+        () => syncService.getLocalDataOwner(),
+      ).thenAnswer((_) async => 'user-a');
+    }
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          if (underRouter)
+            localDataOwnerProvider.overrideWith((ref) => 'user-a'),
           authProvider.overrideWith(
             (ref) => _FakeAuthNotifier(
               localOnly
@@ -118,15 +151,17 @@ void main() {
           syncServiceProvider.overrideWithValue(syncService),
           syncQueueProvider.overrideWithValue(queue),
         ],
-        child: const MaterialApp(
-          localizationsDelegates: [
+        child: MaterialApp(
+          localizationsDelegates: const [
             AppLocalizations.delegate,
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          supportedLocales: [Locale('en')],
-          home: SettingsScreen(),
+          supportedLocales: const [Locale('en')],
+          home: underRouter
+              ? const _RouterRebuildHost()
+              : const SettingsScreen(),
         ),
       ),
     );
@@ -213,7 +248,7 @@ void main() {
       when(() => syncService.deleteLocalData()).thenThrow(
         LocalDeviceNotSecuredException([Exception('the key store is full')]),
       );
-      await pumpSettings(tester);
+      await pumpSettings(tester, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();
@@ -233,7 +268,7 @@ void main() {
 
     testWidgets('a session Firebase kept is reported, and the app stays '
         'signed in rather than claiming otherwise', (tester) async {
-      await pumpSettings(tester, sessionHeld: true);
+      await pumpSettings(tester, sessionHeld: true, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();
@@ -260,7 +295,7 @@ void main() {
       when(
         () => syncService.deleteLocalData(),
       ).thenThrow(Exception('disk full'));
-      await pumpSettings(tester, sessionHeld: true);
+      await pumpSettings(tester, sessionHeld: true, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();
@@ -287,7 +322,7 @@ void main() {
       when(() => syncService.deleteLocalData()).thenThrow(
         LocalDeviceNotSecuredException([Exception('the key store is full')]),
       );
-      await pumpSettings(tester, sessionHeld: true);
+      await pumpSettings(tester, sessionHeld: true, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();
@@ -311,7 +346,7 @@ void main() {
       when(
         () => syncService.deleteLocalData(),
       ).thenThrow(Exception('disk full'));
-      await pumpSettings(tester);
+      await pumpSettings(tester, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();

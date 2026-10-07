@@ -12,9 +12,26 @@ abstract final class AppSnackbar {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
+    showOn(
+      Overlay.of(context, rootOverlay: true),
+      message: message,
+      duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  /// [show], onto an overlay looked up earlier — for an outcome that arrives
+  /// after the screen that started the work may already be gone.
+  static void showOn(
+    OverlayState overlay, {
+    required String message,
+    Duration duration = const Duration(seconds: 2),
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     hide();
 
-    final overlay = Overlay.of(context, rootOverlay: true);
     late final OverlayEntry entry;
 
     entry = OverlayEntry(

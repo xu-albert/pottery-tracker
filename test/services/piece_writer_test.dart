@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pottery_tracker/database/database.dart';
+import 'package:pottery_tracker/database/daos/pieces_dao.dart';
 import 'package:pottery_tracker/models/piece_stage.dart';
 import 'package:pottery_tracker/services/image_service.dart';
 import 'package:pottery_tracker/services/piece_writer.dart';
@@ -13,6 +14,15 @@ import 'package:pottery_tracker/services/sync_trigger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/mock_providers.dart';
+
+/// A database that cannot read the titles a new piece is numbered against.
+class _TitleReadFailingDao extends PiecesDao {
+  _TitleReadFailingDao(super.db);
+
+  @override
+  Future<List<String>> getUntitledPieceTitles() async =>
+      throw StateError('database is locked');
+}
 
 void main() {
   late AppDatabase db;
@@ -364,6 +374,28 @@ void main() {
         expect(await queued(), isEmpty);
       },
     );
+
+    test('a title read that fails discards every file too', () async {
+      final failing = PieceWriter(
+        piecesDao: _TitleReadFailingDao(db),
+        photosDao: db.photosDao,
+        imageService: images,
+        syncTrigger: SyncTrigger(queue),
+        now: () => now,
+      );
+
+      await expectLater(
+        failing.createPiece(pieceId: 'p', photos: [image('a'), image('b')]),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(await db.piecesDao.getPieceById('p'), isNull);
+      final discarded = verify(
+        () => images.discardFiles(captureAny()),
+      ).captured.cast<ImageResult>();
+      expect(discarded.map((r) => r.photoId), ['a', 'b']);
+      expect(await queued(), isEmpty);
+    });
 
     test('a failed addPhoto discards its files', () async {
       await insertPiece('p');
