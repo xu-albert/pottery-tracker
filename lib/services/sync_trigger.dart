@@ -80,7 +80,11 @@ class SyncTrigger {
   Future<void> afterPieceDeletion(String pieceId, List<String> photoIds) async {
     for (final photoId in photoIds) {
       await _queue.enqueue(
-        SyncQueueEntry(operation: SyncOperation.deletePhoto, entityId: photoId),
+        SyncQueueEntry(
+          operation: SyncOperation.deletePhoto,
+          entityId: photoId,
+          pieceId: pieceId,
+        ),
       );
     }
     await _queue.enqueue(
@@ -89,9 +93,16 @@ class SyncTrigger {
     _onEnqueue?.call();
   }
 
-  Future<void> afterPhotoDeletion(String photoId) async {
+  Future<void> afterPhotoDeletion(
+    String photoId, {
+    required String pieceId,
+  }) async {
     await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.deletePhoto, entityId: photoId),
+      SyncQueueEntry(
+        operation: SyncOperation.deletePhoto,
+        entityId: photoId,
+        pieceId: pieceId,
+      ),
     );
     _onEnqueue?.call();
   }

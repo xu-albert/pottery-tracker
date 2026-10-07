@@ -165,6 +165,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (confirmed != true || !mounted) return;
 
     setState(() => _isSigningOut = true);
+    // Both read now: the wipe changes what the router watches, and the router
+    // it rebuilds can take this screen away before the sign-out has finished.
+    final auth = ref.read(authProvider.notifier);
+    final overlay = Overlay.of(context, rootOverlay: true);
+    // One message carries both outcomes, chosen once both are known; a second
+    // would hide the first.
+    String? signedOutMessage;
+    var stillSignedInMessage = l10n.signOutIncompleteDeviceErased;
     try {
       await ref
           .read(syncStateProvider.notifier)
@@ -174,28 +182,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // would be false: what is owed is the securing, which is what the lock
       // screen's retry does — and it says the same thing there.
       debugPrint('SettingsScreen: sign-out left the device unsecured: $e');
-      if (mounted) {
-        AppSnackbar.show(
-          context,
-          message: l10n.eraseLocalDataNotSecured,
-          duration: _partialOutcomeDuration,
-        );
-      }
+      signedOutMessage = l10n.eraseLocalDataNotSecured;
+      stillSignedInMessage = l10n.signOutIncompleteDeviceNotSecured;
     } catch (e) {
-      // The session is already gone and the wipe is still flagged pending, so
-      // the lock screen takes over and retries it. Say so rather than implying
-      // the device is clean.
+      // The wipe is still flagged pending, so the lock screen takes over and
+      // retries it. Say so rather than implying the device is clean.
       debugPrint('SettingsScreen: sign-out wipe failed: $e');
-      if (mounted) {
-        AppSnackbar.show(
-          context,
-          message: l10n.signOutWipeFailed,
-          duration: _partialOutcomeDuration,
-        );
-      }
+      signedOutMessage = l10n.signOutWipeFailed;
+      stillSignedInMessage = l10n.signOutIncompleteWipeFailed;
+    }
+    // The session-ending callback above can fail without stopping the wipe;
+    // this is the attempt that confirms Firebase let the session go.
+    var signedOut = true;
+    try {
+      await auth.signOut();
+    } on SignOutIncompleteException catch (e) {
+      debugPrint('SettingsScreen: $e');
+      signedOut = false;
     } finally {
-      await ref.read(authProvider.notifier).signOut();
       if (mounted) setState(() => _isSigningOut = false);
+    }
+    final message = signedOut ? signedOutMessage : stillSignedInMessage;
+    if (message != null && overlay.mounted) {
+      AppSnackbar.showOn(
+        overlay,
+        message: message,
+        duration: _partialOutcomeDuration,
+      );
     }
   }
 
@@ -546,6 +559,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     AppSnackbar.show(
                       context,
                       message: l10n.deleteAccountFailed,
+                    );
+                  case DeleteAllDataResult.cloudDeleteIncomplete:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountCloudIncomplete,
+                      duration: _partialOutcomeDuration,
                     );
                   // Partial outcomes get their own words: "nothing was
                   // deleted" would be a lie once the cloud tree is gone.

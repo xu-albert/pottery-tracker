@@ -17,7 +17,7 @@ Local-only (Phase 1) and Firebase sync (Phase 2) are both shipped. Firebase Auth
 
 ### Known decisions:
 - Cover photo / thumbnail selection UI removed — will be reworked later. Currently auto-sets most recent photo as cover.
-- Image pipeline uses in-memory compression (`compressWithList`) with raw-bytes fallback for reliability
+- Image pipeline uses in-memory compression (`compressWithList`); a photo neither re-encode can process is refused (`PhotoNotSanitizedException`), never kept raw, since the original carries its EXIF/GPS
 - Camera crashes on iOS simulator — use Photo Library for testing
 
 ### Android release

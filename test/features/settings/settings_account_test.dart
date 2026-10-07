@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,14 +36,41 @@ class _FakeAuthService implements AuthService {
 }
 
 class _FakeAuthNotifier extends AuthNotifier {
-  _FakeAuthNotifier(super.initial) : super.withState();
+  _FakeAuthNotifier(super.initial, {this.sessionHeld = false})
+    : super.withState();
+
+  /// Firebase keeps the session through every attempt to end it.
+  final bool sessionHeld;
 
   /// The real one ends the Firebase session over a method channel that has
   /// no handler in a widget test and never answers. Here the session simply
-  /// ends, which is all the screen under test can observe.
+  /// ends — or, with [sessionHeld], does not, as the real one reports it.
+  /// Either way a frame passes first, as it does while the real one waits on
+  /// that channel.
   @override
   Future<void> signOut() async {
+    await SchedulerBinding.instance.endOfFrame;
+    if (sessionHeld) throw SignOutIncompleteException(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+}
+
+/// Stands in for `routerProvider`, which mints a fresh router — and with it a
+/// fresh Settings branch — whenever a provider it watches changes. A wipe
+/// changes them, so the Settings that started a sign-out is gone before the
+/// sign-out finishes.
+class _RouterRebuildHost extends ConsumerWidget {
+  const _RouterRebuildHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return KeyedSubtree(
+      key: ValueKey((
+        ref.watch(deviceStampedProvider),
+        ref.watch(deviceLockedProvider),
+      )),
+      child: const SettingsScreen(),
+    );
   }
 }
 
@@ -86,15 +114,26 @@ void main() {
   });
 
   /// [localOnly] is the session "Skip for now" leaves behind: authenticated
-  /// in the app's own sense, with no account behind it.
+  /// in the app's own sense, with no account behind it. [underRouter] stamps
+  /// the device for the signed-in account and lets the wipe take Settings
+  /// away, as the router does.
   Future<void> pumpSettings(
     WidgetTester tester, {
     Set<String> linkedProviders = const {'google.com', 'apple.com'},
     bool localOnly = false,
+    bool sessionHeld = false,
+    bool underRouter = false,
   }) async {
+    if (underRouter) {
+      when(
+        () => syncService.getLocalDataOwner(),
+      ).thenAnswer((_) async => 'user-a');
+    }
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          if (underRouter)
+            localDataOwnerProvider.overrideWith((ref) => 'user-a'),
           authProvider.overrideWith(
             (ref) => _FakeAuthNotifier(
               localOnly
@@ -105,21 +144,24 @@ void main() {
                       displayName: 'A',
                       linkedProviders: linkedProviders,
                     ),
+              sessionHeld: sessionHeld,
             ),
           ),
           authServiceProvider.overrideWithValue(authService),
           syncServiceProvider.overrideWithValue(syncService),
           syncQueueProvider.overrideWithValue(queue),
         ],
-        child: const MaterialApp(
-          localizationsDelegates: [
+        child: MaterialApp(
+          localizationsDelegates: const [
             AppLocalizations.delegate,
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          supportedLocales: [Locale('en')],
-          home: SettingsScreen(),
+          supportedLocales: const [Locale('en')],
+          home: underRouter
+              ? const _RouterRebuildHost()
+              : const SettingsScreen(),
         ),
       ),
     );
@@ -206,7 +248,7 @@ void main() {
       when(() => syncService.deleteLocalData()).thenThrow(
         LocalDeviceNotSecuredException([Exception('the key store is full')]),
       );
-      await pumpSettings(tester);
+      await pumpSettings(tester, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();
@@ -224,13 +266,87 @@ void main() {
       );
     });
 
+    testWidgets('a session Firebase kept is reported, and the app stays '
+        'signed in rather than claiming otherwise', (tester) async {
+      await pumpSettings(tester, sessionHeld: true, underRouter: true);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      verify(() => syncService.deleteLocalData()).called(1);
+      // The erase already happened; a bare "could not sign out" would leave
+      // the user believing their pottery is still here.
+      expect(
+        find.textContaining(RegExp('was erased.*still signed in')),
+        findsOneWidget,
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SettingsScreen)),
+      );
+      expect(container.read(authProvider).isSignedIn, isTrue);
+    });
+
+    testWidgets('a failed wipe is still reported when Firebase also kept the '
+        'session', (tester) async {
+      when(
+        () => syncService.deleteLocalData(),
+      ).thenThrow(Exception('disk full'));
+      await pumpSettings(tester, sessionHeld: true, underRouter: true);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.textContaining(
+          RegExp('still signed in.*could not be deleted.*stays locked'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Signed out'),
+        findsNothing,
+        reason: 'Firebase kept the session',
+      );
+    });
+
+    testWidgets('an unsecured wipe is still reported when Firebase also kept '
+        'the session', (tester) async {
+      when(() => syncService.deleteLocalData()).thenThrow(
+        LocalDeviceNotSecuredException([Exception('the key store is full')]),
+      );
+      await pumpSettings(tester, sessionHeld: true, underRouter: true);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.textContaining(
+          RegExp('could not be fully secured.*still signed in'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('could not be deleted'), findsNothing);
+    });
+
     testWidgets('a failed wipe is reported instead of passing silently', (
       tester,
     ) async {
       when(
         () => syncService.deleteLocalData(),
       ).thenThrow(Exception('disk full'));
-      await pumpSettings(tester);
+      await pumpSettings(tester, underRouter: true);
 
       await tester.tap(find.text('Sign Out'));
       await tester.pumpAndSettle();
@@ -320,6 +436,36 @@ void main() {
       // the lock screen — so this is the case where the result went silent.
       // Whichever partial outcome it is, the surviving local copy is named.
       expect(find.textContaining('copy on this device'), findsOneWidget);
+    });
+
+    testWidgets('a cloud delete that stops part way says so and deletes '
+        'nothing local', (tester) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      when(
+        () => syncService.deleteCloudData(any()),
+      ).thenThrow(Exception('storage unavailable'));
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Delete Account & Data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete Everything'));
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+
+      expect(
+        find.textContaining('Could not finish deleting your cloud data'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Nothing was deleted'), findsNothing);
+      verifyNever(() => syncService.deleteLocalData());
     });
 
     testWidgets('with no account, a wipe that left photo files behind never '

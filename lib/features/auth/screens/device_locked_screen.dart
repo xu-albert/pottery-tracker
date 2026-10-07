@@ -114,7 +114,19 @@ class _DeviceLockedScreenState extends ConsumerState<DeviceLockedScreen> {
       ref.read(lockExitRequestedProvider.notifier).state = ref.read(
         deviceLockReasonProvider,
       );
-      await ref.read(authProvider.notifier).signOut();
+      try {
+        await ref.read(authProvider.notifier).signOut();
+      } on SignOutIncompleteException catch (e) {
+        // Still signed in, so the redirect keeps this lock up; say why the
+        // way out did nothing.
+        debugPrint('DeviceLockedScreen: $e');
+        if (mounted) {
+          AppSnackbar.show(
+            context,
+            message: AppLocalizations.of(context)!.signOutIncomplete,
+          );
+        }
+      }
     });
   }
 

@@ -211,3 +211,13 @@ confirming the rekeyed, empty database opens with no recovery screen — plain s
 rekeys the live keyed connection in place. The Android path has never run on a device at all (see
 `AGENTS.md`); whether a given manufacturer's device-to-device transfer honours
 `dataExtractionRules` is likewise only observable on two real devices.
+
+Native startup never deletes a Keychain item. `AppDelegate` once cleared every Keychain class
+whenever a `keychain_cleared_v1` UserDefaults marker was missing; the marker, the key and the
+database live in three separate stores, so losing only the marker erased the key and left the
+journal unopenable. It was removed (core audit PT-CORE-01) and `test/ios/app_delegate_test.dart`
+keeps any native Runner source from calling `SecItemDelete`. Nothing in the suite can launch the
+Runner, so the launch itself is the device check: on an install
+whose journal has pieces, remove `keychain_cleared_v1` from the app's preferences plist (Xcode ›
+Devices › Download Container, edit `Library/Preferences/`, Replace Container), relaunch, and
+confirm the album opens with no recovery screen.

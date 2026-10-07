@@ -192,30 +192,38 @@ class SyncService {
       );
     }
 
-    // Delete all Cloud Storage files
-    try {
-      final storageRef = _storage.ref('users/$uid');
-      final listResult = await storageRef.listAll();
-      for (final prefix in listResult.prefixes) {
-        final subList = await prefix.listAll();
-        for (final subPrefix in subList.prefixes) {
-          final files = await subPrefix.listAll();
-          for (final file in files.items) {
-            await file.delete();
-          }
-        }
-        for (final file in subList.items) {
-          await file.delete();
-        }
-      }
-      for (final file in listResult.items) {
-        await file.delete();
-      }
-      debugPrint('SyncService: deleted all Cloud Storage files');
-    } catch (e) {
-      debugPrint('SyncService: storage cleanup error: $e');
+    // Delete all Cloud Storage files. A failure propagates: the caller must
+    // not delete the account, or report the data deleted, while photos are
+    // still in the bucket. Every step is safe to repeat on a retry.
+    await _deleteStorageTree(_storage.ref('users/$uid'));
+    debugPrint('SyncService: deleted all Cloud Storage files');
+  }
+
+  Future<void> _deleteStorageTree(Reference ref) async {
+    final listing = await ref.listAll();
+    for (final item in listing.items) {
+      await _deleteStorageObject(item);
+    }
+    for (final prefix in listing.prefixes) {
+      await _deleteStorageTree(prefix);
     }
   }
+
+  /// Deletes one Storage object. One that is already gone counts as deleted,
+  /// so a retry converges; any other failure propagates, keeping the queue
+  /// entry that asked for the deletion pending.
+  Future<void> _deleteStorageObject(Reference ref) async {
+    try {
+      await ref.delete();
+    } on FirebaseException catch (e) {
+      if (e.code != 'object-not-found') rethrow;
+    }
+  }
+
+  /// Where a photo's file lives in Cloud Storage. `storage.rules` accepts
+  /// uploads at this shape only.
+  static String photoStoragePath(String uid, String pieceId, String photoId) =>
+      'users/$uid/photos/$pieceId/$photoId.jpg';
 
   /// Destroys this device's entire local copy of the account's data.
   ///
@@ -517,8 +525,7 @@ class SyncService {
     final file = File(photo.localPath);
     if (!file.existsSync()) return;
 
-    final storagePath = 'users/$uid/photos/${photo.pieceId}/$photoId.jpg';
-    final ref = _storage.ref(storagePath);
+    final ref = _storage.ref(photoStoragePath(uid, photo.pieceId, photoId));
     await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
     if (await _db.photosDao.getPhotoById(photoId) == null) {
       try {
@@ -641,6 +648,27 @@ class SyncService {
     }, SetOptions(merge: true));
   }
 
+  /// Deletes a photo's cloud copy: its metadata, as a tombstone, and its
+  /// Storage object. [pieceId] names the object; an entry queued before
+  /// deletions recorded it falls back to the piece the metadata names. With
+  /// neither, nothing names an object to delete.
+  Future<void> pushPhotoDeletion(
+    String uid,
+    String photoId, {
+    String? pieceId,
+  }) async {
+    final doc = _col(uid, 'photos').doc(photoId);
+    pieceId ??=
+        ((await doc.get()).data() as Map<String, dynamic>?)?['pieceId']
+            as String?;
+    await pushDeletion(uid, 'photos', photoId);
+    if (pieceId != null) {
+      await _deleteStorageObject(
+        _storage.ref(photoStoragePath(uid, pieceId, photoId)),
+      );
+    }
+  }
+
   Future<void> pushPieceDeletion(String uid, String pieceId) async {
     await pushDeletion(uid, 'pieces', pieceId);
     // Also mark photos and junctions as deleted
@@ -653,11 +681,9 @@ class SyncService {
         'deletedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      // Delete photo file from storage
-      try {
-        final storagePath = 'users/$uid/photos/$pieceId/${doc.id}.jpg';
-        await _storage.ref(storagePath).delete();
-      } catch (_) {}
+      await _deleteStorageObject(
+        _storage.ref(photoStoragePath(uid, pieceId, doc.id)),
+      );
     }
     // Delete junction rows
     final glazeDocs = await _col(

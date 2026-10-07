@@ -85,6 +85,39 @@ if (!hasReleaseSigning) {
     }
 }
 
+// Google Sign-In on Android needs the web OAuth client (client_type 3) that Firebase adds to
+// google-services.json only once a signing certificate is registered for the app — see
+// docs/android-release.md section 4. Without it sign-in cannot produce a Firebase credential, so
+// a build destined for Play fails here rather than shipping a sign-in that cannot work. Builds
+// without the strict switch are left alone: a local release build still has to work today.
+fun hasWebOAuthClient(): Boolean {
+    val config = file("google-services.json")
+    if (!config.exists()) return false
+    val root = groovy.json.JsonSlurper().parse(config) as? Map<*, *> ?: return false
+    return (root["client"] as? List<*>).orEmpty().any { client ->
+        val fields = client as? Map<*, *>
+        val androidInfo =
+            (fields?.get("client_info") as? Map<*, *>)?.get("android_client_info") as? Map<*, *>
+        androidInfo?.get("package_name") == "com.potterytracker.pottery_tracker" &&
+            (fields?.get("oauth_client") as? List<*>).orEmpty().any { oauth ->
+                ((oauth as? Map<*, *>)?.get("client_type") as? Number)?.toInt() == 3
+            }
+    }
+}
+
+if (releaseSigningRequired) {
+    gradle.taskGraph.whenReady {
+        if (!buildsReleaseArtifact(allTasks.map { it.name })) return@whenReady
+        if (!hasWebOAuthClient()) {
+            throw GradleException(
+                "android/app/google-services.json has no web OAuth client (client_type 3), so " +
+                    "Google Sign-In cannot work on Android. Register the signing certificates " +
+                    "and download the regenerated file — see docs/android-release.md section 4.",
+            )
+        }
+    }
+}
+
 android {
     namespace = "com.potterytracker.pottery_tracker"
     compileSdk = flutter.compileSdkVersion

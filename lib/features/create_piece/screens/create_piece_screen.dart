@@ -116,8 +116,18 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
           );
           results.add(result);
         } catch (_) {
-          // Skip failed photos
+          // Skipped, and said so below. processImage leaves no file behind,
+          // including for a photo it refused because it could not strip its
+          // location data.
         }
+      }
+
+      final failures = picked.length - results.length;
+      if (failures > 0 && mounted) {
+        AppSnackbar.show(
+          context,
+          message: AppLocalizations.of(context)!.batchPhotoFailures(failures),
+        );
       }
 
       if (results.isEmpty) {

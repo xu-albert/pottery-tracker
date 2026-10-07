@@ -7,6 +7,19 @@ import '../services/auth_service.dart';
 
 enum AuthStatus { unknown, unauthenticated, authenticated }
 
+/// An explicit sign-out after which Firebase still holds the session. The
+/// app stays signed in rather than claiming otherwise: a session Firebase
+/// kept would be restored by the next launch's reload, so "signed out" would
+/// be true only until then.
+class SignOutIncompleteException implements Exception {
+  final Object? cause;
+
+  SignOutIncompleteException(this.cause);
+
+  @override
+  String toString() => 'SignOutIncompleteException: $cause';
+}
+
 class AuthState {
   final AuthStatus status;
   final String? displayName;
@@ -27,12 +40,21 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState(status: AuthStatus.unknown)) {
+  AuthNotifier()
+    : _endFirebaseSession = _signOutOfFirebase,
+      super(const AuthState(status: AuthStatus.unknown)) {
     _init();
   }
 
   @visibleForTesting
-  AuthNotifier.withState(super.initial);
+  AuthNotifier.withState(
+    super.initial, {
+    Future<void> Function()? endFirebaseSession,
+  }) : _endFirebaseSession = endFirebaseSession ?? _signOutOfFirebase;
+
+  /// Ends the Firebase session, throwing [SignOutIncompleteException] unless
+  /// it is confirmed gone.
+  final Future<void> Function() _endFirebaseSession;
 
   /// Set once the user has signed in or chosen to skip; a launch that finds
   /// it goes to the album rather than the sign-in screen. Public because the
@@ -115,15 +137,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(status: AuthStatus.authenticated);
   }
 
+  /// Signs out explicitly. Publishes unauthenticated only once Firebase no
+  /// longer holds a session; otherwise throws [SignOutIncompleteException]
+  /// and leaves the state alone, so the caller can say so and the user can
+  /// try again.
   Future<void> signOut() async {
-    try {
-      await FirebaseAuth.instance.signOut();
-    } catch (e) {
-      debugPrint('Firebase signOut failed: $e');
-    }
+    await _endFirebaseSession();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(onboardingKey, false);
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  static Future<void> _signOutOfFirebase() async {
+    final FirebaseAuth auth;
+    try {
+      auth = FirebaseAuth.instance;
+    } catch (e) {
+      // Firebase never started, so it holds no session to restore.
+      debugPrint('Firebase signOut skipped, Firebase is not ready: $e');
+      return;
+    }
+    Object? failure;
+    try {
+      await auth.signOut();
+    } catch (e) {
+      debugPrint('Firebase signOut failed: $e');
+      failure = e;
+    }
+    if (auth.currentUser != null) throw SignOutIncompleteException(failure);
   }
 
   Future<void> refreshProviders() async {
@@ -131,7 +172,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (user == null) return;
     final providers = _providerIds(user);
     if (providers.isEmpty) {
-      await signOut();
+      try {
+        await signOut();
+      } on SignOutIncompleteException catch (e) {
+        // Nothing asked for this sign-out, so there is nobody to tell; the
+        // next refresh tries again.
+        debugPrint('AuthNotifier: $e');
+      }
       return;
     }
     state = AuthState(

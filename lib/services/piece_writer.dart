@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../database/daos/photos_dao.dart';
 import '../database/daos/pieces_dao.dart';
@@ -40,20 +41,28 @@ class PieceWriter {
     required List<ImageResult> photos,
   }) async {
     final now = _now();
-    final title = nextUntitledTitle(await _pieces.getUntitledPieceTitles());
+    late final String title;
 
-    await _pieces.insertPiece(
-      PiecesCompanion(
-        id: Value(pieceId),
-        title: Value(title),
-        coverPhotoId: Value(photos.last.photoId),
-        createdAt: Value(now),
-        updatedAt: Value(now),
-      ),
-    );
-    for (var i = 0; i < photos.length; i++) {
-      await _photos.insertPhoto(_photoRow(pieceId, photos[i], i, now));
-    }
+    // One transaction, so a failed read or insert leaves no partial piece
+    // behind, and the files go with it: nothing else would ever reference
+    // them.
+    await _adoptOrDiscard(photos, () async {
+      await _pieces.transaction(() async {
+        title = nextUntitledTitle(await _pieces.getUntitledPieceTitles());
+        await _pieces.insertPiece(
+          PiecesCompanion(
+            id: Value(pieceId),
+            title: Value(title),
+            coverPhotoId: Value(photos.last.photoId),
+            createdAt: Value(now),
+            updatedAt: Value(now),
+          ),
+        );
+        for (var i = 0; i < photos.length; i++) {
+          await _photos.insertPhoto(_photoRow(pieceId, photos[i], i, now));
+        }
+      });
+    });
 
     await _sync.afterPieceWrite(pieceId);
     for (final photo in photos) {
@@ -68,8 +77,30 @@ class PieceWriter {
     required ImageResult photo,
     required int sortOrder,
   }) async {
-    await _photos.insertPhoto(_photoRow(pieceId, photo, sortOrder, _now()));
+    await _adoptOrDiscard([
+      photo,
+    ], () => _photos.insertPhoto(_photoRow(pieceId, photo, sortOrder, _now())));
     await _sync.afterPhotoWrite(photo.photoId, includeFile: true);
+  }
+
+  /// Runs [insert], which gives [photos]' files their rows. If it throws, the
+  /// files are deleted before the error propagates — no row will ever point
+  /// at them, so nothing would find them again.
+  ///
+  /// A failure to queue afterwards leaves the rows, which do reference the
+  /// files, in place.
+  Future<void> _adoptOrDiscard(
+    List<ImageResult> photos,
+    Future<void> Function() insert,
+  ) async {
+    try {
+      await insert();
+    } catch (_) {
+      for (final photo in photos) {
+        await _images.discardFiles(photo);
+      }
+      rethrow;
+    }
   }
 
   Future<void> setCoverPhoto(String pieceId, String? photoId) async {
@@ -92,8 +123,10 @@ class PieceWriter {
     String? coverPhotoId,
   }) async {
     await _photos.deletePhoto(photoId);
-    await _images.deletePhotoFiles(pieceId, photoId);
-    await _sync.afterPhotoDeletion(photoId);
+    // Queued before the files go: with the row already deleted, a file error
+    // must not stop the cloud copy from being deleted too.
+    await _sync.afterPhotoDeletion(photoId, pieceId: pieceId);
+    await _cleanUp(() => _images.deletePhotoFiles(pieceId, photoId));
 
     if (coverPhotoId == photoId) {
       final remaining = await _photos.getPhotosForPiece(pieceId);
@@ -123,8 +156,20 @@ class PieceWriter {
 
     await _photos.deletePhotosForPiece(pieceId);
     await _pieces.deletePiece(pieceId);
-    await _images.deletePhotos(pieceId);
+    // Queued before the files go, as in [deletePhoto].
     await _sync.afterPieceDeletion(pieceId, photoIds);
+    await _cleanUp(() => _images.deletePhotos(pieceId));
+  }
+
+  /// Deletes files whose rows are already gone. The deletion the user asked
+  /// for has happened and is queued by then, so a file that will not delete
+  /// is reported to the log rather than as a failed deletion.
+  static Future<void> _cleanUp(Future<void> Function() deleteFiles) async {
+    try {
+      await deleteFiles();
+    } catch (e) {
+      debugPrint('PieceWriter: photo files left behind after a deletion: $e');
+    }
   }
 
   Future<void> setArchived(String pieceId, bool archived) async {

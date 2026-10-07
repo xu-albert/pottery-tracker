@@ -10,6 +10,16 @@ void main() {
 
   late Directory tempDir;
 
+  List<String> photoFiles() {
+    final photos = Directory(p.join(tempDir.path, 'photos'));
+    if (!photos.existsSync()) return [];
+    return photos
+        .listSync(recursive: true)
+        .whereType<File>()
+        .map((f) => f.path)
+        .toList();
+  }
+
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('image_service_test_');
 
@@ -37,7 +47,7 @@ void main() {
     }
   });
 
-  group('_compressOrStrip fallback chain', () {
+  group('re-encode fallback chain', () {
     test('happy path: compress succeeds, output is compressed bytes', () async {
       final inputBytes = Uint8List.fromList([1, 2, 3, 4, 5]);
       final compressedBytes = Uint8List.fromList([10, 20]);
@@ -106,7 +116,8 @@ void main() {
       expect(callCount, 4);
     });
 
-    test('both compresses fail, returns raw bytes as last resort', () async {
+    test('both compresses fail: the photo is refused and never kept raw, '
+        'since the original carries its EXIF location', () async {
       final inputBytes = Uint8List.fromList([1, 2, 3, 4, 5]);
 
       final service = ImageService(
@@ -121,17 +132,91 @@ void main() {
             },
       );
 
-      final result = await service.processImage(
-        bytes: inputBytes,
-        pieceId: 'test-piece',
+      await expectLater(
+        service.processImage(bytes: inputBytes, pieceId: 'test-piece'),
+        throwsA(isA<PhotoNotSanitizedException>()),
+      );
+      expect(photoFiles(), isEmpty);
+    });
+
+    test('an empty re-encode is a failure, not a photo', () async {
+      final service = ImageService(
+        compress:
+            (
+              input, {
+              int quality = 95,
+              int minWidth = 1920,
+              int minHeight = 1080,
+            }) async => Uint8List(0),
       );
 
-      // Both main and thumb should contain the raw input bytes
-      final mainFile = File(result.localPath);
-      expect(await mainFile.readAsBytes(), equals(inputBytes));
+      await expectLater(
+        service.processImage(
+          bytes: Uint8List.fromList([1, 2, 3]),
+          pieceId: 'test-piece',
+        ),
+        throwsA(isA<PhotoNotSanitizedException>()),
+      );
+      expect(photoFiles(), isEmpty);
+    });
 
-      final thumbFile = File(result.thumbnailPath);
-      expect(await thumbFile.readAsBytes(), equals(inputBytes));
+    test('a thumbnail that cannot be re-encoded leaves no full-size file '
+        'behind either', () async {
+      final service = ImageService(
+        compress:
+            (
+              input, {
+              int quality = 95,
+              int minWidth = 1920,
+              int minHeight = 1080,
+            }) async {
+              // The thumbnail's sized attempt and its fallback both fail.
+              if (minWidth == 300 || quality == 100) {
+                throw Exception('thumbnail failed');
+              }
+              return Uint8List.fromList([7, 7]);
+            },
+      );
+
+      await expectLater(
+        service.processImage(
+          bytes: Uint8List.fromList([1, 2, 3]),
+          pieceId: 'test-piece',
+        ),
+        throwsA(isA<PhotoNotSanitizedException>()),
+      );
+      expect(photoFiles(), isEmpty);
+    });
+
+    test('a thumbnail write that fails deletes the full-size file it '
+        'already wrote', () async {
+      final written = <String>[];
+      final service = ImageService(
+        compress:
+            (
+              input, {
+              int quality = 95,
+              int minWidth = 1920,
+              int minHeight = 1080,
+            }) async => Uint8List.fromList([7, 7]),
+        writeFile: (path, bytes) async {
+          if (path.endsWith('_thumb.jpg')) {
+            throw const FileSystemException('disk full');
+          }
+          await File(path).writeAsBytes(bytes);
+          written.add(path);
+        },
+      );
+
+      await expectLater(
+        service.processImage(
+          bytes: Uint8List.fromList([1, 2, 3]),
+          pieceId: 'test-piece',
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(written, hasLength(1), reason: 'the main file was written');
+      expect(photoFiles(), isEmpty);
     });
 
     test('processImage creates files in correct directory structure', () async {
@@ -164,4 +249,23 @@ void main() {
       expect(File(result.thumbnailPath).existsSync(), isTrue);
     });
   });
+
+  test(
+    'discardFiles removes both files and tolerates one already gone',
+    () async {
+      final dir = Directory(p.join(tempDir.path, 'photos', 'p'))
+        ..createSync(recursive: true);
+      final main = File(p.join(dir.path, 'x.jpg'))..writeAsBytesSync([1]);
+      final result = ImageResult(
+        photoId: 'x',
+        localPath: main.path,
+        thumbnailPath: p.join(dir.path, 'x_thumb.jpg'),
+        dateTaken: DateTime(2024),
+      );
+
+      await ImageService().discardFiles(result);
+
+      expect(photoFiles(), isEmpty);
+    },
+  );
 }

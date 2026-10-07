@@ -1,32 +1,17 @@
 import Flutter
 import UIKit
-import Security
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  // Never delete Keychain items here. The SQLCipher key lives in the Keychain
+  // (see EncryptionKeyService) while the database it opens lives in Documents,
+  // so any native wipe that runs before Dart leaves an encrypted journal
+  // nothing can open. test/ios/app_delegate_test.dart guards this; the launch
+  // itself is the device check in docs/local-database-key.md.
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // One-time Keychain clear to fix corrupted state from previous crash cycles.
-    // Remove this block after first successful launch.
-    let cleared = UserDefaults.standard.bool(forKey: "keychain_cleared_v1")
-    if !cleared {
-      let secItemClasses: [CFString] = [
-        kSecClassGenericPassword,
-        kSecClassInternetPassword,
-        kSecClassCertificate,
-        kSecClassKey,
-        kSecClassIdentity
-      ]
-      for itemClass in secItemClasses {
-        let spec: NSDictionary = [kSecClass: itemClass]
-        SecItemDelete(spec)
-      }
-      UserDefaults.standard.set(true, forKey: "keychain_cleared_v1")
-      NSLog("Keychain cleared for pottery-tracker")
-    }
-
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

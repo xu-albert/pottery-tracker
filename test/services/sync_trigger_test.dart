@@ -145,6 +145,10 @@ void main() {
       expect(all[0].entityId, 'photo-1');
       expect(all[1].operation, SyncOperation.deletePhoto);
       expect(all[1].entityId, 'photo-2');
+      // Persisted with each photo, so its Storage object can still be named
+      // once the local rows are gone.
+      expect(all[0].pieceId, 'p1');
+      expect(all[1].pieceId, 'p1');
       expect(all[2].operation, SyncOperation.deletePiece);
       expect(all[2].entityId, 'p1');
       expect(callbackCount, 1);
@@ -154,12 +158,13 @@ void main() {
   group('SyncTrigger afterPhotoDeletion', () {
     test('enqueues deletePhoto with correct entityId', () async {
       final trigger = makeTrigger();
-      await trigger.afterPhotoDeletion('photo-1');
+      await trigger.afterPhotoDeletion('photo-1', pieceId: 'p1');
 
       final all = await queue.getAll();
       expect(all, hasLength(1));
       expect(all.first.operation, SyncOperation.deletePhoto);
       expect(all.first.entityId, 'photo-1');
+      expect(all.first.pieceId, 'p1');
       expect(callbackCount, 1);
     });
   });
