@@ -1,4 +1,6 @@
 import 'package:drift/drift.dart' show Value;
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -19,6 +21,17 @@ void main() {
   late PieceWriter writer;
   final now = DateTime(2025, 3, 4, 5, 6);
 
+  setUpAll(() {
+    registerFallbackValue(
+      ImageResult(
+        photoId: 'fallback',
+        localPath: '',
+        thumbnailPath: '',
+        dateTaken: DateTime(2000),
+      ),
+    );
+  });
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -26,6 +39,7 @@ void main() {
     images = MockImageService();
     when(() => images.deletePhotos(any())).thenAnswer((_) async {});
     when(() => images.deletePhotoFiles(any(), any())).thenAnswer((_) async {});
+    when(() => images.discardFiles(any())).thenAnswer((_) async {});
     writer = PieceWriter(
       piecesDao: db.piecesDao,
       photosDao: db.photosDao,
@@ -188,6 +202,33 @@ void main() {
       expect(await queued(), [(SyncOperation.deletePhoto, 'gone')]);
     });
 
+    test('a file that will not delete still leaves the deletion queued, '
+        'with the piece that names its cloud object', () async {
+      await insertPiece('p', coverPhotoId: 'gone');
+      await insertPhoto('keep', 'p', sortOrder: 1);
+      await insertPhoto('gone', 'p', sortOrder: 0);
+      when(
+        () => images.deletePhotoFiles('p', 'gone'),
+      ).thenThrow(const FileSystemException('busy'));
+
+      await writer.deletePhoto(
+        pieceId: 'p',
+        photoId: 'gone',
+        coverPhotoId: 'gone',
+      );
+
+      expect(await db.photosDao.getPhotoById('gone'), isNull);
+      final entries = await queue.getAll();
+      expect(entries.first.operation, SyncOperation.deletePhoto);
+      expect(entries.first.entityId, 'gone');
+      expect(entries.first.pieceId, 'p');
+      expect(
+        (await db.piecesDao.getPieceById('p'))!.coverPhotoId,
+        'keep',
+        reason: 'the rest of the deletion still ran',
+      );
+    });
+
     test('reassigns the cover to the top-sorted remaining photo', () async {
       await insertPiece('p', coverPhotoId: 'cover');
       await insertPhoto('cover', 'p', sortOrder: 2);
@@ -283,6 +324,89 @@ void main() {
     });
   });
 
+  group('deletePiece when its files will not delete', () {
+    test('still queues every deletion once the rows are gone', () async {
+      await insertPiece('p');
+      await insertPhoto('a', 'p');
+      when(
+        () => images.deletePhotos('p'),
+      ).thenThrow(const FileSystemException('busy'));
+
+      await writer.deletePiece('p');
+
+      expect(await db.piecesDao.getPieceById('p'), isNull);
+      expect(await queued(), [
+        (SyncOperation.deletePhoto, 'a'),
+        (SyncOperation.deletePiece, 'p'),
+      ]);
+    });
+  });
+
+  group('photos the database cannot adopt', () {
+    test(
+      'a failed createPiece leaves no piece and discards every file',
+      () async {
+        // A photo id already taken makes the second insert fail part way.
+        await insertPiece('other');
+        await insertPhoto('b', 'other');
+
+        await expectLater(
+          writer.createPiece(pieceId: 'p', photos: [image('a'), image('b')]),
+          throwsA(anything),
+        );
+
+        expect(await db.piecesDao.getPieceById('p'), isNull);
+        expect(await db.photosDao.getPhotosForPiece('p'), isEmpty);
+        final discarded = verify(
+          () => images.discardFiles(captureAny()),
+        ).captured.cast<ImageResult>();
+        expect(discarded.map((r) => r.photoId), ['a', 'b']);
+        expect(await queued(), isEmpty);
+      },
+    );
+
+    test('a failed addPhoto discards its files', () async {
+      await insertPiece('p');
+      await insertPhoto('a', 'p');
+
+      await expectLater(
+        writer.addPhoto(pieceId: 'p', photo: image('a'), sortOrder: 1),
+        throwsA(anything),
+      );
+
+      final discarded = verify(
+        () => images.discardFiles(captureAny()),
+      ).captured.cast<ImageResult>();
+      expect(discarded.single.photoId, 'a');
+      expect(await queued(), isEmpty);
+    });
+
+    test(
+      'a failed enqueue keeps the rows, which still reference the files',
+      () async {
+        await insertPiece('p');
+        final failing = PieceWriter(
+          piecesDao: db.piecesDao,
+          photosDao: db.photosDao,
+          imageService: images,
+          syncTrigger: SyncTrigger(_FailingQueue()),
+          now: () => now,
+        );
+
+        await expectLater(
+          failing.addPhoto(pieceId: 'p', photo: image('a'), sortOrder: 0),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(
+          (await db.photosDao.getPhotoById('a'))!.localPath,
+          '/photos/p/a.jpg',
+        );
+        verifyNever(() => images.discardFiles(any()));
+      },
+    );
+  });
+
   group('setArchived', () {
     test('flips the flag and bumps updatedAt', () async {
       await insertPiece('p');
@@ -364,4 +488,10 @@ void main() {
       expect(await queued(), [(SyncOperation.pushPhoto, 'a')]);
     });
   });
+}
+
+class _FailingQueue extends SyncQueue {
+  @override
+  Future<void> enqueue(SyncQueueEntry entry) async =>
+      throw StateError('preferences unavailable');
 }

@@ -101,13 +101,15 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       final photosDao = ref.read(photosDaoProvider);
       final writer = ref.read(pieceWriterProvider);
 
+      // Read first, so nothing fallible sits between writing the photo's
+      // files and handing them to the writer, which discards them on failure.
+      final sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
       final result = await imageService.pickAndProcessImage(
         source: source,
         pieceId: widget.pieceId,
       );
       if (result == null) return;
 
-      final sortOrder = await photosDao.getNextSortOrder(widget.pieceId);
       await writer.addPhoto(
         pieceId: widget.pieceId,
         photo: result,

@@ -164,6 +164,13 @@ enum DeleteAllDataResult {
   /// Nothing was deleted.
   failed,
 
+  /// The cloud delete stopped part way — a Cloud Storage failure is one way —
+  /// so some cloud data may be gone while the auth account and the local copy
+  /// are untouched. Not [failed], whose "nothing was deleted" may be false
+  /// here; not [deleted], which would leave photos in the bucket. Retrying
+  /// finishes it, as every step of the cloud delete is safe to repeat.
+  cloudDeleteIncomplete,
+
   /// The cloud data was deleted but the auth account survived — almost always
   /// because Firebase wants a recent sign-in before it will delete an account.
   /// Signing in again and retrying is what clears it.
@@ -844,7 +851,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       case SyncOperation.deletePiece:
         await _syncService.pushPieceDeletion(uid, entry.entityId);
       case SyncOperation.deletePhoto:
-        await _syncService.pushDeletion(uid, 'photos', entry.entityId);
+        await _syncService.pushPhotoDeletion(
+          uid,
+          entry.entityId,
+          pieceId: entry.pieceId,
+        );
       case SyncOperation.deleteMaterial:
         final collection = entry.extraData ?? 'clays';
         await _syncService.pushDeletion(uid, collection, entry.entityId);
@@ -1227,7 +1238,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // Delete cloud data and account only if signed in
       if (auth.isSignedIn && auth.uid != null) {
-        await _syncService.deleteCloudData(auth.uid!);
+        // Nothing past this may run unless the whole cloud tree is gone: the
+        // account delete would leave no way back to photos still stored.
+        try {
+          await _syncService.deleteCloudData(auth.uid!);
+        } catch (e) {
+          debugPrint('SyncNotifier: cloud data deletion did not finish: $e');
+          state = state.copyWith(
+            status: SyncStatus.error,
+            errorMessage: e.toString(),
+          );
+          return DeleteAllDataResult.cloudDeleteIncomplete;
+        }
         cloudDeleted = true;
 
         // A failure here is almost always 'requires-recent-login'. It must not

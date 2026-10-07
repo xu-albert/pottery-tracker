@@ -36,7 +36,11 @@ const _signedOut = AuthState(status: AuthStatus.unauthenticated);
   MockSyncService syncService,
   MockSyncQueue queue,
 })
-_setup({AuthState auth = _signedOut, SyncClock? clock}) {
+_setup({
+  AuthState auth = _signedOut,
+  SyncClock? clock,
+  Future<void> Function()? deleteAuthAccount,
+}) {
   final syncService = MockSyncService();
   final queue = MockSyncQueue();
 
@@ -89,15 +93,28 @@ _setup({AuthState auth = _signedOut, SyncClock? clock}) {
   when(
     () => syncService.pushDeletion(any(), any(), any()),
   ).thenAnswer((_) async {});
+  when(
+    () => syncService.pushPhotoDeletion(
+      any(),
+      any(),
+      pieceId: any(named: 'pieceId'),
+    ),
+  ).thenAnswer((_) async {});
 
   final container = ProviderContainer(
     overrides: [
       authProvider.overrideWith((_) => AuthNotifier.withState(auth)),
       syncQueueProvider.overrideWithValue(queue),
       syncServiceProvider.overrideWithValue(syncService),
-      if (clock != null)
+      if (clock != null || deleteAuthAccount != null)
         syncStateProvider.overrideWith(
-          (ref) => SyncNotifier(ref, queue, syncService, clock: clock),
+          (ref) => SyncNotifier(
+            ref,
+            queue,
+            syncService,
+            clock: clock,
+            deleteAuthAccount: deleteAuthAccount,
+          ),
         ),
     ],
   );
@@ -1067,6 +1084,7 @@ void main() {
       required SyncOperation operation,
       required String entityId,
       String? extraData,
+      String? pieceId,
       required void Function(MockSyncService) verifyCall,
     }) async {
       final s = _setup(auth: _signedIn);
@@ -1077,6 +1095,7 @@ void main() {
         operation: operation,
         entityId: entityId,
         extraData: extraData,
+        pieceId: pieceId,
       );
       when(() => s.queue.getAll()).thenAnswer((_) async => [entry]);
       when(
@@ -1169,12 +1188,25 @@ void main() {
       );
     });
 
-    test('deletePhoto', () async {
+    test('deletePhoto deletes the Storage object its entry names', () async {
       await testDispatch(
         operation: SyncOperation.deletePhoto,
         entityId: 'ph1',
-        verifyCall: (svc) =>
-            verify(() => svc.pushDeletion('user-1', 'photos', 'ph1')).called(1),
+        pieceId: 'p1',
+        verifyCall: (svc) => verify(
+          () => svc.pushPhotoDeletion('user-1', 'ph1', pieceId: 'p1'),
+        ).called(1),
+      );
+    });
+
+    test('deletePhoto queued before entries named a piece still dispatches, '
+        'leaving the piece to the cloud metadata', () async {
+      await testDispatch(
+        operation: SyncOperation.deletePhoto,
+        entityId: 'ph1',
+        verifyCall: (svc) => verify(
+          () => svc.pushPhotoDeletion('user-1', 'ph1', pieceId: null),
+        ).called(1),
       );
     });
 
@@ -1250,6 +1282,32 @@ void main() {
 
       verifyNever(() => s.syncService.deleteCloudData(any()));
       verify(() => s.syncService.deleteLocalData()).called(1);
+    });
+
+    test('a cloud delete that stops part way deletes no account and no '
+        'local data, and is not reported as nothing deleted', () async {
+      var accountDeletes = 0;
+      final s = _setup(
+        auth: _signedIn,
+        deleteAuthAccount: () async => accountDeletes++,
+      );
+      addTearDown(s.container.dispose);
+      await Future<void>.delayed(Duration.zero);
+      // Cloud Storage refusing, after Firestore may already be gone.
+      when(
+        () => s.syncService.deleteCloudData('user-1'),
+      ).thenThrow(FirebaseException(plugin: 'storage', code: 'unavailable'));
+
+      expect(
+        await s.notifier.deleteAllData(),
+        DeleteAllDataResult.cloudDeleteIncomplete,
+      );
+
+      expect(accountDeletes, 0);
+      verifyNever(() => s.syncService.deleteLocalData());
+      verifyNever(() => s.queue.clear());
+      expect(s.container.read(authProvider).isSignedIn, isTrue);
+      expect(s.container.read(syncStateProvider).status, SyncStatus.error);
     });
 
     test('sets error state on failure', () async {

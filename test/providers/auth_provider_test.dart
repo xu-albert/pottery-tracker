@@ -66,5 +66,54 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('hasCompletedOnboarding'), false);
     });
+
+    test('signOut publishes nothing while Firebase still holds the session, '
+        'so the next launch cannot quietly restore it', () async {
+      SharedPreferences.setMockInitialValues({'hasCompletedOnboarding': true});
+      const signedIn = AuthState(
+        status: AuthStatus.authenticated,
+        uid: 'user-a',
+      );
+      var attempts = 0;
+      final notifier = AuthNotifier.withState(
+        signedIn,
+        endFirebaseSession: () async {
+          attempts++;
+          throw SignOutIncompleteException(Exception('keychain locked'));
+        },
+      );
+
+      await expectLater(
+        notifier.signOut(),
+        throwsA(isA<SignOutIncompleteException>()),
+      );
+
+      expect(attempts, 1);
+      expect(published(notifier).status, AuthStatus.authenticated);
+      expect(published(notifier).uid, 'user-a');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('hasCompletedOnboarding'), true);
+    });
+
+    test('signOut publishes unauthenticated once the session is confirmed '
+        'gone', () async {
+      var ended = false;
+      final notifier = AuthNotifier.withState(
+        const AuthState(status: AuthStatus.authenticated, uid: 'user-a'),
+        endFirebaseSession: () async => ended = true,
+      );
+
+      await notifier.signOut();
+
+      expect(ended, isTrue);
+      expect(published(notifier).status, AuthStatus.unauthenticated);
+    });
   });
+}
+
+/// What [notifier] currently publishes, read the way a listener sees it.
+AuthState published(AuthNotifier notifier) {
+  late AuthState current;
+  notifier.addListener((state) => current = state)();
+  return current;
 }

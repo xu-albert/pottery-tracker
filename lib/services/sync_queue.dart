@@ -22,11 +22,19 @@ class SyncQueueEntry {
   final String? extraData;
   final List<String>? changedFields;
 
+  /// The piece a [SyncOperation.deletePhoto] entry's photo belonged to, which
+  /// names its Cloud Storage object. Recorded at deletion because the local
+  /// row is already gone by the time the entry is pushed. Not part of the
+  /// entry's identity: a photo id is unique on its own, and the pull's
+  /// queued check builds its deletion entry without one.
+  final String? pieceId;
+
   const SyncQueueEntry({
     required this.operation,
     required this.entityId,
     this.extraData,
     this.changedFields,
+    this.pieceId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +42,7 @@ class SyncQueueEntry {
     'id': entityId,
     if (extraData != null) 'extra': extraData,
     if (changedFields != null) 'changedFields': changedFields,
+    if (pieceId != null) 'pieceId': pieceId,
   };
 
   factory SyncQueueEntry.fromJson(Map<String, dynamic> json) {
@@ -44,6 +53,7 @@ class SyncQueueEntry {
       changedFields: (json['changedFields'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
+      pieceId: json['pieceId'] as String?,
     );
   }
 
@@ -57,6 +67,7 @@ class SyncQueueEntry {
       entityId: entityId,
       extraData: extraData,
       changedFields: merged,
+      pieceId: pieceId ?? other.pieceId,
     );
   }
 

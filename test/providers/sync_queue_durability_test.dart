@@ -379,9 +379,9 @@ void main() {
       calls.add('pushPieceDeletion');
     });
     when(
-      () => service.pushDeletion('user-1', 'photos', 'gone-photo'),
+      () => service.pushPhotoDeletion('user-1', 'gone-photo', pieceId: 'gone'),
     ).thenAnswer((_) async {
-      calls.add('pushDeletion');
+      calls.add('pushPhotoDeletion');
     });
     when(() => service.pullAll(any())).thenAnswer((_) async {
       calls.add('pullAll');
@@ -391,6 +391,7 @@ void main() {
       const SyncQueueEntry(
         operation: SyncOperation.deletePhoto,
         entityId: 'gone-photo',
+        pieceId: 'gone',
       ),
     );
     await queue.enqueue(
@@ -408,7 +409,7 @@ void main() {
     expect(calls, [
       'pullAll',
       'fullUploadEntries',
-      'pushDeletion',
+      'pushPhotoDeletion',
       'pushPieceDeletion',
     ], reason: 'full snapshots and tombstones use the same queue drain');
     expect(await queue.pendingCount, 0);

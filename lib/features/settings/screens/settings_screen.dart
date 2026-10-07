@@ -194,7 +194,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       }
     } finally {
-      await ref.read(authProvider.notifier).signOut();
+      // The session-ending callback above can fail without stopping the
+      // wipe; this is the attempt that confirms Firebase let the session go.
+      try {
+        await ref.read(authProvider.notifier).signOut();
+      } on SignOutIncompleteException catch (e) {
+        debugPrint('SettingsScreen: $e');
+        if (mounted) {
+          AppSnackbar.show(
+            context,
+            message: l10n.signOutIncomplete,
+            duration: _partialOutcomeDuration,
+          );
+        }
+      }
       if (mounted) setState(() => _isSigningOut = false);
     }
   }
@@ -546,6 +559,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     AppSnackbar.show(
                       context,
                       message: l10n.deleteAccountFailed,
+                    );
+                  case DeleteAllDataResult.cloudDeleteIncomplete:
+                    AppSnackbar.show(
+                      context,
+                      message: l10n.deleteAccountCloudIncomplete,
+                      duration: _partialOutcomeDuration,
                     );
                   // Partial outcomes get their own words: "nothing was
                   // deleted" would be a lie once the cloud tree is gone.

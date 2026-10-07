@@ -101,6 +101,11 @@ The `-PrequireReleaseSigning=true` flag makes the build **fail** rather than qui
 Android debug key. Use it for every artifact you intend to upload. (CI can set the environment
 variable `POTTER_JOURNAL_REQUIRE_RELEASE_SIGNING` instead, which does the same thing.)
 
+The same switch also fails the build while `android/app/google-services.json` has no web OAuth
+client, which is the case until a signing certificate is registered. So before the first strict
+build, do section 4 with the upload and debug fingerprints; add the Play App Signing fingerprint
+once Play shows it after the first upload, and download the regenerated file again.
+
 Both switches fail closed on their **value**: either one counts as **on** whenever it is present in
 any form — `-PrequireReleaseSigning` with no value, `=true`, `=1`, `=yes`, `=on`, any casing. Only an
 explicit `false`, `0`, `no` or `off` turns strict signing back off, so a mistyped *value* can never
@@ -211,6 +216,9 @@ Android cannot produce a usable credential.
 5. Confirm the new file's `oauth_client` array is **non-empty** and contains an entry with
    `"client_type": 3` (the web/server client). That entry is what lets Firebase Auth accept the
    Google ID token.
+   A build with `-PrequireReleaseSigning=true` checks this itself and fails until that entry is
+   there (`hasWebOAuthClient` in `android/app/build.gradle.kts`), so a Play-bound artifact cannot
+   ship a Google Sign-In that cannot work.
 
 > **Forgetting the Play App Signing fingerprint is the classic failure.** Sign-in works in internal
 > testing (upload key) and breaks the moment the app is promoted (app signing key). Add both.

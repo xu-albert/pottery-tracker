@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:exif/exif.dart';
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:uuid/uuid.dart';
 
 typedef CompressFunction =
@@ -29,13 +30,34 @@ class ImageResult {
   });
 }
 
+typedef WriteFileFunction = Future<void> Function(String path, Uint8List bytes);
+
+/// A photo neither re-encode could process. Its original bytes are never
+/// kept instead: they carry the EXIF block, GPS position included, that the
+/// re-encode exists to strip, and may not even be a JPEG.
+class PhotoNotSanitizedException implements Exception {
+  final Object cause;
+
+  PhotoNotSanitizedException(this.cause);
+
+  @override
+  String toString() => 'PhotoNotSanitizedException: $cause';
+}
+
 class ImageService {
   final _picker = ImagePicker();
   final _uuid = const Uuid();
   final CompressFunction _compress;
+  final WriteFileFunction _writeFile;
 
-  ImageService({CompressFunction? compress})
-    : _compress = compress ?? FlutterImageCompress.compressWithList;
+  ImageService({
+    CompressFunction? compress,
+    @visibleForTesting WriteFileFunction? writeFile,
+  }) : _compress = compress ?? FlutterImageCompress.compressWithList,
+       _writeFile = writeFile ?? _writeBytes;
+
+  static Future<void> _writeBytes(String path, Uint8List bytes) =>
+      File(path).writeAsBytes(bytes);
 
   Future<ImageResult?> pickAndProcessImage({
     required ImageSource source,
@@ -54,6 +76,9 @@ class ImageService {
     return picked;
   }
 
+  /// Writes a sanitised full-size image and thumbnail for [bytes] and returns
+  /// where they are. Throws [PhotoNotSanitizedException] when the photo
+  /// cannot be re-encoded; on any failure nothing is left on disk.
   Future<ImageResult> processImage({
     required Uint8List bytes,
     required String pieceId,
@@ -61,65 +86,87 @@ class ImageService {
     final photoId = _uuid.v4();
     final dateTaken = await _extractDateFromBytes(bytes);
 
-    final appDir = await getApplicationDocumentsDirectory();
-    final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
-    await photoDir.create(recursive: true);
-
-    final mainPath = p.join(photoDir.path, '$photoId.jpg');
-    final thumbPath = p.join(photoDir.path, '${photoId}_thumb.jpg');
-
-    // Save main image (compression strips EXIF including GPS)
-    final mainBytes = await _compressOrStrip(
+    // Both re-encodes (which strip EXIF, GPS included) run before anything is
+    // written, so a photo that cannot be sanitised leaves no file at all.
+    final mainBytes = await _reencode(
       bytes,
       quality: 75,
       minWidth: 1500,
       minHeight: 1500,
     );
-    await File(mainPath).writeAsBytes(mainBytes);
-
-    // Save thumbnail (compression strips EXIF including GPS)
-    final thumbBytes = await _compressOrStrip(
+    final thumbBytes = await _reencode(
       bytes,
       quality: 60,
       minWidth: 300,
       minHeight: 300,
     );
-    await File(thumbPath).writeAsBytes(thumbBytes);
 
-    return ImageResult(
+    final appDir = await getApplicationDocumentsDirectory();
+    final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
+    await photoDir.create(recursive: true);
+
+    final result = ImageResult(
       photoId: photoId,
-      localPath: mainPath,
-      thumbnailPath: thumbPath,
+      localPath: p.join(photoDir.path, '$photoId.jpg'),
+      thumbnailPath: p.join(photoDir.path, '${photoId}_thumb.jpg'),
       dateTaken: dateTaken,
     );
+    try {
+      await _writeFile(result.localPath, mainBytes);
+      await _writeFile(result.thumbnailPath, thumbBytes);
+    } catch (_) {
+      await discardFiles(result);
+      rethrow;
+    }
+    return result;
   }
 
-  /// Compress image bytes, stripping EXIF metadata (including GPS).
-  /// Falls back to a strip-only re-encode if the target compression fails,
-  /// then to raw bytes as a last resort.
-  Future<Uint8List> _compressOrStrip(
+  /// Deletes both of [result]'s files, for a photo no row will ever adopt.
+  /// Best effort: it runs while another error is already propagating, which
+  /// is the one the caller needs to see.
+  Future<void> discardFiles(ImageResult result) async {
+    for (final path in [result.localPath, result.thumbnailPath]) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (e) {
+        debugPrint('ImageService: could not discard $path: $e');
+      }
+    }
+  }
+
+  /// Re-encodes [bytes] as a JPEG, which strips EXIF metadata (including
+  /// GPS). Falls back to a full-quality re-encode at the encoder's default
+  /// size if the sized one fails, and throws [PhotoNotSanitizedException] if
+  /// that fails too — see the exception for why the original is never used
+  /// instead.
+  Future<Uint8List> _reencode(
     Uint8List bytes, {
     required int quality,
     required int minWidth,
     required int minHeight,
   }) async {
-    // Try target compression (strips EXIF)
     try {
-      return await _compress(
-        bytes,
-        quality: quality,
-        minWidth: minWidth,
-        minHeight: minHeight,
+      return _nonEmpty(
+        await _compress(
+          bytes,
+          quality: quality,
+          minWidth: minWidth,
+          minHeight: minHeight,
+        ),
       );
     } catch (_) {}
 
-    // Fallback: re-encode at full quality with no resize (still strips EXIF)
     try {
-      return await _compress(bytes, quality: 100);
-    } catch (_) {}
+      return _nonEmpty(await _compress(bytes, quality: 100));
+    } catch (e) {
+      throw PhotoNotSanitizedException(e);
+    }
+  }
 
-    // Last resort: raw bytes (extremely unlikely)
-    return bytes;
+  static Uint8List _nonEmpty(Uint8List encoded) {
+    if (encoded.isEmpty) throw StateError('the re-encode produced no bytes');
+    return encoded;
   }
 
   Future<DateTime> _extractDateFromBytes(Uint8List bytes) async {

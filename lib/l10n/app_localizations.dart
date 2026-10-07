@@ -820,6 +820,12 @@ abstract class AppLocalizations {
   /// **'Signing out and erasing this device…'**
   String get signingOut;
 
+  /// Shown when Firebase still holds the session after an explicit sign-out. The app stays signed in rather than claiming a sign-out the next launch would undo
+  ///
+  /// In en, this message translates to:
+  /// **'Could not sign out — you are still signed in. Try again.'**
+  String get signOutIncomplete;
+
   /// Shown when the local wipe on sign-out did not finish. Names the lock rather than a later sign-in: the owed wipe locks the router, and the lock screen is what retries it
   ///
   /// In en, this message translates to:
@@ -1011,6 +1017,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not delete your account. Nothing was deleted.'**
   String get deleteAccountFailed;
+
+  /// Shown when the cloud delete stopped part way, for instance because Cloud Storage refused. Never says nothing was deleted: some cloud data may already be gone, and a retry finishes it
+  ///
+  /// In en, this message translates to:
+  /// **'Could not finish deleting your cloud data. Your account is still active and the pottery on this device is untouched — try again to finish.'**
+  String get deleteAccountCloudIncomplete;
 
   /// Title of the confirmation shown before erasing local data
   ///

@@ -35,13 +35,18 @@ class _FakeAuthService implements AuthService {
 }
 
 class _FakeAuthNotifier extends AuthNotifier {
-  _FakeAuthNotifier(super.initial) : super.withState();
+  _FakeAuthNotifier(super.initial, {this.sessionHeld = false})
+    : super.withState();
+
+  /// Firebase keeps the session through every attempt to end it.
+  final bool sessionHeld;
 
   /// The real one ends the Firebase session over a method channel that has
   /// no handler in a widget test and never answers. Here the session simply
-  /// ends, which is all the screen under test can observe.
+  /// ends — or, with [sessionHeld], does not, as the real one reports it.
   @override
   Future<void> signOut() async {
+    if (sessionHeld) throw SignOutIncompleteException(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 }
@@ -91,6 +96,7 @@ void main() {
     WidgetTester tester, {
     Set<String> linkedProviders = const {'google.com', 'apple.com'},
     bool localOnly = false,
+    bool sessionHeld = false,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -105,6 +111,7 @@ void main() {
                       displayName: 'A',
                       linkedProviders: linkedProviders,
                     ),
+              sessionHeld: sessionHeld,
             ),
           ),
           authServiceProvider.overrideWithValue(authService),
@@ -224,6 +231,25 @@ void main() {
       );
     });
 
+    testWidgets('a session Firebase kept is reported, and the app stays '
+        'signed in rather than claiming otherwise', (tester) async {
+      await pumpSettings(tester, sessionHeld: true);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      verify(() => syncService.deleteLocalData()).called(1);
+      expect(find.textContaining('Could not sign out'), findsOneWidget);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SettingsScreen)),
+      );
+      expect(container.read(authProvider).isSignedIn, isTrue);
+    });
+
     testWidgets('a failed wipe is reported instead of passing silently', (
       tester,
     ) async {
@@ -320,6 +346,36 @@ void main() {
       // the lock screen — so this is the case where the result went silent.
       // Whichever partial outcome it is, the surviving local copy is named.
       expect(find.textContaining('copy on this device'), findsOneWidget);
+    });
+
+    testWidgets('a cloud delete that stops part way says so and deletes '
+        'nothing local', (tester) async {
+      tester.view.physicalSize = const Size(390, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      when(
+        () => syncService.deleteCloudData(any()),
+      ).thenThrow(Exception('storage unavailable'));
+
+      await pumpSettings(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Delete Account & Data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete Everything'));
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+
+      expect(
+        find.textContaining('Could not finish deleting your cloud data'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Nothing was deleted'), findsNothing);
+      verifyNever(() => syncService.deleteLocalData());
     });
 
     testWidgets('with no account, a wipe that left photo files behind never '

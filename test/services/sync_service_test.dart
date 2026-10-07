@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart' show Reference;
+import 'package:firebase_storage/firebase_storage.dart'
+    show ListResult, Reference;
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
 import 'dart:io';
 
@@ -509,6 +510,119 @@ void main() {
         'pieceTags',
       ).where('pieceId', isEqualTo: 'p1').get();
       expect(tagSnap.docs, isEmpty);
+    });
+  });
+
+  group('cloud photo deletion reaches Cloud Storage', () {
+    const object = 'users/$_uid/photos/p1/ph1.jpg';
+    late _ScriptedStorage scripted;
+    late SyncService service;
+
+    setUp(() {
+      scripted = _ScriptedStorage();
+      scripted.storedDataMap[object] = Uint8List.fromList([1]);
+      service = SyncService(db, firestore, scripted);
+    });
+
+    test('a single photo deletion deletes its object and tombstones its '
+        'metadata', () async {
+      await col('photos').doc('ph1').set({'pieceId': 'p1'});
+
+      await service.pushPhotoDeletion(_uid, 'ph1', pieceId: 'p1');
+
+      expect(scripted.storedDataMap, isNot(contains(object)));
+      final data = (await col('photos').doc('ph1').get()).data() as Map;
+      expect(data['deletedAt'], isNotNull);
+    });
+
+    test('an entry queued before deletions named the piece finds the object '
+        'through the metadata', () async {
+      await col('photos').doc('ph1').set({'pieceId': 'p1'});
+
+      await service.pushPhotoDeletion(_uid, 'ph1');
+
+      expect(scripted.storedDataMap, isNot(contains(object)));
+    });
+
+    test('an object that is already gone counts as deleted, so a retry '
+        'converges', () async {
+      scripted.deleteFailures[object] = FirebaseException(
+        plugin: 'firebase_storage',
+        code: 'object-not-found',
+      );
+
+      await service.pushPhotoDeletion(_uid, 'ph1', pieceId: 'p1');
+
+      final data = (await col('photos').doc('ph1').get()).data() as Map;
+      expect(data['deletedAt'], isNotNull);
+    });
+
+    test(
+      'any other Storage failure propagates, keeping the entry queued',
+      () async {
+        scripted.deleteFailures[object] = FirebaseException(
+          plugin: 'firebase_storage',
+          code: 'unavailable',
+        );
+
+        await expectLater(
+          service.pushPhotoDeletion(_uid, 'ph1', pieceId: 'p1'),
+          throwsA(
+            isA<FirebaseException>().having(
+              (e) => e.code,
+              'code',
+              'unavailable',
+            ),
+          ),
+        );
+        expect(scripted.storedDataMap, contains(object));
+      },
+    );
+
+    test('a piece deletion no longer swallows a Storage failure', () async {
+      await col('pieces').doc('p1').set({'title': 'Bowl'});
+      await col('photos').doc('ph1').set({'pieceId': 'p1'});
+      scripted.deleteFailures[object] = FirebaseException(
+        plugin: 'firebase_storage',
+        code: 'unavailable',
+      );
+
+      await expectLater(
+        service.pushPieceDeletion(_uid, 'p1'),
+        throwsA(isA<FirebaseException>()),
+      );
+    });
+
+    test('a piece deletion deletes each photo object', () async {
+      await col('pieces').doc('p1').set({'title': 'Bowl'});
+      await col('photos').doc('ph1').set({'pieceId': 'p1'});
+
+      await service.pushPieceDeletion(_uid, 'p1');
+
+      expect(scripted.storedDataMap, isNot(contains(object)));
+    });
+
+    test('account deletion removes every object at any depth', () async {
+      scripted.storedDataMap['users/$_uid/stray.bin'] = Uint8List(1);
+      scripted.storedDataMap['users/$_uid/a/b/c/d.jpg'] = Uint8List(1);
+      scripted.storedDataMap['users/other/photos/p/x.jpg'] = Uint8List(1);
+
+      await service.deleteCloudData(_uid);
+
+      expect(scripted.storedDataMap.keys, ['users/other/photos/p/x.jpg']);
+    });
+
+    test('account deletion fails when Storage cleanup fails, rather than '
+        'reporting the photos deleted', () async {
+      scripted.listFailure = FirebaseException(
+        plugin: 'firebase_storage',
+        code: 'unavailable',
+      );
+
+      await expectLater(
+        service.deleteCloudData(_uid),
+        throwsA(isA<FirebaseException>()),
+      );
     });
   });
 
@@ -1221,4 +1335,42 @@ class _RekeyLog extends QueryInterceptor {
     }
     return super.runCustom(executor, statement, args);
   }
+}
+
+/// Storage whose deletes and listings can be made to fail by path, the way
+/// the real service fails: `object-not-found` for an object already gone,
+/// anything else for a transient fault.
+class _ScriptedStorage extends MockFirebaseStorage {
+  final deleteFailures = <String, FirebaseException>{};
+  FirebaseException? listFailure;
+
+  @override
+  Reference ref([String? path]) => _ScriptedReference(this, super.ref(path));
+}
+
+class _ScriptedReference implements Reference {
+  final _ScriptedStorage _storage;
+  final Reference _inner;
+
+  _ScriptedReference(this._storage, this._inner);
+
+  String get _path =>
+      _inner.fullPath.replaceFirst('gs://${_storage.bucket}', '');
+
+  @override
+  Future<void> delete() async {
+    final failure = _storage.deleteFailures[_path];
+    if (failure != null) throw failure;
+    await _inner.delete();
+  }
+
+  @override
+  Future<ListResult> listAll() async {
+    final failure = _storage.listFailure;
+    if (failure != null) throw failure;
+    return _inner.listAll();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

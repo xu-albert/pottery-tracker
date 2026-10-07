@@ -43,6 +43,26 @@ void main() {
       expect(restored.changedFields, isEmpty);
     });
 
+    test('round-trips the piece a photo deletion names', () {
+      const entry = SyncQueueEntry(
+        operation: SyncOperation.deletePhoto,
+        entityId: 'photo-1',
+        pieceId: 'piece-1',
+      );
+      final restored = SyncQueueEntry.fromJson(entry.toJson());
+
+      expect(restored.pieceId, 'piece-1');
+    });
+
+    test('reads an entry persisted before pieceId existed', () {
+      final restored = SyncQueueEntry.fromJson({
+        'op': 'deletePhoto',
+        'id': 'photo-1',
+      });
+
+      expect(restored.pieceId, isNull);
+    });
+
     test('handles all SyncOperation enum values', () {
       for (final op in SyncOperation.values) {
         final entry = SyncQueueEntry(operation: op, entityId: 'id-1');
@@ -202,6 +222,22 @@ void main() {
         extraData: 'glazes',
       );
       expect(a, isNot(equals(b)));
+    });
+
+    test('equal regardless of pieceId, so the pull still finds a queued '
+        'photo deletion', () {
+      const recorded = SyncQueueEntry(
+        operation: SyncOperation.deletePhoto,
+        entityId: 'photo-1',
+        pieceId: 'piece-1',
+      );
+      const probe = SyncQueueEntry(
+        operation: SyncOperation.deletePhoto,
+        entityId: 'photo-1',
+      );
+      expect(recorded, equals(probe));
+      expect(recorded.hashCode, equals(probe.hashCode));
+      expect(probe.mergeWith(recorded).pieceId, 'piece-1');
     });
   });
 }
