@@ -3,7 +3,8 @@ import '../database/database.dart';
 import 'sync_trigger.dart';
 
 /// Finds or creates a material, and enqueues a sync for exactly the ones it
-/// created; renames a clay, and enqueues everything the rename rewrote.
+/// created; renames a clay, and enqueues everything the rename rewrote;
+/// saves a new custom order, and enqueues exactly the materials it moved.
 ///
 /// `MaterialsDao.findOrCreate*` returns an existing row untouched, so a caller
 /// that enqueues unconditionally reports a write that never happened and
@@ -55,4 +56,59 @@ class MaterialWriter {
       );
     }
   }
+
+  /// Saves the order the user dragged a Manage screen into, and queues
+  /// exactly the clays whose position changed: `sortOrder` is pushed
+  /// content, so a move that is never queued stays on this device, and the
+  /// other devices keep their order.
+  ///
+  /// [orderedIds] is the whole list, top first. Positions are rewritten as
+  /// 0..n-1, so rows that shared a position (as a pull can leave them) get
+  /// distinct ones on the first reorder.
+  Future<void> reorderClays(List<String> orderedIds) async {
+    final moved = _moved(orderedIds, {
+      for (final clay in await _dao.getAllClays()) clay.id: clay.sortOrder,
+    });
+    if (moved.isEmpty) return;
+    await _dao.updateSortOrders(moved);
+    for (final entry in moved) {
+      await _trigger.afterClayWrite(entry.id);
+    }
+  }
+
+  /// [reorderClays] for glazes.
+  Future<void> reorderGlazes(List<String> orderedIds) async {
+    final moved = _moved(orderedIds, {
+      for (final glaze in await _dao.getAllGlazes()) glaze.id: glaze.sortOrder,
+    });
+    if (moved.isEmpty) return;
+    await _dao.updateGlazeSortOrders(moved);
+    for (final entry in moved) {
+      await _trigger.afterGlazeWrite(entry.id);
+    }
+  }
+
+  /// [reorderClays] for tags.
+  Future<void> reorderTags(List<String> orderedIds) async {
+    final moved = _moved(orderedIds, {
+      for (final tag in await _dao.getAllTags()) tag.id: tag.sortOrder,
+    });
+    if (moved.isEmpty) return;
+    await _dao.updateTagSortOrders(moved);
+    for (final entry in moved) {
+      await _trigger.afterTagWrite(entry.id);
+    }
+  }
+
+  /// The rows of [orderedIds] whose index differs from their stored
+  /// position. An id no longer stored — deleted while the list was on
+  /// screen — is skipped rather than written back.
+  static List<({String id, int sortOrder})> _moved(
+    List<String> orderedIds,
+    Map<String, int> stored,
+  ) => [
+    for (var i = 0; i < orderedIds.length; i++)
+      if (stored.containsKey(orderedIds[i]) && stored[orderedIds[i]] != i)
+        (id: orderedIds[i], sortOrder: i),
+  ];
 }

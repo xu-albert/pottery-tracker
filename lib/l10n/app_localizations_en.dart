@@ -130,6 +130,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get signedIn => 'Signed in';
+
+  @override
   String get notSignedIn => 'Not signed in';
 
   @override
@@ -285,13 +288,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tagsNone => 'None';
 
   @override
-  String get manageClaysSubtitle => 'Recently used clays appear first';
+  String get manageClaysSubtitle =>
+      'Drag to set the order the clay picker lists them in';
 
   @override
-  String get manageGlazesSubtitle => 'Recently used glazes appear first';
+  String get manageGlazesSubtitle =>
+      'Drag to set the order the glaze picker lists them in';
 
   @override
-  String get manageTagsSubtitle => 'Recently used tags appear first';
+  String get manageTagsSubtitle =>
+      'Drag to set the order the tag picker lists them in';
 
   @override
   String get searchClays => 'Search clays...';

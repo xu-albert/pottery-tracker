@@ -8,6 +8,7 @@ import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../widgets/material_reorder.dart';
 
 class ManageTagsScreen extends ConsumerStatefulWidget {
   const ManageTagsScreen({super.key});
@@ -18,13 +19,8 @@ class ManageTagsScreen extends ConsumerStatefulWidget {
 
 class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
   final _searchCtrl = TextEditingController();
-  List<String> _recentTagIds = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecents();
-  }
+  List<TagOption>? _pendingOrder;
+  List<TagOption>? _pendingBase;
 
   @override
   void dispose() {
@@ -32,29 +28,25 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadRecents() async {
-    final ids = await ref
-        .read(materialsDaoProvider)
-        .getRecentTagIds(limit: 100);
-    if (mounted) setState(() => _recentTagIds = ids);
-  }
-
-  List<TagOption> _sortByRecency(List<TagOption> tags) {
-    final recentSet = _recentTagIds.toSet();
-    final sorted = List<TagOption>.of(tags);
-    sorted.sort((a, b) {
-      final aRecent = recentSet.contains(a.id);
-      final bRecent = recentSet.contains(b.id);
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) {
-        return _recentTagIds
-            .indexOf(a.id)
-            .compareTo(_recentTagIds.indexOf(b.id));
-      }
-      return a.sortOrder.compareTo(b.sortOrder);
+  /// Moves a row of [shown] — the list on screen, which a drag not yet saved
+  /// may have reordered — and saves the whole order. [stored] is the list the
+  /// stream last delivered.
+  Future<void> _onReorder(
+    List<TagOption> stored,
+    List<TagOption> shown,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (newIndex > oldIndex) newIndex--;
+    final reordered = List<TagOption>.of(shown);
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+    setState(() {
+      _pendingOrder = reordered;
+      _pendingBase = stored;
     });
-    return sorted;
+    await ref.read(materialWriterProvider).reorderTags([
+      for (final tag in reordered) tag.id,
+    ]);
   }
 
   @override
@@ -85,13 +77,78 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
             );
           }
 
+          final ordered = withPendingOrder(
+            tags,
+            pending: _pendingOrder,
+            pendingBase: _pendingBase,
+          );
           final query = _searchCtrl.text.toLowerCase();
-          final sorted = _sortByRecency(tags);
-          final filtered = query.isEmpty
-              ? sorted
-              : sorted
+          // A search shows a subset, where a drag has no well-defined place in
+          // the whole list, so reordering is offered only on the full list.
+          final searching = query.isNotEmpty;
+          final filtered = searching
+              ? ordered
                     .where((t) => t.name.toLowerCase().contains(query))
-                    .toList();
+                    .toList()
+              : ordered;
+
+          Widget row(TagOption tag, int index) {
+            return Card(
+              key: ValueKey(tag.id),
+              margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSizes.xs),
+                child: Row(
+                  children: [
+                    if (searching)
+                      const SizedBox(width: AppSizes.sm)
+                    else
+                      MaterialDragHandle(index: index),
+                    const SizedBox(width: AppSizes.sm),
+                    GestureDetector(
+                      onTap: () => _showColorPicker(tag),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: tag.color != null
+                              ? TagColorPresets.hexToColor(tag.color!)
+                              : AppColors.inputText.withValues(alpha: 0.3),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppColors.divider,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSizes.sm),
+                    Expanded(
+                      child: Text(
+                        tag.name,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(l10n, tag),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _showDeleteDialog(l10n, tag),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          const listPadding = EdgeInsets.symmetric(
+            vertical: AppSizes.xs,
+            horizontal: AppSizes.md,
+          );
 
           return Column(
             children: [
@@ -121,64 +178,23 @@ class _ManageTagsScreenState extends ConsumerState<ManageTagsScreen> {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppSizes.xs,
-                    horizontal: AppSizes.md,
-                  ),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final tag = filtered[index];
-                    return Card(
-                      key: ValueKey(tag.id),
-                      margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSizes.xs),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: AppSizes.sm),
-                            GestureDetector(
-                              onTap: () => _showColorPicker(tag),
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: tag.color != null
-                                      ? TagColorPresets.hexToColor(tag.color!)
-                                      : AppColors.inputText.withValues(
-                                          alpha: 0.3,
-                                        ),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppColors.divider,
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppSizes.sm),
-                            Expanded(
-                              child: Text(
-                                tag.name,
-                                style: Theme.of(context).textTheme.bodyLarge,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _showEditDialog(l10n, tag),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _showDeleteDialog(l10n, tag),
-                            ),
-                          ],
-                        ),
+                child: searching
+                    ? ListView.builder(
+                        padding: listPadding,
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) =>
+                            row(filtered[index], index),
+                      )
+                    : ReorderableListView.builder(
+                        padding: listPadding,
+                        buildDefaultDragHandles: false,
+                        itemCount: filtered.length,
+                        onReorder: (oldIndex, newIndex) =>
+                            _onReorder(tags, ordered, oldIndex, newIndex),
+                        proxyDecorator: materialDragProxy,
+                        itemBuilder: (context, index) =>
+                            row(filtered[index], index),
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           );

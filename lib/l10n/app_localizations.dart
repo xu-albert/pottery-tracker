@@ -328,6 +328,12 @@ abstract class AppLocalizations {
   /// **'Signed in as {name}'**
   String signedInAs(String name);
 
+  /// Signed in status when the account has neither a name nor an email
+  ///
+  /// In en, this message translates to:
+  /// **'Signed in'**
+  String get signedIn;
+
   /// Not signed in status
   ///
   /// In en, this message translates to:
@@ -613,19 +619,19 @@ abstract class AppLocalizations {
   /// Subtitle for manage clays screen
   ///
   /// In en, this message translates to:
-  /// **'Recently used clays appear first'**
+  /// **'Drag to set the order the clay picker lists them in'**
   String get manageClaysSubtitle;
 
   /// Subtitle for manage glazes screen
   ///
   /// In en, this message translates to:
-  /// **'Recently used glazes appear first'**
+  /// **'Drag to set the order the glaze picker lists them in'**
   String get manageGlazesSubtitle;
 
   /// Subtitle for manage tags screen
   ///
   /// In en, this message translates to:
-  /// **'Recently used tags appear first'**
+  /// **'Drag to set the order the tag picker lists them in'**
   String get manageTagsSubtitle;
 
   /// Clay search field placeholder

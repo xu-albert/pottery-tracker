@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../database/database.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../../core/constants/app_sizes.dart';
 import 'photo_fullscreen.dart';
 
@@ -132,6 +133,7 @@ class PhotoGallery extends StatelessWidget {
   }
 
   void _showPhotoActions(BuildContext context, Photo photo) {
+    final l10n = AppLocalizations.of(context)!;
     showCupertinoModalPopup(
       context: context,
       builder: (ctx) => CupertinoActionSheet(
@@ -140,17 +142,43 @@ class PhotoGallery extends StatelessWidget {
             isDestructiveAction: true,
             onPressed: () {
               Navigator.pop(ctx);
-              onDelete?.call(photo);
+              _confirmDelete(context, photo);
             },
-            child: const Text('Delete Photo'),
+            child: Text(l10n.deletePhoto),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
       ),
     );
+  }
+
+  /// A deleted photo is gone from every device once it syncs, and the action
+  /// sheet's button sits where a stray second tap lands, so it is confirmed.
+  Future<void> _confirmDelete(BuildContext context, Photo photo) async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(l10n.deletePhotoConfirmTitle),
+        content: Text(l10n.deletePhotoConfirmMessage),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) onDelete?.call(photo);
   }
 }
 

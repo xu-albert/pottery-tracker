@@ -365,6 +365,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  /// Who this device is signed in as. A local-only user is not signed in,
+  /// although the app treats them as authenticated.
+  static String _signedInStatus(AppLocalizations l10n, AuthState auth) {
+    if (!auth.isSignedIn) return l10n.notSignedIn;
+    final name = [
+      auth.displayName,
+      auth.email,
+    ].firstWhere((s) => s != null && s.trim().isNotEmpty, orElse: () => null);
+    return name == null ? l10n.signedIn : l10n.signedInAs(name.trim());
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -398,6 +409,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // Account section
           _SectionHeader(title: l10n.connectedAccounts),
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined),
+            title: Text(_signedInStatus(l10n, auth)),
+          ),
           _providerTile(
             icon: Icons.g_mobiledata,
             name: l10n.google,

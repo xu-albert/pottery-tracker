@@ -23,12 +23,17 @@ class SignOutIncompleteException implements Exception {
 class AuthState {
   final AuthStatus status;
   final String? displayName;
+
+  /// Shown in place of [displayName] where the provider gave no name, as
+  /// Apple does after the first sign-in.
+  final String? email;
   final String? uid;
   final Set<String> linkedProviders;
 
   const AuthState({
     this.status = AuthStatus.unknown,
     this.displayName,
+    this.email,
     this.uid,
     this.linkedProviders = const {},
   });
@@ -98,6 +103,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = AuthState(
           status: AuthStatus.authenticated,
           displayName: currentUser.displayName,
+          email: currentUser.email,
           uid: currentUser.uid,
           linkedProviders: _providerIds(currentUser),
         );
@@ -126,6 +132,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = AuthState(
       status: AuthStatus.authenticated,
       displayName: user.displayName,
+      email: user.email,
       uid: user.uid,
       linkedProviders: _providerIds(user),
     );
@@ -184,6 +191,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = AuthState(
       status: state.status,
       displayName: user.displayName ?? state.displayName,
+      email: user.email ?? state.email,
       uid: user.uid,
       linkedProviders: providers,
     );
