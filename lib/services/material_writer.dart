@@ -4,7 +4,7 @@ import 'sync_trigger.dart';
 
 /// Finds or creates a material, and enqueues a sync for exactly the ones it
 /// created; renames a clay, and enqueues everything the rename rewrote;
-/// saves a new custom order, and enqueues exactly the materials it moved.
+/// saves a new custom order, and enqueues every material in it.
 ///
 /// `MaterialsDao.findOrCreate*` returns an existing row untouched, so a caller
 /// that enqueues unconditionally reports a write that never happened and
@@ -57,58 +57,54 @@ class MaterialWriter {
     }
   }
 
-  /// Saves the order the user dragged a Manage screen into, and queues
-  /// exactly the clays whose position changed: `sortOrder` is pushed
-  /// content, so a move that is never queued stays on this device, and the
-  /// other devices keep their order.
+  /// Saves the order the user dragged a Manage screen into, and queues every
+  /// clay in it: `sortOrder` is pushed content, and queuing the whole list
+  /// makes the last push win for the order as a whole, so a device that has
+  /// not pulled another device's reorder cannot mix the two.
   ///
   /// [orderedIds] is the whole list, top first. Positions are rewritten as
   /// 0..n-1, so rows that shared a position (as a pull can leave them) get
   /// distinct ones on the first reorder.
   Future<void> reorderClays(List<String> orderedIds) async {
-    final moved = _moved(orderedIds, {
-      for (final clay in await _dao.getAllClays()) clay.id: clay.sortOrder,
+    final orders = _ordersOf(orderedIds, {
+      for (final clay in await _dao.getAllClays()) clay.id,
     });
-    if (moved.isEmpty) return;
-    await _dao.updateSortOrders(moved);
-    for (final entry in moved) {
+    await _dao.updateSortOrders(orders);
+    for (final entry in orders) {
       await _trigger.afterClayWrite(entry.id);
     }
   }
 
   /// [reorderClays] for glazes.
   Future<void> reorderGlazes(List<String> orderedIds) async {
-    final moved = _moved(orderedIds, {
-      for (final glaze in await _dao.getAllGlazes()) glaze.id: glaze.sortOrder,
+    final orders = _ordersOf(orderedIds, {
+      for (final glaze in await _dao.getAllGlazes()) glaze.id,
     });
-    if (moved.isEmpty) return;
-    await _dao.updateGlazeSortOrders(moved);
-    for (final entry in moved) {
+    await _dao.updateGlazeSortOrders(orders);
+    for (final entry in orders) {
       await _trigger.afterGlazeWrite(entry.id);
     }
   }
 
   /// [reorderClays] for tags.
   Future<void> reorderTags(List<String> orderedIds) async {
-    final moved = _moved(orderedIds, {
-      for (final tag in await _dao.getAllTags()) tag.id: tag.sortOrder,
+    final orders = _ordersOf(orderedIds, {
+      for (final tag in await _dao.getAllTags()) tag.id,
     });
-    if (moved.isEmpty) return;
-    await _dao.updateTagSortOrders(moved);
-    for (final entry in moved) {
+    await _dao.updateTagSortOrders(orders);
+    for (final entry in orders) {
       await _trigger.afterTagWrite(entry.id);
     }
   }
 
-  /// The rows of [orderedIds] whose index differs from their stored
-  /// position. An id no longer stored — deleted while the list was on
-  /// screen — is skipped rather than written back.
-  static List<({String id, int sortOrder})> _moved(
+  /// Each row of [orderedIds] at its index. An id no longer [stored] —
+  /// deleted while the list was on screen — is skipped rather than written
+  /// back.
+  static List<({String id, int sortOrder})> _ordersOf(
     List<String> orderedIds,
-    Map<String, int> stored,
+    Set<String> stored,
   ) => [
     for (var i = 0; i < orderedIds.length; i++)
-      if (stored.containsKey(orderedIds[i]) && stored[orderedIds[i]] != i)
-        (id: orderedIds[i], sortOrder: i),
+      if (stored.contains(orderedIds[i])) (id: orderedIds[i], sortOrder: i),
   ];
 }

@@ -328,7 +328,7 @@ abstract class AppLocalizations {
   /// **'Signed in as {name}'**
   String signedInAs(String name);
 
-  /// Signed in status when the account has neither a name nor an email
+  /// Signed in status when the account has no name
   ///
   /// In en, this message translates to:
   /// **'Signed in'**

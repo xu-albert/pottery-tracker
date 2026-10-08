@@ -369,11 +369,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// although the app treats them as authenticated.
   static String _signedInStatus(AppLocalizations l10n, AuthState auth) {
     if (!auth.isSignedIn) return l10n.notSignedIn;
-    final name = [
-      auth.displayName,
-      auth.email,
-    ].firstWhere((s) => s != null && s.trim().isNotEmpty, orElse: () => null);
-    return name == null ? l10n.signedIn : l10n.signedInAs(name.trim());
+    final name = auth.displayName?.trim() ?? '';
+    return name.isEmpty ? l10n.signedIn : l10n.signedInAs(name);
   }
 
   @override

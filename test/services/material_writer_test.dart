@@ -139,46 +139,35 @@ void main() {
   });
 
   group('reordering', () {
-    test(
-      'saves the dragged order and queues only the clays it moved',
-      () async {
-        final a = await writer.clay('A');
-        final b = await writer.clay('B');
-        final c = await writer.clay('C');
-        final d = await writer.clay('D');
-        await queue.clear();
-
-        // Drag C to the top: A, B and C move down or up, D stays put.
-        await writer.reorderClays([c.id, a.id, b.id, d.id]);
-
-        expect((await db.materialsDao.getAllClays()).map((x) => x.name), [
-          'C',
-          'A',
-          'B',
-          'D',
-        ]);
-        expect(
-          await queue.getAll(),
-          [
-            SyncQueueEntry(operation: SyncOperation.pushClay, entityId: c.id),
-            SyncQueueEntry(operation: SyncOperation.pushClay, entityId: a.id),
-            SyncQueueEntry(operation: SyncOperation.pushClay, entityId: b.id),
-          ],
-          reason:
-              'sortOrder is pushed content, so every moved clay is owed to '
-              'the backup, and one that kept its place is not',
-        );
-      },
-    );
-
-    test('an order that changes nothing queues nothing', () async {
+    test('saves the dragged order and queues every clay in it', () async {
       final a = await writer.clay('A');
       final b = await writer.clay('B');
+      final c = await writer.clay('C');
+      final d = await writer.clay('D');
       await queue.clear();
 
-      await writer.reorderClays([a.id, b.id]);
+      // Drag C to the top: A, B and C move down or up, D stays put.
+      await writer.reorderClays([c.id, a.id, b.id, d.id]);
 
-      expect(await queue.getAll(), isEmpty);
+      expect((await db.materialsDao.getAllClays()).map((x) => x.name), [
+        'C',
+        'A',
+        'B',
+        'D',
+      ]);
+      expect(
+        await queue.getAll(),
+        [
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: c.id),
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: a.id),
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: b.id),
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: d.id),
+        ],
+        reason:
+            'every clay is queued, one that kept its place too, so the last '
+            'push makes the whole order win over a device that reordered '
+            'without pulling this one',
+      );
     });
 
     test('rows that shared a position get distinct ones', () async {
@@ -197,7 +186,7 @@ void main() {
         0,
         1,
       ]);
-      expect((await queue.getAll()).map((e) => e.entityId), [b.id]);
+      expect((await queue.getAll()).map((e) => e.entityId), [a.id, b.id]);
     });
 
     test('a clay deleted while the list was on screen is not written '

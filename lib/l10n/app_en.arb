@@ -84,7 +84,7 @@
     }
   },
   "signedIn": "Signed in",
-  "@signedIn": { "description": "Signed in status when the account has neither a name nor an email" },
+  "@signedIn": { "description": "Signed in status when the account has no name" },
   "notSignedIn": "Not signed in",
   "@notSignedIn": { "description": "Not signed in status" },
   "signOut": "Sign Out",
