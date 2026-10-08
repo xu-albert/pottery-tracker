@@ -103,7 +103,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/services/encryption_key_service_test.dart` | Pinned secure-storage options (iOS `first_unlock_this_device`, Android OAEP/GCM) at the plugin call boundary; key generation; legacy→hardened migration with a migrating copy on disk throughout (crash between delete and add), read-back, nothing ever written back under `unlocked`, `KeyStorageException` only when item and copy are both gone; iOS null confirmed against protected-data availability (`KeyStoreUnavailableException`); Android `AEADBadTagException` reads as no key, every other failure propagates; fake platform in `test/helpers/fake_secure_storage.dart` | 38 |
 | `test/services/feedback_service_test.dart` | Feedback Firestore write path | 4 |
 | `test/services/image_service_test.dart` | Re-encode fallback chain: a photo neither re-encode can process (or that encodes to nothing) is refused, never kept raw; a failed thumbnail re-encode or write leaves no file; `discardFiles` | 8 |
-| `test/services/material_writer_test.dart` | Clay/glaze/tag create-and-select, and a clay rename that queues the clay and every piece it renamed for its `clayType` alone, unless the piece is also queued for an edit of its own | 5 |
+| `test/services/material_writer_test.dart` | Clay/glaze/tag create-and-select, a clay rename that queues the clay and every piece it renamed for its `clayType` alone, unless the piece is also queued for an edit of its own, and a Manage-screen reorder that saves the dragged order and queues exactly the materials it moved (rows sharing a position get distinct ones; one deleted meanwhile is not written back) | 10 |
 | `test/services/piece_writer_test.dart` | `PieceWriter` piece-row and photo writes against a real Drift DB, each pinned to its `SyncTrigger` enqueue (`AGENTS.md`'s "every write path" rule for screens); photo files discarded when the database cannot adopt them, and deletions queued even when files will not delete | 23 |
 | `test/services/review_prompt_service_test.dart` | In-app-review gating (§6.12 mirrors this manually) | 9 |
 | `test/services/sync_cross_device_test.dart` | Two Drift databases as two devices sharing one fake Firestore/Storage — the sync audit's H1–H3 reproductions inverted: server-time piece stamps, and per-collection watermarks capped at the server's clock (offline edits pushed late, a server behind this device, a device whose clock runs ahead editing before another device, a legacy future-dated doc ahead of the server but behind this device, and the first pull after upgrading healing an edit and a photo URL missed a week earlier on a piece whose stamp the previous version moved since); glaze and tag renames and deletions here that do not keep another device's edit out, and a doc a pull skipped that the next pull reads again; pulls that skip entities with queued work, replace an unqueued piece with the cloud copy even under a stamp an earlier version dated ahead on a fast clock, and rewrite junction links without moving `updatedAt`, so a glaze or tag renamed elsewhere reaches the album row and search, and a glaze or tag deleted elsewhere does not hold back that device's other link changes; a push that lands while the pull reads its collection, which still counts as queued for that pull; photo URLs that reach other devices, are never nulled by `pushPhoto` or a pull, and are pushed back by the device holding one an earlier version nulled | 24 |
@@ -127,7 +127,10 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/features/feedback/enjoyment_dialog_test.dart` | Soft-ask dialog paths |
 | `test/features/feedback/feedback_screen_test.dart` | Form validation, submit states |
 | `test/features/recovery/database_recovery_screen_test.dart` | Pre-app recovery screen: copy per cause, user class and platform (Android is never offered the iOS-only transfer passphrase), passphrase unlock (right/wrong/mismatched key), confirmed re-download and start-fresh, failure reported |
-| `test/features/settings/settings_account_test.dart` | Sign-out/erase confirmation flow, including the words each partial outcome gets: a wipe that deleted nothing, one that left photo files, and one that erased everything but could not secure the device — each also when Firebase kept the session, in one message that carries both outcomes |
+| `test/features/piece_detail/metadata_form_picker_order_test.dart` | Clay, glaze and tag pickers list materials in their stored (Manage-screen) order; a recently used one stays in place and is offered as a pill |
+| `test/features/piece_detail/photo_gallery_test.dart` | Long-press "Delete Photo" asks for confirmation; Cancel keeps the photo, Delete deletes that one |
+| `test/features/settings/manage_materials_reorder_test.dart` | Manage Clays/Glazes/Tags drag-to-reorder: handles on every row, a drop saves the whole order and shows it before the save returns, a second drop builds on the first, the stream's later order wins, and a search hides the handles |
+| `test/features/settings/settings_account_test.dart` | "Signed in as {name}" (falling back to the email, then "Signed in"), "Not signed in" for a local-only user; sign-out/erase confirmation flow, including the words each partial outcome gets: a wipe that deleted nothing, one that left photo files, and one that erased everything but could not secure the device — each also when Firebase kept the session, in one message that carries both outcomes |
 | `test/features/settings/settings_screen_test.dart` | Materials section, title |
 | `test/features/settings/settings_sync_tile_test.dart` | Sync tile against the real notifier, service and queue: durable work awaiting server acknowledgement is a non-spinning “N changes waiting to back up” state; an authoritative unavailable result adds “No connection to the server” without quoting SDK text; slow work is not mislabeled offline; delivered work disappears while the authoritative pull runs; and an unuploaded photo keeps the tile off “All data backed up” |
 | `test/features/settings/settings_support_section_test.dart` | Support section offers feedback only: no donation link, tip jar, or outside page (Ko-fi removed app-wide, 2026-08-18 ruling) |
@@ -139,9 +142,9 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 ### 2.3 What's missing
 
 See §11 for the full prioritized list. Highlights: no test for `configureSqlCipher`'s call
-site in `AppDatabase.open()` (§11-P0); no widget tests for the piece-detail screen,
-manage-clays/glazes/tags screens, or the photo-reorder screen — all pure-checklist manual
-coverage today (§6.5, §6.7).
+site in `AppDatabase.open()` (§11-P0); no widget tests for the piece-detail screen
+or the photo-reorder screen — all pure-checklist manual coverage today (§6.5); the
+manage-clays/glazes/tags screens have reorder coverage only (§6.7).
 
 ### 2.4 How to run
 
@@ -231,6 +234,7 @@ alongside it below where they're still live risks).
 | `fix: close the core-audit deletion, privacy and sign-out gaps` (PT-CORE-07) | The committed `google-services.json` has no OAuth client, so Google Sign-In cannot work on Android. The file itself needs the Firebase console (`docs/android-release.md` section 4); the build now refuses a strict (`-PrequireReleaseSigning`) release until it has the web client | **UNGUARDED** in the suite — a Gradle check (`hasWebOAuthClient` in `android/app/build.gradle.kts`), verified by a dry-run `bundleRelease` failing on the committed file and passing with a web client added |
 | `fix: close the core-audit deletion, privacy and sign-out gaps` (PT-CORE-08) | `storage.rules` let a signed-in user write any object of any type or size anywhere in their own tree, using the shared Spark quota. Uploads are now admitted only at `users/{uid}/photos/{pieceId}/{file}.jpg`, as `image/jpeg` under 10 MiB; read and delete stay open across the owner's tree so account deletion can clear anything older clients wrote | **UNGUARDED** for the rules themselves (no emulator suite, §11-P1); `sync_service_test.dart`: `"uploads at the photo path storage.rules admits, as image/jpeg"` pins the app side the rules depend on |
 
+| `fix: restore material drag-to-reorder, show sign-in status, confirm photo delete` | Three Potter Journal e2e findings (2026-10-07). The searchable-pickers rewrite (`84f01d3`) removed drag-to-reorder from Manage Clays/Glazes/Tags and ordered both those screens and the pickers by recent use, so the stored order could no longer be set or seen; the handles are back, a drop saves through `MaterialWriter` and queues exactly the moved materials, and the pickers list the stored order (recents stay as pills). Settings had no signed-in status line though its strings existed. Long-press "Delete Photo" deleted at once, with no confirmation | `manage_materials_reorder_test.dart`, `material_writer_test.dart` (`reordering` group), `metadata_form_picker_order_test.dart` (fails on the recency sort); `settings_account_test.dart` (`signed-in status` group); `photo_gallery_test.dart` |
 **Rule:** every future `fix:` commit adds a row to this table in the same PR, naming the
 guarding test it added — or, if none was added, marking the row **UNGUARDED** and filing it
 into §11 rather than leaving it silent. A `fix:` PR that touches this file only to add its
@@ -515,7 +519,7 @@ agent/computer-use variant, current as of writing.
 
 ### 6.7 Settings Screen
 
-- [ ] Shows "Signed in as {name}" or "Not signed in"
+- [ ] Shows "Signed in as {name}" (the account email when the provider gave no name, e.g. Apple after the first sign-in) or "Not signed in" (local-only)
 - [ ] "Sign Out" → confirmation says every piece, photo and material on this device is deleted; "Cancel" is the default action and tapping outside the dialog does not sign out
 - [ ] Confirming "Sign Out & Erase" clears auth, deletes the local library and photo files, and redirects to sign-in
 - [ ] Signing in as a *different* account afterwards uploads nothing belonging to the previous one
@@ -545,9 +549,11 @@ agent/computer-use variant, current as of writing.
 - [ ] Drag handles visible on left side of each clay row
 - [ ] Dragging a clay to a new position reorders the list immediately
 - [ ] Reorder persists after leaving and returning to Manage Clays
-- [ ] Custom order reflected in piece detail clay picker dropdown
+- [ ] Custom order reflected in piece detail clay picker dropdown (recently used clays appear as pills under the field, not at the top of the list)
 - [ ] Newly added clays appear at the bottom of the list
 - [ ] Scale + elevation animation on dragged item
+- [ ] Typing in the search field hides the drag handles; clearing it brings them back
+- [ ] With another device signed in to the same account, the new order arrives there after a sync
 
 #### Clay Rename Propagation
 - [ ] Renaming a clay in Manage Clays → all pieces using that clay show the new name
@@ -563,6 +569,7 @@ agent/computer-use variant, current as of writing.
 - [ ] Changes reflected immediately in piece detail glaze picker
 - [ ] Drag handles visible on left side of each glaze row
 - [ ] Dragging a glaze to a new position reorders the list immediately
+- [ ] Reorder persists after leaving and returning, and is the order of the piece detail glaze picker
 - [ ] Scale + elevation animation on dragged item
 
 #### Glaze Rename Propagation
@@ -579,6 +586,7 @@ agent/computer-use variant, current as of writing.
 - [ ] Changes reflected immediately in piece detail tag picker
 - [ ] Drag handles visible on left side of each tag row
 - [ ] Dragging a tag to a new position reorders the list immediately
+- [ ] Reorder persists after leaving and returning, and is the order of the piece detail tag picker
 - [ ] Scale + elevation animation on dragged item
 
 #### Tag Colors
@@ -821,7 +829,7 @@ brief — this is the backlog the plan promised instead).
 | Two core-audit fixes have no behavioural guard: that iOS launch never deletes the Keychain item holding the database key (PT-CORE-01 has only `app_delegate_test.dart`, a static check that no Runner source calls `SecItemDelete`), and the Gradle check that refuses a strict Android release without a web OAuth client (PT-CORE-07). | Medium for PT-CORE-01 — reintroducing a launch-time Keychain wipe makes an existing journal unopenable; low for PT-CORE-07 | Medium — a hosted RunnerTests case that stores a secure-storage item and runs the launch path, run on Xcode Cloud; a Gradle TestKit or CI dry-run for the release check |
 | No dynamic-type / font-scale golden tests. | Low-medium | Small–medium |
 | No color-contrast verification, even one-time, for tag chip palette or splash sepia background. | Low | Small |
-| No widget tests for piece-detail screen, Manage Clays/Glazes/Tags screens, or the photo-reorder screen — pure manual coverage today. | Medium (piece-detail is the highest-traffic screen) | Medium — largest of the "add tests" items, worth splitting per screen |
+| No widget tests for piece-detail screen or the photo-reorder screen, and none for the Manage Clays/Glazes/Tags screens beyond drag-to-reorder (add, rename, delete, tag colour are manual) — pure manual coverage today. | Medium (piece-detail is the highest-traffic screen) | Medium — largest of the "add tests" items, worth splitting per screen |
 
 ### P3 — nice to have
 | Gap | Risk | Effort |
@@ -909,3 +917,4 @@ device, which is exactly why they're catalogued separately rather than folded in
 | 2026-09-16 | A debounced push that fails while the Settings tile already shows a sync error replaces that error's reason with its own instead of leaving the earlier failure's caption, and still raises no error when none was showing; a count refresh keeps the reason, and a new attempt or its result clears or replaces it. A photo whose upload failed stays in the pending count — counted from its local row once its best-effort queue attempt is retired, once per file while also queued, and across restarts — so the tile cannot say "All data backed up" until the file is uploaded and its URL published remotely. 5 regression cases added |
 | 2026-09-30 | A sync, full or incremental, advances "Last synced" only when its push queue drained and its pull succeeded: a pull that succeeds after the drain exhausted its retries keeps the previous time, and the unsent work stays reported as pending (a best-effort photo file upload still does not count as a failed drain). `SyncState.copyWith` no longer keeps a reason it was not given; the count refresh passes the reason on explicitly while an error is showing, so the tile still says why. 1 regression case added and 1 existing case strengthened |
 | 2026-09-30 | Offline Sync Now no longer waits in a visible spinner for Firestore server acknowledgement: server-only reachability gates each drain, live writes stay single-flight and revision-scoped behind a durable queue, independent entities run in ordered lanes, full snapshots use that same path, and deterministic batched junction IDs make retries converge. The tile says “N changes waiting to back up” while acknowledgement is pending and adds the offline caption only after an authoritative unavailable result. Last synced now requires captured pushes, authoritative pull and required photo metadata to succeed. The sync lock is never held while a write awaits the server: overlapping drains and taps attach to the live write for an entry revision or wait behind it, photo upload retries use the same lanes, and the queue stages work in bulk and retires each delivered entry as soon as it lands. Drains are scoped to the session that dispatched them, so a sign-out or switch never leaves the next session waiting on the previous one's writes, and the latest dispatch's failure is the sync's verdict. Repeated and forced taps during a sync attach to its writes in the air rather than staging and sending the snapshot again, and a photo already uploaded is never uploaded again, nor published once its piece is deleted mid-upload; a forced sync that did not finish no longer stops one after the next successful pull staging the snapshot, while a failed tap never makes a later one re-send what was delivered. 22 focused regressions added and existing durability/widget cases updated |
+| 2026-10-07 | Drag-to-reorder restored on Manage Clays/Glazes/Tags (lost in the April searchable-pickers rewrite); the pickers list the stored order and recently used materials stay as pills. Settings shows "Signed in as {name}" / "Not signed in"; long-press photo delete asks for confirmation. 21 cases added, the picker-order ones reproduced at this commit's base |

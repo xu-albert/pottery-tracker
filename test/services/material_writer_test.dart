@@ -137,4 +137,106 @@ void main() {
     };
     expect(pieces, {'p1': null, 'p2': null});
   });
+
+  group('reordering', () {
+    test(
+      'saves the dragged order and queues only the clays it moved',
+      () async {
+        final a = await writer.clay('A');
+        final b = await writer.clay('B');
+        final c = await writer.clay('C');
+        final d = await writer.clay('D');
+        await queue.clear();
+
+        // Drag C to the top: A, B and C move down or up, D stays put.
+        await writer.reorderClays([c.id, a.id, b.id, d.id]);
+
+        expect((await db.materialsDao.getAllClays()).map((x) => x.name), [
+          'C',
+          'A',
+          'B',
+          'D',
+        ]);
+        expect(
+          await queue.getAll(),
+          [
+            SyncQueueEntry(operation: SyncOperation.pushClay, entityId: c.id),
+            SyncQueueEntry(operation: SyncOperation.pushClay, entityId: a.id),
+            SyncQueueEntry(operation: SyncOperation.pushClay, entityId: b.id),
+          ],
+          reason:
+              'sortOrder is pushed content, so every moved clay is owed to '
+              'the backup, and one that kept its place is not',
+        );
+      },
+    );
+
+    test('an order that changes nothing queues nothing', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      await queue.clear();
+
+      await writer.reorderClays([a.id, b.id]);
+
+      expect(await queue.getAll(), isEmpty);
+    });
+
+    test('rows that shared a position get distinct ones', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      // A pull of rows written before sortOrder existed leaves them all at 0.
+      await db.materialsDao.updateSortOrders([
+        (id: a.id, sortOrder: 0),
+        (id: b.id, sortOrder: 0),
+      ]);
+      await queue.clear();
+
+      await writer.reorderClays([a.id, b.id]);
+
+      expect((await db.materialsDao.getAllClays()).map((x) => x.sortOrder), [
+        0,
+        1,
+      ]);
+      expect((await queue.getAll()).map((e) => e.entityId), [b.id]);
+    });
+
+    test('a clay deleted while the list was on screen is not written '
+        'back', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      await db.materialsDao.deleteClay(a.id);
+      await queue.clear();
+
+      await writer.reorderClays([b.id, a.id]);
+
+      expect((await db.materialsDao.getAllClays()).map((x) => x.id), [b.id]);
+      expect((await queue.getAll()).map((e) => e.entityId), [b.id]);
+    });
+
+    test('glazes and tags follow the same rule', () async {
+      final g1 = await writer.glaze('Celadon');
+      final g2 = await writer.glaze('Tenmoku');
+      final t1 = await writer.tag('Gift');
+      final t2 = await writer.tag('Sold');
+      await queue.clear();
+
+      await writer.reorderGlazes([g2.id, g1.id]);
+      await writer.reorderTags([t2.id, t1.id]);
+
+      expect((await db.materialsDao.getAllGlazes()).map((x) => x.name), [
+        'Tenmoku',
+        'Celadon',
+      ]);
+      expect((await db.materialsDao.getAllTags()).map((x) => x.name), [
+        'Sold',
+        'Gift',
+      ]);
+      expect(await queue.getAll(), [
+        SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: g2.id),
+        SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: g1.id),
+        SyncQueueEntry(operation: SyncOperation.pushTag, entityId: t2.id),
+        SyncQueueEntry(operation: SyncOperation.pushTag, entityId: t1.id),
+      ]);
+    });
+  });
 }

@@ -120,6 +120,8 @@ void main() {
   Future<void> pumpSettings(
     WidgetTester tester, {
     Set<String> linkedProviders = const {'google.com', 'apple.com'},
+    String? displayName = 'A',
+    String? email,
     bool localOnly = false,
     bool sessionHeld = false,
     bool underRouter = false,
@@ -141,7 +143,8 @@ void main() {
                   : AuthState(
                       status: AuthStatus.authenticated,
                       uid: 'user-a',
-                      displayName: 'A',
+                      displayName: displayName,
+                      email: email,
                       linkedProviders: linkedProviders,
                     ),
               sessionHeld: sessionHeld,
@@ -167,6 +170,39 @@ void main() {
     );
     await tester.pump();
   }
+
+  group('signed-in status', () {
+    testWidgets('names the account this device is signed in as', (
+      tester,
+    ) async {
+      await pumpSettings(tester, email: 'a@example.com');
+
+      expect(find.text('Signed in as A'), findsOneWidget);
+    });
+
+    testWidgets('falls back to the email when the provider gave no name', (
+      tester,
+    ) async {
+      // Apple gives the name on the first sign-in only.
+      await pumpSettings(tester, displayName: null, email: 'a@example.com');
+
+      expect(find.text('Signed in as a@example.com'), findsOneWidget);
+    });
+
+    testWidgets('still says signed in when there is neither', (tester) async {
+      await pumpSettings(tester, displayName: '', email: null);
+
+      expect(find.text('Signed in'), findsOneWidget);
+      expect(find.text('Not signed in'), findsNothing);
+    });
+
+    testWidgets('a local-only user is not signed in', (tester) async {
+      await pumpSettings(tester, localOnly: true);
+
+      expect(find.text('Not signed in'), findsOneWidget);
+      expect(find.textContaining('Signed in as'), findsNothing);
+    });
+  });
 
   group('sign-out confirmation', () {
     testWidgets('says plainly that this device\'s data will be deleted', (
