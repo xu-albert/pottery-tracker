@@ -115,20 +115,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return;
 
-    // Sort by recency: recently used clays first, then the rest
-    final recentNames = _recentClayNames.toSet();
-    clays.sort((a, b) {
-      final aRecent = recentNames.contains(a.name);
-      final bRecent = recentNames.contains(b.name);
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) {
-        return _recentClayNames
-            .indexOf(a.name)
-            .compareTo(_recentClayNames.indexOf(b.name));
-      }
-      return a.sortOrder.compareTo(b.sortOrder);
-    });
+    // Listed in the order set in Manage Clays; recently used ones are
+    // offered as pills under the field instead.
 
     final searchCtrl = TextEditingController();
 
@@ -304,21 +292,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return;
 
-    // Sort by recency: recently used glazes first, then the rest
-    final recentGlazeIds = _recentGlazes.map((g) => g.id).toList();
-    final recentGlazeIdSet = recentGlazeIds.toSet();
-    allGlazes.sort((a, b) {
-      final aRecent = recentGlazeIdSet.contains(a.id);
-      final bRecent = recentGlazeIdSet.contains(b.id);
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) {
-        return recentGlazeIds
-            .indexOf(a.id)
-            .compareTo(recentGlazeIds.indexOf(b.id));
-      }
-      return a.sortOrder.compareTo(b.sortOrder);
-    });
+    // Listed in the order set in Manage Glazes; recently used ones are
+    // offered as pills under the field instead.
 
     final selectedIds = widget.selectedGlazes.map((g) => g.id).toSet();
     final searchCtrl = TextEditingController();
@@ -500,19 +475,8 @@ class MetadataFormState extends State<MetadataForm> {
 
     if (!mounted) return;
 
-    // Sort by recency: recently used tags first, then the rest
-    final recentTagIds = _recentTags.map((t) => t.id).toList();
-    final recentTagIdSet = recentTagIds.toSet();
-    allTags.sort((a, b) {
-      final aRecent = recentTagIdSet.contains(a.id);
-      final bRecent = recentTagIdSet.contains(b.id);
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) {
-        return recentTagIds.indexOf(a.id).compareTo(recentTagIds.indexOf(b.id));
-      }
-      return a.sortOrder.compareTo(b.sortOrder);
-    });
+    // Listed in the order set in Manage Tags; recently used ones are
+    // offered as pills under the field instead.
 
     final selectedIds = widget.selectedTags.map((t) => t.id).toSet();
     final searchCtrl = TextEditingController();

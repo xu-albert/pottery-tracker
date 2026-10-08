@@ -137,4 +137,139 @@ void main() {
     };
     expect(pieces, {'p1': null, 'p2': null});
   });
+
+  group('reordering', () {
+    test('saves the dragged order and queues every clay in it', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      final c = await writer.clay('C');
+      final d = await writer.clay('D');
+      await queue.clear();
+
+      // Drag C to the top: A, B and C move down or up, D stays put.
+      await writer.reorderClays([c.id, a.id, b.id, d.id]);
+
+      expect((await db.materialsDao.getAllClays()).map((x) => x.name), [
+        'C',
+        'A',
+        'B',
+        'D',
+      ]);
+      expect(
+        await queue.getAll(),
+        [
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: c.id),
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: a.id),
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: b.id),
+          SyncQueueEntry(operation: SyncOperation.pushClay, entityId: d.id),
+        ],
+        reason:
+            'every clay is queued, one that kept its place too, so the last '
+            'push makes the whole order win over a device that reordered '
+            'without pulling this one',
+      );
+      expect(
+        [for (final entry in await queue.getAll()) entry.changedFields],
+        List.filled(4, ['sortOrder']),
+        reason: 'a drag must not push a name another device may have changed',
+      );
+    });
+
+    test('a reordered material with an edit of its own queued still pushes '
+        'whole', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      final t1 = await writer.tag('Gift');
+      final t2 = await writer.tag('Sold');
+      await queue.clear();
+      final trigger = SyncTrigger(queue);
+
+      await writer.renameClay(a.id, 'Stoneware');
+      await writer.reorderClays([b.id, a.id]);
+      await writer.reorderTags([t2.id, t1.id]);
+      await db.materialsDao.updateTagColor(t1.id, '#00FF00');
+      await trigger.afterTagWrite(t1.id);
+
+      final queued = await queue.getAll();
+      expect(
+        {for (final entry in queued) entry.entityId: entry.changedFields},
+        {
+          a.id: null,
+          b.id: ['sortOrder'],
+          t2.id: ['sortOrder'],
+          t1.id: null,
+        },
+      );
+      expect(
+        {for (final entry in queued) entry.entityId: queue.fieldsOwed(entry)},
+        {
+          a.id: null,
+          b.id: ['sortOrder'],
+          t2.id: ['sortOrder'],
+          t1.id: null,
+        },
+      );
+    });
+
+    test('rows that shared a position get distinct ones', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      // A pull of rows written before sortOrder existed leaves them all at 0.
+      await db.materialsDao.updateSortOrders([
+        (id: a.id, sortOrder: 0),
+        (id: b.id, sortOrder: 0),
+      ]);
+      await queue.clear();
+
+      await writer.reorderClays([a.id, b.id]);
+
+      expect((await db.materialsDao.getAllClays()).map((x) => x.sortOrder), [
+        0,
+        1,
+      ]);
+      expect((await queue.getAll()).map((e) => e.entityId), [a.id, b.id]);
+    });
+
+    test('a clay deleted while the list was on screen is not written '
+        'back', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      await db.materialsDao.deleteClay(a.id);
+      await queue.clear();
+
+      await writer.reorderClays([b.id, a.id]);
+
+      expect((await db.materialsDao.getAllClays()).map((x) => x.id), [b.id]);
+      expect((await queue.getAll()).map((e) => e.entityId), [b.id]);
+    });
+
+    test('glazes and tags follow the same rule', () async {
+      final g1 = await writer.glaze('Celadon');
+      final g2 = await writer.glaze('Tenmoku');
+      final t1 = await writer.tag('Gift');
+      final t2 = await writer.tag('Sold');
+      await queue.clear();
+
+      await writer.reorderGlazes([g2.id, g1.id]);
+      await writer.reorderTags([t2.id, t1.id]);
+
+      expect((await db.materialsDao.getAllGlazes()).map((x) => x.name), [
+        'Tenmoku',
+        'Celadon',
+      ]);
+      expect((await db.materialsDao.getAllTags()).map((x) => x.name), [
+        'Sold',
+        'Gift',
+      ]);
+      expect(await queue.getAll(), [
+        SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: g2.id),
+        SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: g1.id),
+        SyncQueueEntry(operation: SyncOperation.pushTag, entityId: t2.id),
+        SyncQueueEntry(operation: SyncOperation.pushTag, entityId: t1.id),
+      ]);
+      expect([
+        for (final entry in await queue.getAll()) entry.changedFields,
+      ], List.filled(4, ['sortOrder']));
+    });
+  });
 }

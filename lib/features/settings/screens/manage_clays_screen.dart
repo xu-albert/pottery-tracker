@@ -7,6 +7,7 @@ import '../../../database/database.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/materials_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../widgets/material_reorder.dart';
 
 class ManageClaysScreen extends ConsumerStatefulWidget {
   const ManageClaysScreen({super.key});
@@ -17,13 +18,8 @@ class ManageClaysScreen extends ConsumerStatefulWidget {
 
 class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
   final _searchCtrl = TextEditingController();
-  List<String> _recentClayNames = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecents();
-  }
+  List<ClayOption>? _pendingOrder;
+  List<ClayOption>? _pendingBase;
 
   @override
   void dispose() {
@@ -31,29 +27,25 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
     super.dispose();
   }
 
-  Future<void> _loadRecents() async {
-    final names = await ref
-        .read(materialsDaoProvider)
-        .getRecentClayNames(limit: 100);
-    if (mounted) setState(() => _recentClayNames = names);
-  }
-
-  List<ClayOption> _sortByRecency(List<ClayOption> clays) {
-    final recentSet = _recentClayNames.toSet();
-    final sorted = List<ClayOption>.of(clays);
-    sorted.sort((a, b) {
-      final aRecent = recentSet.contains(a.name);
-      final bRecent = recentSet.contains(b.name);
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) {
-        return _recentClayNames
-            .indexOf(a.name)
-            .compareTo(_recentClayNames.indexOf(b.name));
-      }
-      return a.sortOrder.compareTo(b.sortOrder);
+  /// Moves a row of [shown] — the list on screen, which a drag not yet saved
+  /// may have reordered — and saves the whole order. [stored] is the list the
+  /// stream last delivered.
+  Future<void> _onReorder(
+    List<ClayOption> stored,
+    List<ClayOption> shown,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (newIndex > oldIndex) newIndex--;
+    final reordered = List<ClayOption>.of(shown);
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+    setState(() {
+      _pendingOrder = reordered;
+      _pendingBase = stored;
     });
-    return sorted;
+    await ref.read(materialWriterProvider).reorderClays([
+      for (final clay in reordered) clay.id,
+    ]);
   }
 
   @override
@@ -84,13 +76,59 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
             );
           }
 
+          final ordered = withPendingOrder(
+            clays,
+            pending: _pendingOrder,
+            pendingBase: _pendingBase,
+          );
           final query = _searchCtrl.text.toLowerCase();
-          final sorted = _sortByRecency(clays);
-          final filtered = query.isEmpty
-              ? sorted
-              : sorted
+          // A search shows a subset, where a drag has no well-defined place in
+          // the whole list, so reordering is offered only on the full list.
+          final searching = query.isNotEmpty;
+          final filtered = searching
+              ? ordered
                     .where((c) => c.name.toLowerCase().contains(query))
-                    .toList();
+                    .toList()
+              : ordered;
+
+          Widget row(ClayOption clay, int index) {
+            return Card(
+              key: ValueKey(clay.id),
+              margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSizes.xs),
+                child: Row(
+                  children: [
+                    if (searching)
+                      const SizedBox(width: AppSizes.sm)
+                    else
+                      MaterialDragHandle(index: index),
+                    Expanded(
+                      child: Text(
+                        clay.name,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(l10n, clay),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _showDeleteDialog(l10n, clay),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          const listPadding = EdgeInsets.symmetric(
+            vertical: AppSizes.xs,
+            horizontal: AppSizes.md,
+          );
 
           return Column(
             children: [
@@ -120,44 +158,23 @@ class _ManageClaysScreenState extends ConsumerState<ManageClaysScreen> {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppSizes.xs,
-                    horizontal: AppSizes.md,
-                  ),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final clay = filtered[index];
-                    return Card(
-                      key: ValueKey(clay.id),
-                      margin: const EdgeInsets.symmetric(vertical: AppSizes.xs),
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSizes.xs),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: AppSizes.sm),
-                            Expanded(
-                              child: Text(
-                                clay.name,
-                                style: Theme.of(context).textTheme.bodyLarge,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _showEditDialog(l10n, clay),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _showDeleteDialog(l10n, clay),
-                            ),
-                          ],
-                        ),
+                child: searching
+                    ? ListView.builder(
+                        padding: listPadding,
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) =>
+                            row(filtered[index], index),
+                      )
+                    : ReorderableListView.builder(
+                        padding: listPadding,
+                        buildDefaultDragHandles: false,
+                        itemCount: filtered.length,
+                        onReorder: (oldIndex, newIndex) =>
+                            _onReorder(clays, ordered, oldIndex, newIndex),
+                        proxyDecorator: materialDragProxy,
+                        itemBuilder: (context, index) =>
+                            row(filtered[index], index),
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           );

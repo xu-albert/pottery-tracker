@@ -222,6 +222,149 @@ void main() {
     expect(piece.clayType, 'B-Mix');
   });
 
+  // A reorder queues every material in the list, and the drain sends them
+  // with no pull first. Sent whole, this device's copy of a material would
+  // put back a name another device gave it since this one last pulled, and
+  // leave the pieces that rename reached naming a clay the list no longer has.
+  test('a reorder on a stale device keeps the rename another device made to '
+      'a reordered clay', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = SyncService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final (misspelt, _) = await db.materialsDao.findOrCreateClay('Stonewar');
+    final (porcelain, _) = await db.materialsDao.findOrCreateClay('Porcelain');
+    final created = DateTime.now().subtract(const Duration(days: 7));
+    await db.piecesDao.insertPiece(
+      PiecesCompanion(
+        id: const Value('p1'),
+        clayType: const Value('Stonewar'),
+        createdAt: Value(created),
+        updatedAt: Value(created),
+      ),
+    );
+
+    final container = _container(queue, service);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = _syncedOnce(container);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.timeout(const Duration(seconds: 5));
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    // On the phone the user fixes the clay's name, and the phone pushes the
+    // clay and the piece the rename reached.
+    await firestore.doc('users/user-1/clays/${misspelt.id}').update({
+      'name': 'Stoneware',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await firestore.doc('users/user-1/pieces/p1').update({
+      'clayType': 'Stoneware',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    // On this iPad, which has not pulled since, the user drags Porcelain up.
+    await MaterialWriter(
+      db.materialsDao,
+      container.read(syncTriggerProvider),
+    ).reorderClays([porcelain.id, misspelt.id]);
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    final remote = await firestore
+        .doc('users/user-1/clays/${misspelt.id}')
+        .get();
+    expect(remote['name'], 'Stoneware');
+    expect(remote['sortOrder'], 1);
+
+    await container.read(syncStateProvider.notifier).syncNow();
+    expect((await db.materialsDao.getAllClays()).map((c) => c.name), [
+      'Porcelain',
+      'Stoneware',
+    ]);
+    expect((await db.piecesDao.getPieceById('p1'))!.clayType, 'Stoneware');
+  });
+
+  test('a reorder on a stale device keeps the glaze rename and tag colour '
+      'another device made', () async {
+    SharedPreferences.setMockInitialValues({});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final firestore = FakeFirebaseFirestore();
+    final queue = SyncQueue();
+    final service = SyncService(
+      db,
+      firestore,
+      MockFirebaseStorage(),
+      queue: queue,
+    );
+    final materials = db.materialsDao;
+    final (celadon, _) = await materials.findOrCreateGlaze('Celadon');
+    final (tenmoku, _) = await materials.findOrCreateGlaze('Tenmoku');
+    final (gift, _) = await materials.findOrCreateTag('Gift');
+    final (sold, _) = await materials.findOrCreateTag('Sold');
+    await materials.updateTagColor(gift.id, '#E53935');
+
+    final container = _container(queue, service);
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    final synced = _syncedOnce(container);
+    container.read(authProvider.notifier).state = const AuthState(
+      status: AuthStatus.authenticated,
+      uid: 'user-1',
+    );
+    await synced.timeout(const Duration(seconds: 5));
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    // On the phone the user renames a glaze and recolours a tag.
+    await firestore.doc('users/user-1/glazes/${celadon.id}').update({
+      'name': 'Celadon Blue',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await firestore.doc('users/user-1/tags/${gift.id}').update({
+      'color': '#43A047',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    // On this iPad, which has not pulled since, the user drags both lists.
+    final writer = MaterialWriter(
+      materials,
+      container.read(syncTriggerProvider),
+    );
+    await writer.reorderGlazes([tenmoku.id, celadon.id]);
+    await writer.reorderTags([sold.id, gift.id]);
+    await _until(() async => (await queue.getAll()).isEmpty);
+
+    final glaze = await firestore
+        .doc('users/user-1/glazes/${celadon.id}')
+        .get();
+    expect(glaze['name'], 'Celadon Blue');
+    expect(glaze['sortOrder'], 1);
+    final tag = await firestore.doc('users/user-1/tags/${gift.id}').get();
+    expect(tag['name'], 'Gift');
+    expect(tag['color'], '#43A047');
+    expect(tag['sortOrder'], 1);
+
+    await container.read(syncStateProvider.notifier).syncNow();
+    expect((await materials.getAllGlazes()).map((g) => g.name), [
+      'Tenmoku',
+      'Celadon Blue',
+    ]);
+    expect(
+      [for (final t in await materials.getAllTags()) (t.name, t.color)],
+      [('Sold', sold.color), ('Gift', '#43A047')],
+    );
+  });
+
   // A drain reads the queue once, then reaches each entry when its lane does.
   // An edit made in between widens the queued rename to the whole row, and a
   // push sending only the clay must not be the one that answers for it.

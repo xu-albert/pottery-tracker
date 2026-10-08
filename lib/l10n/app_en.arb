@@ -83,6 +83,8 @@
       "name": { "type": "String" }
     }
   },
+  "signedIn": "Signed in",
+  "@signedIn": { "description": "Signed in status when the account has no name" },
   "notSignedIn": "Not signed in",
   "@notSignedIn": { "description": "Not signed in status" },
   "signOut": "Sign Out",
@@ -204,11 +206,11 @@
   "@selectTags": { "description": "Tag multi-select picker title" },
   "tagsNone": "None",
   "@tagsNone": { "description": "No tags selected" },
-  "manageClaysSubtitle": "Recently used clays appear first",
+  "manageClaysSubtitle": "Drag to set the order the clay picker lists them in",
   "@manageClaysSubtitle": { "description": "Subtitle for manage clays screen" },
-  "manageGlazesSubtitle": "Recently used glazes appear first",
+  "manageGlazesSubtitle": "Drag to set the order the glaze picker lists them in",
   "@manageGlazesSubtitle": { "description": "Subtitle for manage glazes screen" },
-  "manageTagsSubtitle": "Recently used tags appear first",
+  "manageTagsSubtitle": "Drag to set the order the tag picker lists them in",
   "@manageTagsSubtitle": { "description": "Subtitle for manage tags screen" },
   "searchClays": "Search clays...",
   "@searchClays": { "description": "Clay search field placeholder" },

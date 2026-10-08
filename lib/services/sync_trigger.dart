@@ -39,23 +39,44 @@ class SyncTrigger {
     _onEnqueue?.call();
   }
 
-  Future<void> afterClayWrite(String clayId) async {
+  Future<void> afterClayWrite(
+    String clayId, {
+    List<String>? changedFields,
+  }) async {
     await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushClay, entityId: clayId),
+      SyncQueueEntry(
+        operation: SyncOperation.pushClay,
+        entityId: clayId,
+        changedFields: changedFields,
+      ),
     );
     _onEnqueue?.call();
   }
 
-  Future<void> afterGlazeWrite(String glazeId) async {
+  Future<void> afterGlazeWrite(
+    String glazeId, {
+    List<String>? changedFields,
+  }) async {
     await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushGlaze, entityId: glazeId),
+      SyncQueueEntry(
+        operation: SyncOperation.pushGlaze,
+        entityId: glazeId,
+        changedFields: changedFields,
+      ),
     );
     _onEnqueue?.call();
   }
 
-  Future<void> afterTagWrite(String tagId) async {
+  Future<void> afterTagWrite(
+    String tagId, {
+    List<String>? changedFields,
+  }) async {
     await _queue.enqueue(
-      SyncQueueEntry(operation: SyncOperation.pushTag, entityId: tagId),
+      SyncQueueEntry(
+        operation: SyncOperation.pushTag,
+        entityId: tagId,
+        changedFields: changedFields,
+      ),
     );
     _onEnqueue?.call();
   }

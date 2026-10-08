@@ -486,6 +486,16 @@ class SyncService {
       // other devices have already passed.
       'updatedAt': FieldValue.serverTimestamp(),
     };
+    await _write(doc, data, fields);
+  }
+
+  /// Writes [data] whole, or only [fields] of it with its `updatedAt`. A doc
+  /// the cloud does not hold yet has no fields to keep, and is written whole.
+  static Future<void> _write(
+    DocumentReference doc,
+    Map<String, Object?> data,
+    List<String>? fields,
+  ) async {
     if (fields != null) {
       try {
         await doc.update({
@@ -548,41 +558,54 @@ class SyncService {
     );
   }
 
-  Future<void> pushClay(String uid, String clayId) async {
+  /// Pushes the whole row, or only [fields] of it, as [pushPiece] does: a
+  /// reorder sends just `sortOrder`, so a device that has not pulled another
+  /// device's rename cannot write its older name over it.
+  Future<void> pushClay(
+    String uid,
+    String clayId, {
+    List<String>? fields,
+  }) async {
     final clays = await _db.materialsDao.getAllClays();
     final clay = clays.where((c) => c.id == clayId).firstOrNull;
     if (clay == null) return;
-    await _col(uid, 'clays').doc(clayId).set({
+    await _write(_col(uid, 'clays').doc(clayId), {
       'name': clay.name,
       'sortOrder': clay.sortOrder,
       'createdAt': Timestamp.fromDate(clay.createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, fields);
   }
 
-  Future<void> pushGlaze(String uid, String glazeId) async {
+  /// [pushClay] for glazes.
+  Future<void> pushGlaze(
+    String uid,
+    String glazeId, {
+    List<String>? fields,
+  }) async {
     final glazes = await _db.materialsDao.getAllGlazes();
     final glaze = glazes.where((g) => g.id == glazeId).firstOrNull;
     if (glaze == null) return;
-    await _col(uid, 'glazes').doc(glazeId).set({
+    await _write(_col(uid, 'glazes').doc(glazeId), {
       'name': glaze.name,
       'sortOrder': glaze.sortOrder,
       'createdAt': Timestamp.fromDate(glaze.createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, fields);
   }
 
-  Future<void> pushTag(String uid, String tagId) async {
+  /// [pushClay] for tags, whose colour a reorder does not send either.
+  Future<void> pushTag(String uid, String tagId, {List<String>? fields}) async {
     final tags = await _db.materialsDao.getAllTags();
     final tag = tags.where((t) => t.id == tagId).firstOrNull;
     if (tag == null) return;
-    await _col(uid, 'tags').doc(tagId).set({
+    await _write(_col(uid, 'tags').doc(tagId), {
       'name': tag.name,
       'color': tag.color,
       'sortOrder': tag.sortOrder,
       'createdAt': Timestamp.fromDate(tag.createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, fields);
   }
 
   Future<void> pushPieceGlazes(String uid, String pieceId) async {
