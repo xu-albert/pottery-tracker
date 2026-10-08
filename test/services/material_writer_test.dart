@@ -168,6 +168,47 @@ void main() {
             'push makes the whole order win over a device that reordered '
             'without pulling this one',
       );
+      expect(
+        [for (final entry in await queue.getAll()) entry.changedFields],
+        List.filled(4, ['sortOrder']),
+        reason: 'a drag must not push a name another device may have changed',
+      );
+    });
+
+    test('a reordered material with an edit of its own queued still pushes '
+        'whole', () async {
+      final a = await writer.clay('A');
+      final b = await writer.clay('B');
+      final t1 = await writer.tag('Gift');
+      final t2 = await writer.tag('Sold');
+      await queue.clear();
+      final trigger = SyncTrigger(queue);
+
+      await writer.renameClay(a.id, 'Stoneware');
+      await writer.reorderClays([b.id, a.id]);
+      await writer.reorderTags([t2.id, t1.id]);
+      await db.materialsDao.updateTagColor(t1.id, '#00FF00');
+      await trigger.afterTagWrite(t1.id);
+
+      final queued = await queue.getAll();
+      expect(
+        {for (final entry in queued) entry.entityId: entry.changedFields},
+        {
+          a.id: null,
+          b.id: ['sortOrder'],
+          t2.id: ['sortOrder'],
+          t1.id: null,
+        },
+      );
+      expect(
+        {for (final entry in queued) entry.entityId: queue.fieldsOwed(entry)},
+        {
+          a.id: null,
+          b.id: ['sortOrder'],
+          t2.id: ['sortOrder'],
+          t1.id: null,
+        },
+      );
     });
 
     test('rows that shared a position get distinct ones', () async {
@@ -226,6 +267,9 @@ void main() {
         SyncQueueEntry(operation: SyncOperation.pushTag, entityId: t2.id),
         SyncQueueEntry(operation: SyncOperation.pushTag, entityId: t1.id),
       ]);
+      expect([
+        for (final entry in await queue.getAll()) entry.changedFields,
+      ], List.filled(4, ['sortOrder']));
     });
   });
 }

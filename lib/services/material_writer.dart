@@ -62,6 +62,10 @@ class MaterialWriter {
   /// makes the last push win for the order as a whole, so a device that has
   /// not pulled another device's reorder cannot mix the two.
   ///
+  /// Each clay is queued for its `sortOrder` alone. This device may not have
+  /// pulled another device's rename, and a drag must not send its older name
+  /// over it. A clay also queued for an edit of its own still pushes whole.
+  ///
   /// [orderedIds] is the whole list, top first. Positions are rewritten as
   /// 0..n-1, so rows that shared a position (as a pull can leave them) get
   /// distinct ones on the first reorder.
@@ -71,7 +75,10 @@ class MaterialWriter {
     });
     await _dao.updateSortOrders(orders);
     for (final entry in orders) {
-      await _trigger.afterClayWrite(entry.id);
+      await _trigger.afterClayWrite(
+        entry.id,
+        changedFields: const ['sortOrder'],
+      );
     }
   }
 
@@ -82,18 +89,24 @@ class MaterialWriter {
     });
     await _dao.updateGlazeSortOrders(orders);
     for (final entry in orders) {
-      await _trigger.afterGlazeWrite(entry.id);
+      await _trigger.afterGlazeWrite(
+        entry.id,
+        changedFields: const ['sortOrder'],
+      );
     }
   }
 
-  /// [reorderClays] for tags.
+  /// [reorderClays] for tags, whose colour a drag does not send either.
   Future<void> reorderTags(List<String> orderedIds) async {
     final orders = _ordersOf(orderedIds, {
       for (final tag in await _dao.getAllTags()) tag.id,
     });
     await _dao.updateTagSortOrders(orders);
     for (final entry in orders) {
-      await _trigger.afterTagWrite(entry.id);
+      await _trigger.afterTagWrite(
+        entry.id,
+        changedFields: const ['sortOrder'],
+      );
     }
   }
 

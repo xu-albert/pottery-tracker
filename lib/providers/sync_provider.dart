@@ -839,11 +839,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       case SyncOperation.pushPhotoFile:
         await _syncService.uploadPhotoFile(uid, entry.entityId);
       case SyncOperation.pushClay:
-        await _syncService.pushClay(uid, entry.entityId);
+        await _syncService.pushClay(uid, entry.entityId, fields: fields);
       case SyncOperation.pushGlaze:
-        await _syncService.pushGlaze(uid, entry.entityId);
+        await _syncService.pushGlaze(uid, entry.entityId, fields: fields);
       case SyncOperation.pushTag:
-        await _syncService.pushTag(uid, entry.entityId);
+        await _syncService.pushTag(uid, entry.entityId, fields: fields);
       case SyncOperation.pushPieceGlazes:
         await _syncService.pushPieceGlazes(uid, entry.entityId);
       case SyncOperation.pushPieceTags:

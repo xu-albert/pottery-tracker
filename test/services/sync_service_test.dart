@@ -330,6 +330,41 @@ void main() {
       final doc = await col('clays').doc('nonexistent').get();
       expect(doc.exists, false);
     });
+
+    test('a field-scoped push writes only those fields', () async {
+      await insertClay(id: 'c1', name: 'Stonewar', sortOrder: 1);
+      await col('clays').doc('c1').set({
+        'name': 'Stoneware',
+        'sortOrder': 0,
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await syncService.pushClay(_uid, 'c1', fields: ['sortOrder']);
+
+      final data =
+          (await col('clays').doc('c1').get()).data() as Map<String, dynamic>;
+      expect(data['name'], 'Stoneware');
+      expect(data['sortOrder'], 1);
+      expect(
+        (data['updatedAt'] as Timestamp).toDate().isAfter(DateTime(2025)),
+        isTrue,
+        reason: 'the pushed field must reach devices that already pulled it',
+      );
+    });
+
+    test('a field-scoped push of a clay the cloud does not hold yet uploads '
+        'it whole', () async {
+      await insertClay(id: 'c1', name: 'Porcelain', sortOrder: 2);
+
+      await syncService.pushClay(_uid, 'c1', fields: ['sortOrder']);
+
+      final data =
+          (await col('clays').doc('c1').get()).data() as Map<String, dynamic>;
+      expect(data['name'], 'Porcelain');
+      expect(data['sortOrder'], 2);
+      expect(data['createdAt'], isA<Timestamp>());
+    });
   });
 
   group('pushGlaze', () {
@@ -341,6 +376,23 @@ void main() {
       final doc = await col('glazes').doc('g1').get();
       final data = doc.data() as Map<String, dynamic>;
       expect(data['name'], 'Celadon');
+    });
+
+    test('a field-scoped push writes only those fields', () async {
+      await insertGlaze(id: 'g1', name: 'Celadon', sortOrder: 1);
+      await col('glazes').doc('g1').set({
+        'name': 'Celadon Blue',
+        'sortOrder': 0,
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await syncService.pushGlaze(_uid, 'g1', fields: ['sortOrder']);
+
+      final data =
+          (await col('glazes').doc('g1').get()).data() as Map<String, dynamic>;
+      expect(data['name'], 'Celadon Blue');
+      expect(data['sortOrder'], 1);
     });
   });
 
@@ -354,6 +406,25 @@ void main() {
       final data = doc.data() as Map<String, dynamic>;
       expect(data['name'], 'Gift');
       expect(data['color'], '#FF0000');
+    });
+
+    test('a field-scoped push writes only those fields', () async {
+      await insertTag(id: 't1', name: 'Gift', color: '#FF0000', sortOrder: 1);
+      await col('tags').doc('t1').set({
+        'name': 'Gifted',
+        'color': '#00FF00',
+        'sortOrder': 0,
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await syncService.pushTag(_uid, 't1', fields: ['sortOrder']);
+
+      final data =
+          (await col('tags').doc('t1').get()).data() as Map<String, dynamic>;
+      expect(data['name'], 'Gifted');
+      expect(data['color'], '#00FF00');
+      expect(data['sortOrder'], 1);
     });
   });
 
