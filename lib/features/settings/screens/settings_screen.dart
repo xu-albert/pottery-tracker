@@ -138,7 +138,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// account's cloud tree on its first sync. Because it is destructive, the
   /// confirmation says so in full and cannot be dismissed into a sign-out by
   /// accident — the barrier is inert, Cancel is the default action, and a
-  /// dismissed dialog resolves to "cancel".
+  /// dismissed dialog resolves to "cancel". It also says how many changes
+  /// have not reached the cloud yet, watched live so a backup finishing while
+  /// it is open is reflected. Confirming tries one bounded backup of them
+  /// before anything is erased; if that cannot finish, sign-out goes ahead on
+  /// the warning given here.
   Future<void> _confirmSignOut() async {
     if (_isSigningOut) return;
     final l10n = AppLocalizations.of(context)!;
@@ -147,7 +151,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       barrierDismissible: false,
       builder: (context) => CupertinoAlertDialog(
         title: Text(l10n.signOutConfirmTitle),
-        content: Text(l10n.signOutConfirmMessage),
+        content: Consumer(
+          builder: (context, ref, _) {
+            final pending = ref.watch(
+              syncStateProvider.select((s) => s.pendingCount),
+            );
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (pending > 0) ...[
+                  Text(
+                    l10n.signOutPendingChanges(pending),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: AppSizes.sm),
+                ],
+                Text(l10n.signOutConfirmMessage),
+              ],
+            );
+          },
+        ),
         actions: [
           CupertinoDialogAction(
             isDefaultAction: true,

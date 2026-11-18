@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/cupertino.dart' show CupertinoAlertDialog;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -26,8 +27,14 @@ class _MockSyncQueue extends Mock implements SyncQueue {}
 class _FakeAuthService implements AuthService {
   int signOutCalls = 0;
 
+  /// Called as the session ends, so a test can place it among other events.
+  void Function()? onSignOut;
+
   @override
-  Future<void> signOut() async => signOutCalls++;
+  Future<void> signOut() async {
+    signOutCalls++;
+    onSignOut?.call();
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
@@ -76,6 +83,12 @@ class _RouterRebuildHost extends ConsumerWidget {
 
 void main() {
   setUpAll(setupFirebaseCoreMocks);
+  setUpAll(() {
+    registerFallbackValue(
+      const SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: ''),
+    );
+    registerFallbackValue(<SyncQueueEntry, int>{});
+  });
 
   late _MockSyncService syncService;
   late _MockSyncQueue queue;
@@ -358,6 +371,126 @@ void main() {
       // The session still ends; the user is told the device is not clean yet.
       expect(authService.signOutCalls, 1);
       expect(find.textContaining('could not be deleted'), findsOneWidget);
+    });
+
+    final pendingLine = find.textContaining(
+      RegExp(r'^\d+ changes? not backed up yet$'),
+    );
+
+    /// Three edits queued locally, with the server out of reach so nothing
+    /// sends them.
+    void queueThreeOffline() {
+      when(() => queue.getAll()).thenAnswer(
+        (_) async => [
+          for (final id in ['p1', 'p2', 'p3'])
+            SyncQueueEntry(operation: SyncOperation.pushPiece, entityId: id),
+        ],
+      );
+      when(() => syncService.checkServerReachability(any())).thenThrow(
+        FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+      );
+    }
+
+    testWidgets('names how many changes are not backed up yet', (tester) async {
+      queueThreeOffline();
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byType(CupertinoAlertDialog),
+          matching: find.text('3 changes not backed up yet'),
+        ),
+        findsOneWidget,
+      );
+      // The count sits alongside the warning, never in place of it.
+      expect(find.textContaining('gone for good'), findsOneWidget);
+    });
+
+    testWidgets('says nothing about a count when everything is backed up', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+
+      expect(pendingLine, findsNothing);
+      expect(find.textContaining('gone for good'), findsOneWidget);
+    });
+
+    testWidgets('offline, confirming still signs out and erases', (
+      tester,
+    ) async {
+      queueThreeOffline();
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign Out & Erase'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      // The final sync could not reach the server, so it gave way at once
+      // rather than holding sign-out for its full bound.
+      expect(authService.signOutCalls, 1);
+      verify(() => syncService.deleteLocalData()).called(1);
+    });
+
+    testWidgets('confirming backs up queued changes before the session ends', (
+      tester,
+    ) async {
+      final order = <String>[];
+      final entries = [
+        const SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'p1',
+        ),
+      ];
+      when(() => queue.getAll()).thenAnswer((_) async => [...entries]);
+      when(() => queue.revisionOf(any())).thenReturn(0);
+      when(() => queue.fieldsOwed(any())).thenReturn(null);
+      when(() => queue.acknowledgeAll(any())).thenAnswer((call) async {
+        final delivered =
+            call.positionalArguments.single as Map<SyncQueueEntry, int>;
+        entries.removeWhere(delivered.containsKey);
+      });
+      when(() => syncService.pullChangedSince(any())).thenAnswer((_) async {});
+      // Held until the user confirms, so the sign-in sync does not send it.
+      final online = Completer<void>();
+      when(
+        () => syncService.checkServerReachability(any()),
+      ).thenAnswer((_) => online.future);
+      when(() => syncService.pushPiece(any(), any())).thenAnswer((_) async {
+        order.add('push');
+      });
+      when(() => syncService.deleteLocalData()).thenAnswer((_) async {
+        order.add('wipe');
+      });
+      authService.onSignOut = () => order.add('endSession');
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 change not backed up yet'), findsOneWidget);
+
+      await tester.tap(find.text('Sign Out & Erase'));
+      await tester.pump(const Duration(milliseconds: 20));
+      // Sign-out is under way, and holds the session while the sync it is
+      // waiting for still cannot reach the server.
+      expect(order, isEmpty);
+
+      online.complete();
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(order, ['push', 'endSession', 'wipe']);
+      expect(authService.signOutCalls, 1);
+      expect(entries, isEmpty);
     });
   });
 

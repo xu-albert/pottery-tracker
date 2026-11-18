@@ -222,6 +222,10 @@ class SyncClock {
   int get wipeSyncMaxPolls => 50;
   Duration get wipeSyncPollInterval => const Duration(milliseconds: 100);
 
+  /// How long Sign Out & Erase gives its final sync before it ends the
+  /// session regardless, so an offline or stalled sync never holds sign-out.
+  Duration get signOutSyncTimeout => const Duration(seconds: 15);
+
   Timer runAfter(Duration delay, void Function() callback) =>
       Timer(delay, callback);
 
@@ -302,6 +306,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   bool _syncOwed = false;
 
   bool _owedSyncForcesFull = false;
+
+  /// Completed once the owed sync has run, for a caller that has to wait for
+  /// it rather than leave it to the run holding [_syncing] — the final sync
+  /// before sign-out, which must not end the session under it.
+  Completer<void>? _owedSyncPaid;
   bool _queueProcessOwed = false;
   Timer? _processTimer;
   Future<EraseLocalDataResult?>? _wipeInFlight;
@@ -452,7 +461,60 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _syncOwed = false;
     final forced = _owedSyncForcesFull;
     _owedSyncForcesFull = false;
-    await syncNow(forceFullSync: forced);
+    final paid = _owedSyncPaid;
+    _owedSyncPaid = null;
+    try {
+      await syncNow(forceFullSync: forced);
+    } finally {
+      // A payment that stood down again is owed once more, and so is its
+      // waiter; otherwise the sync it was waiting for has run.
+      if (paid != null) {
+        if (_syncOwed && _owedSyncPaid == null) {
+          _owedSyncPaid = paid;
+        } else if (!paid.isCompleted) {
+          paid.complete();
+        }
+      }
+    }
+  }
+
+  /// Runs [syncNow] and waits for it, including when another run holds
+  /// [_syncing]: [syncNow] would stand down and owe itself to that run, so
+  /// this waits for the run to pay it.
+  Future<void> _syncNowAndWait() {
+    if (_wiping) return Future<void>.value();
+    if (!_syncing) return syncNow();
+    _syncOwed = true;
+    return (_owedSyncPaid ??= Completer<void>()).future;
+  }
+
+  /// Gives whatever is still queued — an edit inside the debounce window,
+  /// work queued while offline or after an error, a photo file not yet
+  /// uploaded — one last chance to reach the cloud while the session can
+  /// still write, before sign-out destroys it.
+  ///
+  /// Bounded by [SyncClock.signOutSyncTimeout] and never throws: an offline,
+  /// failing or stalled sync gives way, and sign-out goes ahead with the
+  /// warning the user already confirmed. A sync still running when the bound
+  /// passes is the in-flight sync [signOutAndWipeLocalData] already handles.
+  Future<void> _finalSyncBeforeSignOut() async {
+    final auth = _ref.read(authProvider);
+    if (!auth.isSignedIn || auth.uid == null) return;
+    final settled = Completer<void>();
+    void settle() {
+      if (!settled.isCompleted) settled.complete();
+    }
+
+    final deadline = _clock.runAfter(_clock.signOutSyncTimeout, settle);
+    unawaited(
+      _syncNowAndWait()
+          .catchError((Object e) {
+            debugPrint('SyncNotifier: final sync before sign-out failed: $e');
+          })
+          .whenComplete(settle),
+    );
+    await settled.future;
+    deadline.cancel();
   }
 
   Future<void> syncNow({bool forceFullSync = false}) async {
@@ -874,9 +936,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// with the pending-wipe flag set, which locks it read-only at the router.
   /// The lock screen finishes the wipe — see [retryOwedWipe] — and nothing
   /// can push until it has.
+  ///
+  /// Before any of that, while the session can still write, it makes one
+  /// bounded attempt to back up what is still queued — see
+  /// [_finalSyncBeforeSignOut]. Nothing is flagged or dropped until that
+  /// attempt has finished or given way, so a process killed during it comes
+  /// back signed in with the pottery untouched.
   Future<void> signOutAndWipeLocalData(
     Future<void> Function() endSession,
   ) async {
+    // The final sync sends everything queued, so a pending debounce has
+    // nothing left to do.
+    _processTimer?.cancel();
+    await _finalSyncBeforeSignOut();
     _processTimer?.cancel();
     _wiping = true;
     try {

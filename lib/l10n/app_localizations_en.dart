@@ -395,6 +395,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.';
 
   @override
+  String signOutPendingChanges(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes not backed up yet',
+      one: '1 change not backed up yet',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get signOutAndErase => 'Sign Out & Erase';
 
   @override

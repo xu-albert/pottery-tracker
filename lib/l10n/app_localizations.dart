@@ -808,6 +808,12 @@ abstract class AppLocalizations {
   /// **'Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.'**
   String get signOutConfirmMessage;
 
+  /// Shown in the sign out confirmation when local changes have not reached the cloud; sign-out tries one last backup before erasing them
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 change not backed up yet} other{{count} changes not backed up yet}}'**
+  String signOutPendingChanges(int count);
+
   /// Destructive confirm button in the sign out dialog
   ///
   /// In en, this message translates to:
