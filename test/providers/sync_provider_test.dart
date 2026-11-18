@@ -1721,6 +1721,114 @@ void main() {
         verify(() => s.syncService.deleteLocalData()).called(1);
       });
     });
+
+    test('an owed sync abandoned at the bound does not run after the wipe', () {
+      fakeAsync((async) {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        final pullGate = Completer<Set<SyncQueueEntry>>();
+        when(
+          () => s.syncService.pullAll(any()),
+        ).thenAnswer((_) => pullGate.future);
+        unawaited(s.notifier.syncNow(forceFullSync: true));
+        async.flushMicrotasks();
+
+        _persistInto(s.queue, [queued]);
+        var finished = false;
+        unawaited(
+          s.notifier
+              .signOutAndWipeLocalData(() async {})
+              .then((_) => finished = true),
+        );
+        async.elapse(const Duration(seconds: 20));
+        async.flushMicrotasks();
+
+        expect(finished, isTrue);
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+        clearInteractions(s.syncService);
+
+        pullGate.complete({});
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        verifyNever(() => s.syncService.setLocalDataOwner(any()));
+        verifyNever(() => s.syncService.fullUploadEntries(any()));
+        verifyNever(() => s.syncService.pullAll(any()));
+        verifyNever(() => s.syncService.pullChangedSince(any()));
+        verifyNever(() => s.syncService.pushPiece(any(), any()));
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+      });
+    });
+
+    test('a timed-out sync failing after the wipe keeps status disabled', () {
+      fakeAsync((async) {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        final reachabilityGate = Completer<void>();
+        when(
+          () => s.syncService.checkServerReachability(any()),
+        ).thenAnswer((_) => reachabilityGate.future);
+
+        var finished = false;
+        unawaited(
+          s.notifier
+              .signOutAndWipeLocalData(() async {})
+              .then((_) => finished = true),
+        );
+        async.elapse(const Duration(seconds: 20));
+        async.flushMicrotasks();
+
+        expect(finished, isTrue);
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+
+        reachabilityGate.completeError(
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+      });
+    });
+
+    test('a sync blocked while claiming releases the sign-out wait at once', () {
+      fakeAsync((async) {
+        final s = _setup(auth: _signedIn);
+        addTearDown(s.container.dispose);
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        final ownerGate = Completer<String?>();
+        when(
+          () => s.syncService.getLocalDataOwner(),
+        ).thenAnswer((_) => ownerGate.future);
+        unawaited(s.notifier.syncNow());
+        async.flushMicrotasks();
+
+        var finished = false;
+        unawaited(
+          s.notifier
+              .signOutAndWipeLocalData(() async {})
+              .then((_) => finished = true),
+        );
+        async.flushMicrotasks();
+        expect(finished, isFalse);
+
+        ownerGate.complete('other-user');
+        async.elapse(Duration.zero);
+        async.flushMicrotasks();
+
+        expect(finished, isTrue);
+        verify(() => s.syncService.deleteLocalData()).called(1);
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+      });
+    });
   });
 }
 

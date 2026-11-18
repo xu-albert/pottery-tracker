@@ -336,10 +336,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
        _clock = clock ?? const SyncClock(),
        super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
-      if (prev?.uid != next.uid) _generation++;
+      if (prev?.uid != next.uid) {
+        _generation++;
+        _clearOwedWork();
+      }
       if (next.isSignedIn && prev?.uid != next.uid) {
         _onAuthChanged(next.uid!);
       } else if (!next.isSignedIn) {
+        _clearOwedWork();
         state = const SyncState(status: SyncStatus.disabled);
         // Signed out or local-only: finish a wipe that never completed, so the
         // app does not sit on the previous account's pieces.
@@ -366,8 +370,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // Before this uid can push anything, make sure no earlier account's data
     // is still lying around from a wipe that was cut short.
     await _finishInterruptedWipe();
+    if (!mounted || _wiping || _ref.read(authProvider).uid != uid) return;
     state = state.copyWith(status: SyncStatus.idle);
     await _refreshPendingCount();
+    if (!mounted || _wiping || _ref.read(authProvider).uid != uid) return;
     await syncNow();
   }
 
@@ -383,9 +389,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return queued.length + photoIds.difference(queuedPhotoIds).length;
   }
 
-  Future<void> _refreshPendingCount() async {
+  Future<void> _refreshPendingCount({_Session? session}) async {
+    if (session != null && !_canContinue(session)) return;
     final count = await _pendingCount();
-    if (!mounted) return;
+    if (!mounted || _wiping) return;
+    if (session != null && !_canContinue(session)) return;
     final reason = state.status == SyncStatus.error ? state.errorMessage : null;
     state = state.copyWith(pendingCount: count, errorMessage: reason);
   }
@@ -396,6 +404,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       : error.toString();
 
   void scheduleProcessQueue() {
+    if (_wiping) return;
     // Publish the persisted edit before waiting for the debounce or network.
     // An offline Firestore write can remain in flight until reconnection.
     unawaited(_refreshPendingCount());
@@ -418,19 +427,25 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _syncing = true;
     Future<Object?>? acknowledged;
     try {
-      if (await _claimOrBlock(session.uid)) return;
-      await _syncService.checkServerReachability(session.uid);
-      state = state.copyWith(status: SyncStatus.syncing);
-      acknowledged = _dispatch(session, await _queue.getAll());
+      if (!await _claimOrBlock(session)) {
+        await _syncService.checkServerReachability(session.uid);
+        if (_canContinue(session)) {
+          state = state.copyWith(status: SyncStatus.syncing);
+          final entries = await _queue.getAll();
+          if (_canContinue(session)) {
+            acknowledged = _dispatch(session, entries);
+          }
+        }
+      }
     } catch (e) {
-      await _publishFailure(e);
+      await _publishFailure(e, session: session);
     } finally {
       _releaseSyncing();
     }
     if (acknowledged != null) {
       final drainFailure = await acknowledged;
-      await _refreshPendingCount();
-      if (_isCurrent(session) && _latestDispatch?.settled == acknowledged) {
+      await _refreshPendingCount(session: session);
+      if (_canContinue(session) && _latestDispatch?.settled == acknowledged) {
         if (drainFailure != null) {
           state = state.copyWith(
             status: SyncStatus.error,
@@ -455,9 +470,32 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (mounted && !_wiping) scheduleProcessQueue();
   }
 
+  void _clearOwedWork() {
+    _processTimer?.cancel();
+    _queueProcessOwed = false;
+    _syncOwed = false;
+    _owedSyncForcesFull = false;
+    final paid = _owedSyncPaid;
+    _owedSyncPaid = null;
+    if (paid != null && !paid.isCompleted) {
+      paid.complete();
+    }
+  }
+
   /// Runs a sync that stood down earlier, in the mode it asked for.
   Future<void> _payOwedSync() async {
-    if (!_syncOwed || _wiping) return;
+    if (_wiping) {
+      _clearOwedWork();
+      return;
+    }
+    if (!_syncOwed) {
+      final paid = _owedSyncPaid;
+      _owedSyncPaid = null;
+      if (paid != null && !paid.isCompleted) {
+        paid.complete();
+      }
+      return;
+    }
     _syncOwed = false;
     final forced = _owedSyncForcesFull;
     _owedSyncForcesFull = false;
@@ -469,7 +507,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // A payment that stood down again is owed once more, and so is its
       // waiter; otherwise the sync it was waiting for has run.
       if (paid != null) {
-        if (_syncOwed && _owedSyncPaid == null) {
+        if (_syncOwed && !_wiping && _owedSyncPaid == null) {
           _owedSyncPaid = paid;
         } else if (!paid.isCompleted) {
           paid.complete();
@@ -523,7 +561,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = const SyncState(status: SyncStatus.disabled);
       return;
     }
-    if (_syncing || _wiping) {
+    if (_wiping) return;
+    if (_syncing) {
       // Stand down, but remember the debt so the sync is not lost. A forced
       // request must be replayed as forced, never quietly downgraded.
       _syncOwed = true;
@@ -536,55 +575,75 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final _Session session = (uid: uid, generation: _generation);
     var dispatched = false;
     try {
-      if (await _claimOrBlock(uid)) return;
-      final pullInFull =
-          forceFullSync || await _syncService.getLastPulledAt(uid) == null;
-
-      await _syncService.checkServerReachability(uid);
-      state = state.copyWith(status: SyncStatus.syncing);
-
-      if (pullInFull && _unpulledSnapshot != session) {
-        // A full sync pulls before it stages its snapshot, and the snapshot
-        // leaves out everything that pull found in the cloud. A snapshot push
-        // is stamped with the server's time whenever it lands, so a copy of a
-        // row the cloud already holds — out of date now, or by the time a
-        // dropped connection lets it through — would replace newer edits on
-        // every other device. What the pull found is the cloud's copy here or
-        // has queued work of its own; the snapshot uploads what the cloud
-        // lacks. Edits made here are queued as they happen, so they count as
-        // waiting offline without the snapshot.
-        final inCloud = await _syncService.pullAll(uid);
-        await _queue.enqueueMissing([
-          for (final entry in await _syncService.fullUploadEntries(uid))
-            if (!inCloud.contains(entry)) entry,
-        ]);
-        _unpulledSnapshot = session;
-        await _refreshPendingCount();
-      }
-
-      // A photo file an earlier attempt could not upload is retried from its
-      // local row, which is its durable record, through the same single-flight
-      // lanes as the queue rather than holding the sync while Storage retries.
-      final entries = {...await _queue.getAll()};
-      for (final photoId in await _syncService.pendingPhotoUploadIds()) {
-        entries.add(
-          SyncQueueEntry(
-            operation: SyncOperation.pushPhotoFile,
-            entityId: photoId,
-          ),
-        );
-      }
-      unawaited(_dispatch(session, entries));
-      dispatched = true;
+      dispatched = await _stageAndDispatch(
+        session,
+        forceFullSync: forceFullSync,
+      );
     } catch (e) {
-      await _publishFailure(e);
+      await _publishFailure(e, session: session);
     } finally {
       _releaseSyncing();
     }
-    if (dispatched) {
+    if (dispatched && _canContinue(session)) {
       await _pullOnceSettled(session, forceFullSync: forceFullSync);
     }
     await _payOwedSync();
+  }
+
+  Future<bool> _stageAndDispatch(
+    _Session session, {
+    required bool forceFullSync,
+  }) async {
+    final uid = session.uid;
+    if (await _claimOrBlock(session)) return false;
+    final pullInFull =
+        forceFullSync || await _syncService.getLastPulledAt(uid) == null;
+    if (!_canContinue(session)) return false;
+
+    await _syncService.checkServerReachability(uid);
+    if (!_canContinue(session)) return false;
+    state = state.copyWith(status: SyncStatus.syncing);
+
+    if (pullInFull && _unpulledSnapshot != session) {
+      // A full sync pulls before it stages its snapshot, and the snapshot
+      // leaves out everything that pull found in the cloud. A snapshot push
+      // is stamped with the server's time whenever it lands, so a copy of a
+      // row the cloud already holds — out of date now, or by the time a
+      // dropped connection lets it through — would replace newer edits on
+      // every other device. What the pull found is the cloud's copy here or
+      // has queued work of its own; the snapshot uploads what the cloud
+      // lacks. Edits made here are queued as they happen, so they count as
+      // waiting offline without the snapshot.
+      final inCloud = await _syncService.pullAll(uid);
+      if (!_canContinue(session)) return false;
+      final uploadEntries = await _syncService.fullUploadEntries(uid);
+      if (!_canContinue(session)) return false;
+      await _queue.enqueueMissing([
+        for (final entry in uploadEntries)
+          if (!inCloud.contains(entry)) entry,
+      ]);
+      if (!_canContinue(session)) return false;
+      _unpulledSnapshot = session;
+      await _refreshPendingCount(session: session);
+      if (!_canContinue(session)) return false;
+    }
+
+    // A photo file an earlier attempt could not upload is retried from its
+    // local row, which is its durable record, through the same single-flight
+    // lanes as the queue rather than holding the sync while Storage retries.
+    final entries = {...await _queue.getAll()};
+    if (!_canContinue(session)) return false;
+    for (final photoId in await _syncService.pendingPhotoUploadIds()) {
+      entries.add(
+        SyncQueueEntry(
+          operation: SyncOperation.pushPhotoFile,
+          entityId: photoId,
+        ),
+      );
+    }
+    if (!_canContinue(session)) return false;
+    unawaited(_dispatch(session, entries));
+    return true;
   }
 
   /// The authoritative pull and the verdict on the whole sync, once every
@@ -604,7 +663,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }) async {
     Object? drainFailure;
     while (true) {
-      if (!_isCurrent(session)) return;
+      if (!_canContinue(session)) return;
       final latest = _latestDispatch!;
       drainFailure = await latest.settled;
       final pending = [
@@ -614,8 +673,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (pending.isEmpty && latest == _latestDispatch) break;
       await Future.wait(pending);
     }
-    if (!_isCurrent(session)) return;
-    if (_syncing || _wiping) {
+    if (!_canContinue(session)) return;
+    if (_syncing) {
       _syncOwed = true;
       _owedSyncForcesFull =
           _owedSyncForcesFull ||
@@ -624,10 +683,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
     _syncing = true;
     try {
-      if (await _claimOrBlock(session.uid)) return;
-      await _refreshPendingCount();
+      if (await _claimOrBlock(session)) return;
+      await _refreshPendingCount(session: session);
+      if (!_canContinue(session)) return;
       state = state.copyWith(status: SyncStatus.syncing);
       await _syncService.pullChangedSince(session.uid);
+      if (!_canContinue(session)) return;
       if (_unpulledSnapshot == session) {
         _owedSyncForcesFull = false;
         _unpulledSnapshot = null;
@@ -635,6 +696,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       final pendingPhotos = await _syncService.pendingPhotoUploadIds();
       final pendingCount = await _pendingCount();
+      if (!_canContinue(session)) return;
       if (drainFailure == null && pendingPhotos.isEmpty) {
         state = SyncState(
           status: SyncStatus.idle,
@@ -656,7 +718,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
       }
     } catch (e) {
-      await _publishFailure(e);
+      await _publishFailure(e, session: session);
     } finally {
       _releaseSyncing();
     }
@@ -669,9 +731,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _rescheduleOwedQueue();
   }
 
-  Future<void> _publishFailure(Object error) async {
+  Future<void> _publishFailure(
+    Object error, {
+    required _Session session,
+  }) async {
+    if (!_canContinue(session)) return;
     debugPrint('SyncNotifier: sync failed: $error');
-    await _refreshPendingCount();
+    await _refreshPendingCount(session: session);
+    if (!_canContinue(session)) return;
     state = state.copyWith(
       status: SyncStatus.error,
       errorMessage: _failureReason(error),
@@ -684,6 +751,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// no further push.
   bool _isCurrent(_Session session) =>
       mounted && session.generation == _generation;
+
+  bool _canContinue(_Session session) => _isCurrent(session) && !_wiping;
 
   /// Starts every entry in its entity lane and returns without waiting on
   /// the server, so the caller can release [_syncing]. Anything it started
@@ -711,7 +780,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _Session session,
     Iterable<SyncQueueEntry> entries,
   ) {
-    if (!_isCurrent(session)) return Future<Object?>.value();
+    if (!_canContinue(session)) return Future<Object?>.value();
     final laneTails = <String, Future<void>>{};
     final outcomes = <Future<Object?>>[];
     for (final entry in entries) {
@@ -719,7 +788,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final predecessor = laneTails[lane] ?? Future<void>.value();
       final pushed = predecessor.then((_) => _pushQueuedEntry(session, entry));
       laneTails[lane] = pushed.then<void>((_) {}, onError: (_) {});
-      outcomes.add(pushed.then((outcome) => _retire(session.uid, outcome)));
+      outcomes.add(pushed.then((outcome) => _retire(session, outcome)));
     }
     final settled = outcomes.isEmpty
         ? Future<Object?>.value()
@@ -729,7 +798,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final _Drain drain = (session: session, settled: settled);
     _latestDispatch = drain;
     if (outcomes.isEmpty) return settled;
-    if (mounted) state = state.copyWith(status: SyncStatus.idle);
+    if (_canContinue(session)) state = state.copyWith(status: SyncStatus.idle);
 
     _outstandingDrains.add(drain);
     unawaited(settled.whenComplete(() => _outstandingDrains.remove(drain)));
@@ -740,8 +809,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// whole drain does — a delivered entry left queued behind a slower sibling
   /// is counted as waiting and sent again after a restart — then lets go of
   /// the flight that delivered it. Answers with the entry's failure, if any.
-  Future<Object?> _retire(String uid, _PushOutcome outcome) async {
-    if (outcome.acknowledgeQueueEntry) {
+  Future<Object?> _retire(_Session session, _PushOutcome outcome) async {
+    if (outcome.acknowledgeQueueEntry && _canContinue(session)) {
       final retirement = _queue.acknowledgeAll({
         outcome.entry: outcome.revision,
       });
@@ -753,9 +822,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // Whatever could not be retired stays queued and is sent again.
         return e;
       }
-      if (refreshCount) unawaited(_refreshPendingCount());
+      if (refreshCount && _canContinue(session)) {
+        unawaited(_refreshPendingCount(session: session));
+      }
     }
-    final key = _FlightKey(uid, outcome.entry);
+    final key = _FlightKey(session.uid, outcome.entry);
     if (outcome.flight != null &&
         identical(_inFlightPushes[key], outcome.flight)) {
       _inFlightPushes.remove(key);
@@ -793,11 +864,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       acknowledgeQueueEntry: false,
     );
     if (entry.operation == SyncOperation.pushPhotoFile) {
-      if (!_isCurrent(session)) return skipped;
+      if (!_canContinue(session)) return skipped;
       final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
       } catch (e) {
+        if (!_canContinue(session)) return skipped;
         debugPrint('SyncNotifier: photo file upload failed (best-effort): $e');
         return _PushOutcome(
           entry: entry,
@@ -815,7 +887,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
-      if (!_isCurrent(session)) return skipped;
+      if (!_canContinue(session)) return skipped;
       final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
@@ -826,6 +898,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           flight: flight,
         );
       } catch (e) {
+        if (!_canContinue(session)) return skipped;
         debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
         lastError = e;
         if (attempt < 2) {
@@ -868,7 +941,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       revision,
       fields,
       predecessor.then((_) {
-        if (!_isCurrent(session)) {
+        if (!_canContinue(session)) {
           throw StateError('the session that queued this push has ended');
         }
         return _processEntry(session.uid, entry, fields);
@@ -949,7 +1022,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // nothing left to do.
     _processTimer?.cancel();
     await _finalSyncBeforeSignOut();
-    _processTimer?.cancel();
+    _generation++;
+    _clearOwedWork();
     _wiping = true;
     try {
       // The flag goes down first, before anything else can fail or be killed.
@@ -999,7 +1073,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// is the "sign in as the owner" way out of the read-only lock: drop the
   /// session, keep everything, and let the owner sign in.
   Future<void> endForeignSession(Future<void> Function() endSession) async {
-    _processTimer?.cancel();
+    _generation++;
+    _clearOwedWork();
     try {
       await endSession();
     } catch (e) {
@@ -1022,7 +1097,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       debugPrint('SyncNotifier: explicit erase refused, the device is busy');
       return EraseLocalDataResult.busy;
     }
-    _processTimer?.cancel();
+    _clearOwedWork();
     _wiping = true;
     try {
       await _wipeLocalData();
@@ -1064,6 +1139,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// the wipe that runs once it has unwound is the one allowed to clear it.
   Future<void> _wipeLocalData() async {
     _generation++;
+    _clearOwedWork();
     final staleSync = _staleSyncInFlight;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(pendingWipeKey, true);
@@ -1091,7 +1167,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _publishPendingWipe(prefs.getBool(pendingWipeKey) == true);
   }
 
-  /// Claims this device for [uid], or refuses it — the one boundary every
+  /// Claims this device for [session], or refuses it — the one boundary every
   /// push path goes through.
   ///
   /// Both checks and the ownership claim live here together on purpose: an
@@ -1100,10 +1176,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// stamping it, and the next account inherited an unowned device. The
   /// invariant is that a device which has pushed for an account is stamped
   /// with it, whichever path did the pushing.
-  Future<bool> _claimOrBlock(String uid) async {
-    if (await _blockedByPendingWipe()) return true;
-    final foreign = await _blockedByForeignLocalData(uid);
-    if (foreign.blocked) return true;
+  Future<bool> _claimOrBlock(_Session session) async {
+    if (!_canContinue(session)) return true;
+    if (await _blockedByPendingWipe(session)) return true;
+    final foreign = await _blockedByForeignLocalData(session);
+    if (foreign.blocked || !_canContinue(session)) return true;
     // Allowed to sync, so this account owns what is on the device from here
     // on. Claiming it before the push matters: if the process dies mid-sync,
     // the stamp is already correct.
@@ -1112,11 +1189,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // push — 500ms after any edit — and the platform stores rewrite the whole
     // backing file per write, so an unguarded claim meant a disk write per
     // sync for a value that changes at most once per account.
-    if (foreign.owner != uid) {
-      await _syncService.setLocalDataOwner(uid);
-      _publishLocalDataOwner(uid);
+    if (foreign.owner != session.uid) {
+      await _syncService.setLocalDataOwner(session.uid);
+      if (!_canContinue(session)) return true;
+      _publishLocalDataOwner(session.uid);
     }
-    return false;
+    return !_canContinue(session);
   }
 
   /// Mirrors the persisted stamp into [localDataOwnerProvider], which the lock
@@ -1178,7 +1256,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _ref.read(accountDeletionOwedProvider.notifier).state = null;
   }
 
-  /// Whether this device's data belongs to an account other than [uid].
+  /// Whether this device's data belongs to an account other than [session]'s.
   ///
   /// This is what the captain's ruling for the *involuntary* sign-out path
   /// buys: `AuthNotifier._init` drops the session when `reload()` fails or
@@ -1190,11 +1268,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// Returns the stamp it read alongside the decision, so the caller can tell
   /// "nobody owns this device" from "we already do" without a second read.
   Future<({bool blocked, String? owner})> _blockedByForeignLocalData(
-    String uid,
+    _Session session,
   ) async {
     final owner = await _syncService.getLocalDataOwner();
+    if (!_canContinue(session)) return (blocked: true, owner: owner);
     _publishLocalDataOwner(owner);
-    if (owner == null || owner == uid) {
+    if (owner == null || owner == session.uid) {
       return (blocked: false, owner: owner);
     }
     debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
@@ -1215,8 +1294,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// wipe, and again when [staleSyncBlockingWipeProvider] reports the sync
   /// that blocked the last attempt has ended — and from the confirmed
   /// [eraseLocalDataNow]; nowhere else.
-  Future<bool> _blockedByPendingWipe() async {
+  Future<bool> _blockedByPendingWipe(_Session session) async {
     final prefs = await SharedPreferences.getInstance();
+    if (!_canContinue(session)) return true;
     if (prefs.getBool(pendingWipeKey) != true) return false;
     debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');
     state = state.copyWith(status: SyncStatus.blocked);
@@ -1289,6 +1369,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
       debugPrint('SyncNotifier: account deletion refused, the device is busy');
       return DeleteAllDataResult.busy;
     }
+    _generation++;
+    _clearOwedWork();
     _syncing = true;
     // This owns the wipe too, so a resumed one does not run alongside it and
     // clear the flag out from under the delete below.
@@ -1448,7 +1530,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   @override
   void dispose() {
-    _processTimer?.cancel();
+    _clearOwedWork();
     super.dispose();
   }
 }
