@@ -270,6 +270,8 @@
   "@signOutConfirmTitle": { "description": "Sign out confirmation title" },
   "signOutConfirmMessage": "Signing out deletes every piece, photo and material stored on this device. Anything already backed up stays in your account and comes back when you sign in again — anything not backed up yet is gone for good.",
   "@signOutConfirmMessage": { "description": "Sign out confirmation message, warning that local data is destroyed" },
+  "signOutPendingChanges": "{count, plural, =1{1 change not backed up yet} other{{count} changes not backed up yet}}",
+  "@signOutPendingChanges": { "description": "Shown in the sign out confirmation when local changes have not reached the cloud; sign-out tries one last backup before erasing them", "placeholders": { "count": { "type": "int" } } },
   "signOutAndErase": "Sign Out & Erase",
   "@signOutAndErase": { "description": "Destructive confirm button in the sign out dialog" },
   "signingOut": "Signing out and erasing this device\u2026",
