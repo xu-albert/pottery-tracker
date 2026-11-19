@@ -338,7 +338,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (prev?.uid != next.uid) {
         _generation++;
-        _clearOwedWork();
+        if (prev?.uid != null) _clearOwedWork();
       }
       if (next.isSignedIn && prev?.uid != next.uid) {
         _onAuthChanged(next.uid!);
