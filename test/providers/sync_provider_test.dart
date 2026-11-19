@@ -1797,38 +1797,44 @@ void main() {
       });
     });
 
-    test('a sync blocked while claiming releases the sign-out wait at once', () {
-      fakeAsync((async) {
-        final s = _setup(auth: _signedIn);
-        addTearDown(s.container.dispose);
-        async.elapse(Duration.zero);
-        async.flushMicrotasks();
+    test(
+      'a sync blocked while claiming releases the sign-out wait at once',
+      () {
+        fakeAsync((async) {
+          final s = _setup(auth: _signedIn);
+          addTearDown(s.container.dispose);
+          async.elapse(Duration.zero);
+          async.flushMicrotasks();
 
-        final ownerGate = Completer<String?>();
-        when(
-          () => s.syncService.getLocalDataOwner(),
-        ).thenAnswer((_) => ownerGate.future);
-        unawaited(s.notifier.syncNow());
-        async.flushMicrotasks();
+          final ownerGate = Completer<String?>();
+          when(
+            () => s.syncService.getLocalDataOwner(),
+          ).thenAnswer((_) => ownerGate.future);
+          unawaited(s.notifier.syncNow());
+          async.flushMicrotasks();
 
-        var finished = false;
-        unawaited(
-          s.notifier
-              .signOutAndWipeLocalData(() async {})
-              .then((_) => finished = true),
-        );
-        async.flushMicrotasks();
-        expect(finished, isFalse);
+          var finished = false;
+          unawaited(
+            s.notifier
+                .signOutAndWipeLocalData(() async {})
+                .then((_) => finished = true),
+          );
+          async.flushMicrotasks();
+          expect(finished, isFalse);
 
-        ownerGate.complete('other-user');
-        async.elapse(Duration.zero);
-        async.flushMicrotasks();
+          ownerGate.complete('other-user');
+          async.elapse(Duration.zero);
+          async.flushMicrotasks();
 
-        expect(finished, isTrue);
-        verify(() => s.syncService.deleteLocalData()).called(1);
-        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
-      });
-    });
+          expect(finished, isTrue);
+          verify(() => s.syncService.deleteLocalData()).called(1);
+          expect(
+            s.container.read(syncStateProvider).status,
+            SyncStatus.disabled,
+          );
+        });
+      },
+    );
   });
 }
 
