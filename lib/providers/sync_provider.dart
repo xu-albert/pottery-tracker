@@ -9,8 +9,10 @@ import '../services/material_writer.dart';
 import '../services/sync_queue.dart';
 import '../services/sync_service.dart';
 import '../services/sync_trigger.dart';
+import '../services/telemetry_service.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
+import 'telemetry_provider.dart';
 import 'transfer_provider.dart';
 
 /// [SyncStatus.blocked] is a refusal, not a failure: this device is not
@@ -325,6 +327,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   final Future<void> Function() _deleteAuthAccount;
 
   final SyncClock _clock;
+  final TelemetryService _telemetry;
 
   SyncNotifier(
     this._ref,
@@ -332,8 +335,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
     this._syncService, {
     Future<void> Function()? deleteAuthAccount,
     SyncClock? clock,
+    TelemetryService? telemetry,
   }) : _deleteAuthAccount = deleteAuthAccount ?? _deleteFirebaseAccount,
        _clock = clock ?? const SyncClock(),
+       _telemetry = telemetry ?? TelemetryService(),
        super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (prev?.uid != next.uid) {
@@ -437,8 +442,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
           }
         }
       }
-    } catch (e) {
-      await _publishFailure(e, session: session);
+    } catch (e, st) {
+      await _publishFailure(
+        e,
+        st,
+        session: session,
+        context: 'sync.push_queue',
+      );
     } finally {
       _releaseSyncing();
     }
@@ -546,8 +556,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final deadline = _clock.runAfter(_clock.signOutSyncTimeout, settle);
     unawaited(
       _syncNowAndWait()
-          .catchError((Object e) {
+          .catchError((Object e, StackTrace st) {
             debugPrint('SyncNotifier: final sync before sign-out failed: $e');
+            unawaited(
+              _telemetry.recordNonFatal(
+                e,
+                st,
+                context: 'sync.final_sync_before_sign_out',
+              ),
+            );
           })
           .whenComplete(settle),
     );
@@ -579,8 +596,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
         session,
         forceFullSync: forceFullSync,
       );
-    } catch (e) {
-      await _publishFailure(e, session: session);
+    } catch (e, st) {
+      await _publishFailure(e, st, session: session, context: 'sync.sync_now');
     } finally {
       _releaseSyncing();
     }
@@ -717,8 +734,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
           lastSyncedAt: state.lastSyncedAt,
         );
       }
-    } catch (e) {
-      await _publishFailure(e, session: session);
+    } catch (e, st) {
+      await _publishFailure(e, st, session: session, context: 'sync.pull');
     } finally {
       _releaseSyncing();
     }
@@ -732,11 +749,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   Future<void> _publishFailure(
-    Object error, {
+    Object error,
+    StackTrace stackTrace, {
     required _Session session,
+    required String context,
   }) async {
     if (!_canContinue(session)) return;
     debugPrint('SyncNotifier: sync failed: $error');
+    unawaited(_telemetry.recordNonFatal(error, stackTrace, context: context));
     await _refreshPendingCount(session: session);
     if (!_canContinue(session)) return;
     state = state.copyWith(
@@ -818,8 +838,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _lastRetirement = retirement;
       try {
         await retirement;
-      } catch (e) {
+      } catch (e, st) {
         // Whatever could not be retired stays queued and is sent again.
+        unawaited(
+          _telemetry.recordNonFatal(e, st, context: 'sync.queue_retire'),
+        );
         return e;
       }
       if (refreshCount && _canContinue(session)) {
@@ -868,9 +891,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
-      } catch (e) {
+      } catch (e, st) {
         if (!_canContinue(session)) return skipped;
         debugPrint('SyncNotifier: photo file upload failed (best-effort): $e');
+        unawaited(
+          _telemetry.recordNonFatal(
+            e,
+            st,
+            context: 'sync.photo_upload',
+            attributes: {'operation': entry.operation.name},
+          ),
+        );
         return _PushOutcome(
           entry: entry,
           revision: revision,
@@ -886,6 +917,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
 
     Object? lastError;
+    StackTrace? lastStackTrace;
     for (var attempt = 0; attempt < 3; attempt++) {
       if (!_canContinue(session)) return skipped;
       final flight = _singleFlightPush(session, entry, revision, fields);
@@ -897,14 +929,30 @@ class SyncNotifier extends StateNotifier<SyncState> {
           acknowledgeQueueEntry: true,
           flight: flight,
         );
-      } catch (e) {
+      } catch (e, st) {
         if (!_canContinue(session)) return skipped;
         debugPrint('SyncNotifier: retry $attempt for ${entry.operation}: $e');
         lastError = e;
+        lastStackTrace = st;
         if (attempt < 2) {
           await _clock.sleep(Duration(seconds: 1 << attempt));
         }
       }
+    }
+    if (lastError != null) {
+      final isPhotoDelete =
+          entry.operation == SyncOperation.deletePhoto ||
+          entry.operation == SyncOperation.deletePiece;
+      unawaited(
+        _telemetry.recordNonFatal(
+          lastError,
+          lastStackTrace,
+          context: isPhotoDelete
+              ? 'sync.cloud_photo_delete'
+              : 'sync.push_entry',
+          attributes: {'operation': entry.operation.name},
+        ),
+      );
     }
     return _PushOutcome(
       entry: entry,
@@ -1035,8 +1083,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       try {
         await endSession();
-      } catch (e) {
+      } catch (e, st) {
         debugPrint('SyncNotifier: ending the session failed: $e');
+        unawaited(
+          _telemetry.recordNonFatal(
+            e,
+            st,
+            context: 'sync.sign_out_end_session',
+          ),
+        );
       }
 
       // Let an in-flight sync unwind — its session is gone, so it fails fast —
@@ -1052,11 +1107,20 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (_syncing) {
         _staleSyncInFlight = true;
         _publishStaleSyncBlockingWipe(true);
+        unawaited(_telemetry.logBreadcrumb('sync.wipe_delayed_by_stale_sync'));
       }
 
       await _wipeLocalData();
       state = const SyncState(status: SyncStatus.disabled, pendingCount: 0);
-    } catch (e) {
+    } catch (e, st) {
+      unawaited(
+        _telemetry.recordNonFatal(
+          e,
+          st,
+          context: 'sync.sign_out_wipe_failed',
+          skipIfOffline: false,
+        ),
+      );
       await _publishOwedWipe();
       rethrow;
     } finally {
@@ -1077,8 +1141,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _clearOwedWork();
     try {
       await endSession();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('SyncNotifier: ending the foreign session failed: $e');
+      unawaited(
+        _telemetry.recordNonFatal(e, st, context: 'sync.end_foreign_session'),
+      );
     }
     state = const SyncState(status: SyncStatus.disabled);
   }
@@ -1102,14 +1169,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       await _wipeLocalData();
       state = const SyncState(status: SyncStatus.idle, pendingCount: 0);
-    } on LocalPhotoWipeException catch (e) {
-      await _recordFailedWipe('explicit erase', e);
+    } on LocalPhotoWipeException catch (e, st) {
+      await _recordFailedWipe('explicit erase', 'explicit_erase', e, st);
       return EraseLocalDataResult.photosSurvived;
-    } on LocalDeviceNotSecuredException catch (e) {
-      await _recordFailedWipe('explicit erase', e);
+    } on LocalDeviceNotSecuredException catch (e, st) {
+      await _recordFailedWipe('explicit erase', 'explicit_erase', e, st);
       return EraseLocalDataResult.erasedButNotSecured;
-    } catch (e) {
-      await _recordFailedWipe('explicit erase', e);
+    } catch (e, st) {
+      await _recordFailedWipe('explicit erase', 'explicit_erase', e, st);
       return EraseLocalDataResult.failed;
     } finally {
       _wiping = false;
@@ -1122,8 +1189,22 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   /// Leaves a failed wipe owed and visible: the lock stays up and the sync
   /// status carries the error, whichever part of the wipe it was that failed.
-  Future<void> _recordFailedWipe(String action, Object error) async {
+  Future<void> _recordFailedWipe(
+    String action,
+    String telemetryAction,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
     debugPrint('SyncNotifier: $action failed: $error');
+    unawaited(
+      _telemetry.recordNonFatal(
+        error,
+        stackTrace,
+        context: 'sync.wipe_failed',
+        attributes: {'action': telemetryAction},
+        skipIfOffline: false,
+      ),
+    );
     await _publishOwedWipe();
     state = state.copyWith(
       status: SyncStatus.error,
@@ -1338,25 +1419,37 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // only after its own first await.
     if (_wiping || prefs.getBool(pendingWipeKey) != true) return null;
     debugPrint('SyncNotifier: finishing an interrupted local data wipe');
+    unawaited(_telemetry.logBreadcrumb('sync.interrupted_wipe_resumed'));
     try {
       await _wipeLocalData();
       return EraseLocalDataResult.erased;
-    } on LocalPhotoWipeException catch (e) {
-      await _reportResumedWipeFailure(e);
+    } on LocalPhotoWipeException catch (e, st) {
+      await _reportResumedWipeFailure(e, st);
       return EraseLocalDataResult.photosSurvived;
-    } on LocalDeviceNotSecuredException catch (e) {
-      await _reportResumedWipeFailure(e);
+    } on LocalDeviceNotSecuredException catch (e, st) {
+      await _reportResumedWipeFailure(e, st);
       return EraseLocalDataResult.erasedButNotSecured;
-    } catch (e) {
-      await _reportResumedWipeFailure(e);
+    } catch (e, st) {
+      await _reportResumedWipeFailure(e, st);
       return EraseLocalDataResult.failed;
     }
   }
 
   /// Leaves the flag set: [_blockedByPendingWipe] then refuses every push
   /// until a later attempt succeeds, rather than uploading what survived.
-  Future<void> _reportResumedWipeFailure(Object error) async {
+  Future<void> _reportResumedWipeFailure(
+    Object error,
+    StackTrace stackTrace,
+  ) async {
     debugPrint('SyncNotifier: resumed wipe failed, still pending: $error');
+    unawaited(
+      _telemetry.recordNonFatal(
+        error,
+        stackTrace,
+        context: 'sync.interrupted_wipe_failed',
+        skipIfOffline: false,
+      ),
+    );
     await _publishOwedWipe();
   }
 
@@ -1396,8 +1489,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // account delete would leave no way back to photos still stored.
         try {
           await _syncService.deleteCloudData(auth.uid!);
-        } catch (e) {
+        } catch (e, st) {
           debugPrint('SyncNotifier: cloud data deletion did not finish: $e');
+          unawaited(
+            _telemetry.recordNonFatal(e, st, context: 'sync.delete_cloud_data'),
+          );
           state = state.copyWith(
             status: SyncStatus.error,
             errorMessage: e.toString(),
@@ -1411,8 +1507,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
         // exists is the one thing this report exists to prevent.
         try {
           await _deleteAuthAccount();
-        } catch (e) {
+        } catch (e, st) {
           debugPrint('SyncNotifier: Firebase account deletion failed: $e');
+          final isRecentLoginRequired =
+              e is FirebaseAuthException && e.code == 'requires-recent-login';
+          if (!isRecentLoginRequired) {
+            unawaited(
+              _telemetry.recordNonFatal(
+                e,
+                st,
+                context: 'sync.delete_auth_account',
+              ),
+            );
+          }
           accountSurvived = true;
         }
         // Persisted before anything else can redirect the user away from the
@@ -1435,18 +1542,33 @@ class SyncNotifier extends StateNotifier<SyncState> {
       try {
         await _wipeLocalData();
         localWiped = true;
-      } on LocalPhotoWipeException catch (e) {
-        await _recordFailedWipe('deleteAllData local wipe', e);
+      } on LocalPhotoWipeException catch (e, st) {
+        await _recordFailedWipe(
+          'deleteAllData local wipe',
+          'delete_all_data_local_wipe',
+          e,
+          st,
+        );
         if (!cloudDeleted) return DeleteAllDataResult.localPhotosSurvived;
-      } on LocalDeviceNotSecuredException catch (e) {
+      } on LocalDeviceNotSecuredException catch (e, st) {
         // Nothing local survived this one, so it is not a local copy that is
         // still standing: every row, photograph, watermark and stamp is gone
         // and only the securing is owed.
         localWiped = true;
         notSecured = true;
-        await _recordFailedWipe('deleteAllData local wipe', e);
-      } catch (e) {
-        await _recordFailedWipe('deleteAllData local wipe', e);
+        await _recordFailedWipe(
+          'deleteAllData local wipe',
+          'delete_all_data_local_wipe',
+          e,
+          st,
+        );
+      } catch (e, st) {
+        await _recordFailedWipe(
+          'deleteAllData local wipe',
+          'delete_all_data_local_wipe',
+          e,
+          st,
+        );
         if (!cloudDeleted) rethrow;
       }
       if (!localWiped) {
@@ -1476,8 +1598,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       return notSecured
           ? DeleteAllDataResult.localErasedButNotSecured
           : DeleteAllDataResult.deleted;
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('SyncNotifier: deleteAllData failed: $e');
+      unawaited(
+        _telemetry.recordNonFatal(e, st, context: 'sync.delete_all_data'),
+      );
       state = state.copyWith(
         status: SyncStatus.error,
         errorMessage: e.toString(),
@@ -1521,9 +1646,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> _endDeletedAccountSession() async {
     try {
       await _ref.read(authProvider.notifier).signOut();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint(
         "SyncNotifier: ending the deleted account's session failed: $e",
+      );
+      unawaited(
+        _telemetry.recordNonFatal(
+          e,
+          st,
+          context: 'sync.end_deleted_account_session',
+        ),
       );
     }
   }
@@ -1548,6 +1680,7 @@ final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
     keys: ref.watch(encryptionKeyServiceProvider),
     queue: ref.watch(syncQueueProvider),
     trigger: ref.watch(syncTriggerProvider),
+    telemetry: ref.watch(telemetryServiceProvider),
   );
 });
 
@@ -1828,5 +1961,6 @@ final syncStateProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
     ref,
     ref.watch(syncQueueProvider),
     ref.watch(syncServiceProvider),
+    telemetry: ref.watch(telemetryServiceProvider),
   );
 });

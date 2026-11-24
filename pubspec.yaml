@@ -1,7 +1,7 @@
 name: pottery_tracker
 description: "A photo-first pottery tracking app for hobby potters."
 publish_to: 'none'
-version: 1.2.3+28
+version: 1.2.4+29
 
 environment:
   sdk: ^3.11.0

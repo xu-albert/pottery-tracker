@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +14,7 @@ import '../database/transfer_key_backup.dart';
 import 'encryption_key_service.dart';
 import 'sync_queue.dart';
 import 'sync_trigger.dart';
+import 'telemetry_service.dart';
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -22,11 +24,14 @@ import 'sync_trigger.dart';
 /// the watermarks and the ownership stamp are all gone, the photographs are
 /// not, and the erase stays owed. Matching on a message would break the first
 /// time the wording changed or another error arrived from the same call.
-class LocalPhotoWipeException implements Exception {
+class LocalPhotoWipeException implements Exception, TelemetryCauseCarrier {
   /// What stopped the photos directory from being removed.
   final Object cause;
 
   LocalPhotoWipeException(this.cause);
+
+  @override
+  Iterable<Object> get telemetryCauses => [cause];
 
   @override
   String toString() =>
@@ -52,11 +57,15 @@ class LocalPhotoWipeException implements Exception {
 /// removes it, so leaving it would tell the next person they have a
 /// passphrase they never chose. [causes] carries every step that failed, so a
 /// report never drops one in favour of another.
-class LocalDeviceNotSecuredException implements Exception {
+class LocalDeviceNotSecuredException
+    implements Exception, TelemetryCauseCarrier {
   /// What stopped the device from being secured, in the order it happened.
   final List<Object> causes;
 
   LocalDeviceNotSecuredException(this.causes);
+
+  @override
+  Iterable<Object> get telemetryCauses => causes;
 
   @override
   String toString() =>
@@ -81,6 +90,8 @@ class SyncService {
   /// use, which enqueues into [_queue].
   final SyncTrigger _trigger;
 
+  final TelemetryService _telemetry;
+
   SyncService(
     AppDatabase db,
     FirebaseFirestore firestore,
@@ -88,6 +99,7 @@ class SyncService {
     EncryptionKeyService? keys,
     SyncQueue? queue,
     SyncTrigger? trigger,
+    TelemetryService? telemetry,
   }) : this._(
          db,
          firestore,
@@ -95,6 +107,7 @@ class SyncService {
          keys ?? EncryptionKeyService(),
          queue ?? SyncQueue(),
          trigger,
+         telemetry ?? TelemetryService(),
        );
 
   SyncService._(
@@ -104,6 +117,7 @@ class SyncService {
     this._keys,
     this._queue,
     SyncTrigger? trigger,
+    this._telemetry,
   ) : _trigger = trigger ?? SyncTrigger(_queue);
 
   DocumentReference _userDoc(String uid) => _firestore.doc('users/$uid');
@@ -530,7 +544,27 @@ class SyncService {
     if (await _db.photosDao.getPhotoById(photoId) == null) {
       try {
         await ref.delete();
-      } catch (_) {}
+      } on FirebaseException catch (e, st) {
+        if (e.code != 'object-not-found') {
+          debugPrint(
+            'SyncService: orphan cloud photo deletion failed: ${e.code}',
+          );
+          unawaited(
+            _telemetry.recordNonFatal(
+              e,
+              st,
+              context: 'sync.orphan_photo_delete',
+            ),
+          );
+        }
+      } catch (e, st) {
+        debugPrint(
+          'SyncService: orphan cloud photo deletion failed: ${e.runtimeType}',
+        );
+        unawaited(
+          _telemetry.recordNonFatal(e, st, context: 'sync.orphan_photo_delete'),
+        );
+      }
       return;
     }
     final url = await ref.getDownloadURL();

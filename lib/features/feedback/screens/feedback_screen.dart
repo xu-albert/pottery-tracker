@@ -6,6 +6,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/feedback_provider.dart';
 import '../../../providers/review_prompt_provider.dart';
+import '../../../providers/telemetry_provider.dart';
 import '../../../services/feedback_service.dart';
 import '../../../widgets/app_snackbar.dart';
 
@@ -60,7 +61,16 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
       if (!mounted) return;
       AppSnackbar.show(context, message: l10n.feedbackSentSuccess);
       context.pop();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('FeedbackScreen: submit failed: ${error.runtimeType}');
+      await ref
+          .read(telemetryServiceProvider)
+          .recordNonFatal(
+            error,
+            stackTrace,
+            context: 'feedback.submit',
+            attributes: {'category': _category.value},
+          );
       if (!mounted) return;
       AppSnackbar.show(context, message: l10n.feedbackSendFailed);
     } finally {

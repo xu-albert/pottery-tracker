@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -20,40 +22,93 @@ import 'providers/sync_provider.dart';
 import 'providers/pieces_provider.dart';
 import 'providers/transfer_provider.dart';
 import 'services/encryption_key_service.dart';
+import 'services/telemetry_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeFirebaseServices();
+  await _launch();
+}
+
+/// Initializes Firebase Core, App Check, and Crashlytics error handlers.
+///
+/// Tracks [firebaseReady] from `Firebase.initializeApp(...)` so a startup
+/// initialization failure falls back cleanly into offline-first mode instead
+/// of crashing when touching `FirebaseAppCheck.instance` or
+/// `FirebaseCrashlytics.instance` before `_launch()`.
+@visibleForTesting
+Future<bool> initializeFirebaseServices({
+  Future<void> Function()? initializeApp,
+  void Function()? configureFirestore,
+  Future<void> Function()? activateAppCheck,
+  void Function(FlutterExceptionHandler handler)? setFlutterErrorHandler,
+  void Function(bool Function(Object error, StackTrace stack) handler)?
+  setPlatformErrorHandler,
+  FlutterExceptionHandler? recordFlutterFatalError,
+  Future<void> Function(Object error, StackTrace stack, {bool fatal})?
+  recordError,
+}) async {
+  var firebaseReady = false;
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await (initializeApp ??
+        () => Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        ))();
+    firebaseReady = true;
     debugPrint('Firebase initialized successfully');
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: false,
-    );
+    (configureFirestore ??
+        () {
+          FirebaseFirestore.instance.settings = const Settings(
+            persistenceEnabled: false,
+          );
+        })();
   } catch (e) {
     debugPrint('Firebase init failed: $e');
   }
 
+  if (!firebaseReady) {
+    return false;
+  }
+
   try {
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: kDebugMode
-          ? AndroidProvider.debug
-          : AndroidProvider.playIntegrity,
-      appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
-    );
+    await (activateAppCheck ??
+        () => FirebaseAppCheck.instance.activate(
+          androidProvider: kDebugMode
+              ? AndroidProvider.debug
+              : AndroidProvider.playIntegrity,
+          appleProvider: kDebugMode
+              ? AppleProvider.debug
+              : AppleProvider.appAttest,
+        ))();
   } catch (e) {
     debugPrint('App Check activation failed (non-fatal): $e');
   }
 
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  try {
+    final flutterFatalHandler =
+        recordFlutterFatalError ??
+        FirebaseCrashlytics.instance.recordFlutterFatalError;
+    final errorRecorder =
+        recordError ??
+        (error, stack, {bool fatal = false}) => FirebaseCrashlytics.instance
+            .recordError(error, stack, fatal: fatal);
 
-  PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack);
-    return true;
-  };
+    (setFlutterErrorHandler ?? (h) => FlutterError.onError = h)(
+      flutterFatalHandler,
+    );
+    (setPlatformErrorHandler ?? (h) => PlatformDispatcher.instance.onError = h)(
+      (error, stack) {
+        unawaited(
+          errorRecorder(error, stack, fatal: true).catchError((Object _) {}),
+        );
+        return true;
+      },
+    );
+  } catch (e) {
+    debugPrint('Crashlytics setup failed (non-fatal): $e');
+  }
 
-  await _launch();
+  return true;
 }
 
 /// The transfer backup the bootstrap used, handed to the app's providers so
@@ -86,9 +141,12 @@ Future<void> _launch() async {
     launch = await (await _bootstrap()).launch();
   } catch (error, stack) {
     debugPrint('Opening the local database failed: $error');
-    try {
-      await FirebaseCrashlytics.instance.recordError(error, stack);
-    } catch (_) {}
+    await TelemetryService().recordNonFatal(
+      error,
+      stack,
+      context: 'startup.local_database_launch_failed',
+      skipIfOffline: false,
+    );
     runApp(
       PreLaunchApp(
         child: LaunchFailedScreen(error: error, onRetry: _launch),
