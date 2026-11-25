@@ -243,7 +243,7 @@ class PhotoHealthService {
     final platform = _resolvePlatform();
 
     await Future.wait([
-      _reportCrashlytics(snapshot),
+      _reportCrashlytics(snapshot, uid: uid),
       _reportAnalytics(snapshot, appVersion: appVersion),
       _reportFirestore(
         snapshot,
@@ -254,7 +254,10 @@ class PhotoHealthService {
     ]);
   }
 
-  Future<void> _reportCrashlytics(PhotoHealthSnapshot snapshot) async {
+  Future<void> _reportCrashlytics(
+    PhotoHealthSnapshot snapshot, {
+    required String? uid,
+  }) async {
     try {
       await _telemetry.setCustomKey(
         'photos_missing_unrecoverable_count',
@@ -267,7 +270,12 @@ class PhotoHealthService {
         snapshot.missingLocal,
       );
 
-      if (snapshot.missingUnrecoverable > 0 && !_unrecoverableReported) {
+      final isSignedIn = uid != null && uid.isNotEmpty;
+      final canEmitUnrecoverable =
+          !isSignedIn || snapshot.trigger == PhotoHealthTrigger.postSync;
+      if (canEmitUnrecoverable &&
+          snapshot.missingUnrecoverable > 0 &&
+          !_unrecoverableReported) {
         _unrecoverableReported = true;
         await _telemetry.recordNonFatal(
           PhotoMissingUnrecoverableException(
