@@ -438,69 +438,66 @@ void main() {
       },
     );
 
-    test(
-      'never emits photo.missing_unrecoverable when signed-in sync recovers '
-      'all orphaned photos before post_sync',
-      () async {
-        await seedPiece('p1');
-        await seedPhoto(
-          id: 'ph-orphan',
-          pieceId: 'p1',
-          localPath: PhotoPaths.relativeMainPath('p1', 'ph-orphan'),
-          cloudUrl: null,
-        );
+    test('never emits photo.missing_unrecoverable when signed-in sync recovers '
+        'all orphaned photos before post_sync', () async {
+      await seedPiece('p1');
+      await seedPhoto(
+        id: 'ph-orphan',
+        pieceId: 'p1',
+        localPath: PhotoPaths.relativeMainPath('p1', 'ph-orphan'),
+        cloudUrl: null,
+      );
 
-        final nonFatals = <String>[];
-        final customKeys = <String, Object>{};
-        final telemetry = TelemetryService(
-          isFirebaseReady: () => true,
-          log: (_) {},
-          setCustomKey: (k, v) => customKeys[k] = v,
-          recordError:
-              (
-                error,
-                stack, {
-                required String reason,
-                required Iterable<Object> information,
-                required bool fatal,
-              }) {
-                nonFatals.add(reason);
-              },
-        );
+      final nonFatals = <String>[];
+      final customKeys = <String, Object>{};
+      final telemetry = TelemetryService(
+        isFirebaseReady: () => true,
+        log: (_) {},
+        setCustomKey: (k, v) => customKeys[k] = v,
+        recordError:
+            (
+              error,
+              stack, {
+              required String reason,
+              required Iterable<Object> information,
+              required bool fatal,
+            }) {
+              nonFatals.add(reason);
+            },
+      );
 
-        final service = PhotoHealthService(
-          isFirebaseReady: () => true,
-          telemetry: telemetry,
-          logAnalyticsEvent: (_, _) {},
-          firestore: FakeFirebaseFirestore(),
-          packageInfoLoader: () async => fakePackageInfo(),
-          platformResolver: () => 'ios',
-        );
+      final service = PhotoHealthService(
+        isFirebaseReady: () => true,
+        telemetry: telemetry,
+        logAnalyticsEvent: (_, _) {},
+        firestore: FakeFirebaseFirestore(),
+        packageInfoLoader: () async => fakePackageInfo(),
+        platformResolver: () => 'ios',
+      );
 
-        await service.report(
-          db: db,
-          photoPaths: photoPaths,
-          trigger: PhotoHealthTrigger.startup,
-          uid: 'user-1',
-        );
-        expect(nonFatals, isEmpty);
+      await service.report(
+        db: db,
+        photoPaths: photoPaths,
+        trigger: PhotoHealthTrigger.startup,
+        uid: 'user-1',
+      );
+      expect(nonFatals, isEmpty);
 
-        final recoveredFile = photoPaths.mainFile('p1', 'ph-orphan');
-        recoveredFile.parent.createSync(recursive: true);
-        recoveredFile.writeAsBytesSync(const [0xFF, 0xD8, 0xFF, 0xD9]);
+      final recoveredFile = photoPaths.mainFile('p1', 'ph-orphan');
+      recoveredFile.parent.createSync(recursive: true);
+      recoveredFile.writeAsBytesSync(const [0xFF, 0xD8, 0xFF, 0xD9]);
 
-        await service.report(
-          db: db,
-          photoPaths: photoPaths,
-          trigger: PhotoHealthTrigger.postSync,
-          uid: 'user-1',
-        );
+      await service.report(
+        db: db,
+        photoPaths: photoPaths,
+        trigger: PhotoHealthTrigger.postSync,
+        uid: 'user-1',
+      );
 
-        expect(nonFatals, isEmpty);
-        expect(customKeys['photos_missing_unrecoverable_count'], 0);
-        expect(customKeys['photos_all_visible'], isTrue);
-      },
-    );
+      expect(nonFatals, isEmpty);
+      expect(customKeys['photos_missing_unrecoverable_count'], 0);
+      expect(customKeys['photos_all_visible'], isTrue);
+    });
 
     test(
       'emits photo.missing_unrecoverable on startup for local-only (uid == null) '
@@ -572,76 +569,73 @@ void main() {
       },
     );
 
-    test(
-      'suppresses startup non-fatal and preserves latch when '
-      'emitUnrecoverableOnStartup is false even with uid == null',
-      () async {
-        await seedPiece('p1');
-        await seedPhoto(
-          id: 'ph-lost',
-          pieceId: 'p1',
-          localPath: PhotoPaths.relativeMainPath('p1', 'ph-lost'),
-          cloudUrl: null,
-        );
+    test('suppresses startup non-fatal and preserves latch when '
+        'emitUnrecoverableOnStartup is false even with uid == null', () async {
+      await seedPiece('p1');
+      await seedPhoto(
+        id: 'ph-lost',
+        pieceId: 'p1',
+        localPath: PhotoPaths.relativeMainPath('p1', 'ph-lost'),
+        cloudUrl: null,
+      );
 
-        final firestore = FakeFirebaseFirestore();
-        final nonFatals = <(String reason, List<Object> info)>[];
-        final telemetry = TelemetryService(
-          isFirebaseReady: () => true,
-          log: (_) {},
-          setCustomKey: (_, _) {},
-          recordError:
-              (
-                error,
-                stack, {
-                required String reason,
-                required Iterable<Object> information,
-                required bool fatal,
-              }) {
-                nonFatals.add((reason, information.toList()));
-              },
-        );
+      final firestore = FakeFirebaseFirestore();
+      final nonFatals = <(String reason, List<Object> info)>[];
+      final telemetry = TelemetryService(
+        isFirebaseReady: () => true,
+        log: (_) {},
+        setCustomKey: (_, _) {},
+        recordError:
+            (
+              error,
+              stack, {
+              required String reason,
+              required Iterable<Object> information,
+              required bool fatal,
+            }) {
+              nonFatals.add((reason, information.toList()));
+            },
+      );
 
-        final service = PhotoHealthService(
-          isFirebaseReady: () => true,
-          telemetry: telemetry,
-          logAnalyticsEvent: (_, _) {},
-          firestore: firestore,
-          packageInfoLoader: () async => fakePackageInfo(),
-          platformResolver: () => 'ios',
-        );
+      final service = PhotoHealthService(
+        isFirebaseReady: () => true,
+        telemetry: telemetry,
+        logAnalyticsEvent: (_, _) {},
+        firestore: firestore,
+        packageInfoLoader: () async => fakePackageInfo(),
+        platformResolver: () => 'ios',
+      );
 
-        await service.report(
-          db: db,
-          photoPaths: photoPaths,
-          trigger: PhotoHealthTrigger.startup,
-          uid: null,
-          emitUnrecoverableOnStartup: false,
-        );
+      await service.report(
+        db: db,
+        photoPaths: photoPaths,
+        trigger: PhotoHealthTrigger.startup,
+        uid: null,
+        emitUnrecoverableOnStartup: false,
+      );
 
-        expect(nonFatals, isEmpty);
-        final usersSnap = await firestore.collection('users').get();
-        expect(usersSnap.docs, isEmpty);
+      expect(nonFatals, isEmpty);
+      final usersSnap = await firestore.collection('users').get();
+      expect(usersSnap.docs, isEmpty);
 
-        await service.report(
-          db: db,
-          photoPaths: photoPaths,
-          trigger: PhotoHealthTrigger.postSync,
-          uid: 'user-after-erase',
-        );
+      await service.report(
+        db: db,
+        photoPaths: photoPaths,
+        trigger: PhotoHealthTrigger.postSync,
+        uid: 'user-after-erase',
+      );
 
-        expect(nonFatals, hasLength(1));
-        expect(nonFatals.single.$1, 'photo.missing_unrecoverable');
-        expect(
-          nonFatals.single.$2,
-          contains(
-            'photo.missing_unrecoverable trigger=post_sync '
-            'missing_unrecoverable=1 total=1 '
-            'error=PhotoMissingUnrecoverableException',
-          ),
-        );
-      },
-    );
+      expect(nonFatals, hasLength(1));
+      expect(nonFatals.single.$1, 'photo.missing_unrecoverable');
+      expect(
+        nonFatals.single.$2,
+        contains(
+          'photo.missing_unrecoverable trigger=post_sync '
+          'missing_unrecoverable=1 total=1 '
+          'error=PhotoMissingUnrecoverableException',
+        ),
+      );
+    });
 
     test(
       'does not emit non-fatal when all photos are visible or only missingWithCloud',

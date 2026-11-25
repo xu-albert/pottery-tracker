@@ -277,7 +277,8 @@ accurately:
 
 - **Account identifiers** — Firebase Auth uid, email, display name.
 - **Photos and user content** — piece photos and metadata, in Firestore + Cloud Storage.
-- **Diagnostics** — Crashlytics and Performance.
+- **Diagnostics** — Crashlytics, Performance, and aggregate zero-PII photo-visibility counts stored
+  under `users/{uid}/diagnostics/photo_health` in Firestore (deleted with account data).
 - **Analytics** — Firebase Analytics, **without the advertising ID**. `firebase_analytics` (via
   `play-services-measurement-api`) merges `com.google.android.gms.permission.AD_ID`,
   `android.permission.ACCESS_ADSERVICES_AD_ID` and `android.permission.ACCESS_ADSERVICES_ATTRIBUTION`
