@@ -152,7 +152,7 @@ class _CreatePieceScreenState extends ConsumerState<CreatePieceScreen> {
     HapticFeedback.lightImpact();
     ref
         .read(analyticsProvider)
-        .logEvent(
+        ?.logEvent(
           name: 'piece_created',
           parameters: {'photo_count': results.length},
         );

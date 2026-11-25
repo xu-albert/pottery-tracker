@@ -30,7 +30,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     if (_loading) return;
     ref
         .read(analyticsProvider)
-        .logEvent(name: 'sign_in_attempted', parameters: {'method': 'google'});
+        ?.logEvent(name: 'sign_in_attempted', parameters: {'method': 'google'});
     setState(() => _loadingProvider = _SignInProvider.google);
     try {
       final user = await _authService.signInWithGoogle();
@@ -57,7 +57,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     if (_loading) return;
     ref
         .read(analyticsProvider)
-        .logEvent(name: 'sign_in_attempted', parameters: {'method': 'apple'});
+        ?.logEvent(name: 'sign_in_attempted', parameters: {'method': 'apple'});
     setState(() => _loadingProvider = _SignInProvider.apple);
     try {
       final user = await _authService.signInWithApple();
@@ -157,7 +157,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       : () {
                           ref
                               .read(analyticsProvider)
-                              .logEvent(name: 'sign_in_skipped');
+                              ?.logEvent(name: 'sign_in_skipped');
                           ref.read(authProvider.notifier).skip();
                         },
                   child: Text(l10n.skipForNow),

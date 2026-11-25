@@ -327,6 +327,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   final SyncClock _clock;
   final TelemetryService _telemetry;
+  SyncStatus? _lastReportedSyncStatus;
+
+  @override
+  set state(SyncState value) {
+    super.state = value;
+    if (_lastReportedSyncStatus != value.status) {
+      _lastReportedSyncStatus = value.status;
+      unawaited(_telemetry.setCustomKey('sync_status', value.status.name));
+    }
+  }
 
   SyncNotifier(
     this._ref,
@@ -592,7 +602,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         attributes: {'mode': forceFullSync ? 'full' : 'incremental'},
       ),
     );
-    unawaited(_telemetry.setCustomKey('sync_status', SyncStatus.syncing.name));
 
     final uid = auth.uid!;
     final _Session session = (uid: uid, generation: _generation);
@@ -740,7 +749,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
           lastSyncedAt: state.lastSyncedAt,
         );
       }
-      unawaited(_telemetry.setCustomKey('sync_status', state.status.name));
       unawaited(_telemetry.setCustomKey('sync_pending_count', pendingCount));
       unawaited(
         _telemetry.setCustomKey('sync_pending_photos', pendingPhotos.length),
@@ -777,13 +785,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }) async {
     if (!_canContinue(session)) return;
     debugPrint('SyncNotifier: sync failed: $error');
-    unawaited(_telemetry.recordNonFatal(error, stackTrace, context: context));
-    await _refreshPendingCount(session: session);
+    final count = await _pendingCount();
     if (!_canContinue(session)) return;
     state = state.copyWith(
       status: SyncStatus.error,
+      pendingCount: count,
       errorMessage: _failureReason(error),
     );
+    unawaited(_telemetry.recordNonFatal(error, stackTrace, context: context));
   }
 
   /// Whether [session] is still this device's: no sign-in, sign-out or wipe
@@ -1217,6 +1226,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
     StackTrace stackTrace,
   ) async {
     debugPrint('SyncNotifier: $action failed: $error');
+    await _publishOwedWipe();
+    state = state.copyWith(
+      status: SyncStatus.error,
+      errorMessage: error.toString(),
+    );
     unawaited(
       _telemetry.recordNonFatal(
         error,
@@ -1225,11 +1239,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         attributes: {'action': telemetryAction},
         skipIfOffline: false,
       ),
-    );
-    await _publishOwedWipe();
-    state = state.copyWith(
-      status: SyncStatus.error,
-      errorMessage: error.toString(),
     );
   }
 
@@ -1379,7 +1388,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       return (blocked: false, owner: owner);
     }
     debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
-    unawaited(_telemetry.setCustomKey('sync_status', SyncStatus.blocked.name));
     unawaited(
       _telemetry.logBreadcrumb(
         'sync.blocked',
@@ -1408,7 +1416,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (!_canContinue(session)) return true;
     if (prefs.getBool(pendingWipeKey) != true) return false;
     debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');
-    unawaited(_telemetry.setCustomKey('sync_status', SyncStatus.blocked.name));
     unawaited(
       _telemetry.logBreadcrumb(
         'sync.blocked',
@@ -1526,12 +1533,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
           await _syncService.deleteCloudData(auth.uid!);
         } catch (e, st) {
           debugPrint('SyncNotifier: cloud data deletion did not finish: $e');
-          unawaited(
-            _telemetry.recordNonFatal(e, st, context: 'sync.delete_cloud_data'),
-          );
           state = state.copyWith(
             status: SyncStatus.error,
             errorMessage: e.toString(),
+          );
+          unawaited(
+            _telemetry.recordNonFatal(e, st, context: 'sync.delete_cloud_data'),
           );
           return DeleteAllDataResult.cloudDeleteIncomplete;
         }
@@ -1635,12 +1642,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
           : DeleteAllDataResult.deleted;
     } catch (e, st) {
       debugPrint('SyncNotifier: deleteAllData failed: $e');
-      unawaited(
-        _telemetry.recordNonFatal(e, st, context: 'sync.delete_all_data'),
-      );
       state = state.copyWith(
         status: SyncStatus.error,
         errorMessage: e.toString(),
+      );
+      unawaited(
+        _telemetry.recordNonFatal(e, st, context: 'sync.delete_all_data'),
       );
       // Only "nothing was deleted" when nothing was. Past the cloud delete the
       // outcome is partial, and which part survived depends on how far it got:

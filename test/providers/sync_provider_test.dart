@@ -2066,6 +2066,78 @@ void main() {
         expect(recorded, isEmpty);
       },
     );
+
+    test(
+      'keeps sync_status custom key aligned across syncNow failure, drain transitions, and sign-out',
+      () async {
+        final keys = <String, Object>{};
+        Object? statusAtRecordError;
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) async {},
+          setCustomKey: (k, v) => keys[k] = v,
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) async {
+                statusAtRecordError = keys['sync_status'];
+              },
+        );
+        final clock = _StubSyncClock();
+        final s = _setup(auth: _signedIn, clock: clock, telemetry: telemetry);
+        addTearDown(s.container.dispose);
+        await _settle();
+        expect(keys['sync_status'], SyncStatus.idle.name);
+
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        when(() => s.syncService.pullChangedSince(any())).thenThrow(
+          FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+          ),
+        );
+
+        await s.notifier.syncNow();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.error);
+        expect(statusAtRecordError, SyncStatus.error.name);
+        expect(keys['sync_status'], SyncStatus.error.name);
+
+        const entry = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'piece-1',
+        );
+        final entries = <SyncQueueEntry>[entry];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.pushPiece('user-1', 'piece-1'),
+        ).thenAnswer((_) async {});
+
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(keys['sync_status'], SyncStatus.idle.name);
+
+        when(
+          () => s.syncService.pushPiece('user-1', 'piece-1'),
+        ).thenThrow(Exception('push failed'));
+        entries.add(entry);
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.error);
+        expect(keys['sync_status'], SyncStatus.error.name);
+
+        await s.notifier.endForeignSession(() async {});
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+        expect(keys['sync_status'], SyncStatus.disabled.name);
+      },
+    );
   });
 }
 

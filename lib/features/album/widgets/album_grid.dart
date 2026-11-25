@@ -117,7 +117,7 @@ class AlbumGrid extends ConsumerWidget {
             final newArchived = !isArchived;
             ref
                 .read(analyticsProvider)
-                .logEvent(
+                ?.logEvent(
                   name: newArchived ? 'piece_archived' : 'piece_unarchived',
                 );
             piecesDao.updatePiece(
@@ -149,7 +149,7 @@ class AlbumGrid extends ConsumerWidget {
                 syncTrigger.afterPieceWrite(pieceId);
                 ref
                     .read(analyticsProvider)
-                    .logEvent(
+                    ?.logEvent(
                       name: newArchived ? 'piece_unarchived' : 'piece_archived',
                     );
               },

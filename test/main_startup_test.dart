@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/main.dart';
+import 'package:pottery_tracker/providers/analytics_provider.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/database_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
@@ -245,6 +246,7 @@ void main() {
       addTearDown(container.dispose);
 
       expect(container.read(syncStateProvider).status, SyncStatus.disabled);
+      expect(container.read(analyticsProvider), isNull);
       expect(() => AuthService(), returnsNormally);
       expect(() => container.read(authServiceProvider), returnsNormally);
       await Future<void>.delayed(Duration.zero);

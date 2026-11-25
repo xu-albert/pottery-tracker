@@ -49,7 +49,7 @@ class _ArchivedPieceDetailScreenState
   Future<void> _unarchive() async {
     await ref.read(pieceWriterProvider).setArchived(widget.pieceId, false);
     HapticFeedback.lightImpact();
-    ref.read(analyticsProvider).logEvent(name: 'piece_unarchived');
+    ref.read(analyticsProvider)?.logEvent(name: 'piece_unarchived');
     if (mounted) {
       AppSnackbar.show(
         context,
@@ -66,7 +66,7 @@ class _ArchivedPieceDetailScreenState
 
     await ref.read(pieceWriterProvider).deletePiece(widget.pieceId);
     HapticFeedback.mediumImpact();
-    ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
+    ref.read(analyticsProvider)?.logEvent(name: 'piece_deleted');
 
     if (mounted) context.go('/');
   }

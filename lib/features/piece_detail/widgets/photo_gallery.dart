@@ -1,4 +1,3 @@
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../database/database.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../providers/analytics_provider.dart';
 import '../../../providers/photo_paths_provider.dart';
 import 'photo_fullscreen.dart';
 
@@ -67,9 +67,9 @@ class PhotoGallery extends ConsumerWidget {
           final fullFile = photoPaths.resolveMainFile(photo);
           return GestureDetector(
             onTap: () {
-              FirebaseAnalytics.instance.logEvent(
-                name: 'photo_viewed_fullscreen',
-              );
+              ref
+                  .read(analyticsProvider)
+                  ?.logEvent(name: 'photo_viewed_fullscreen');
               Navigator.push(
                 context,
                 MaterialPageRoute(
