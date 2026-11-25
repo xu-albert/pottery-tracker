@@ -41,7 +41,7 @@ is manual-only by necessity, not by neglect.
     ╱───────╲
    ╱  Widget  ╲ (§2.2) — 19 files, screens/components with branching UI logic
   ╱─────────────╲
- ╱   Unit / DAO   ╲ (§2.1) — 37 files: providers, services, DAOs, pure helpers
+ ╱   Unit / DAO   ╲ (§2.1) — 38 files: providers, services, DAOs, pure helpers
 ╱───────────────────╲
 ```
 
@@ -106,6 +106,7 @@ for one file; `flutter test --plain-name "some test name"` for one case.
 | `test/services/feedback_service_test.dart` | Feedback Firestore write path | 4 |
 | `test/services/image_service_test.dart` | Re-encode fallback chain: a photo neither re-encode can process (or that encodes to nothing) is refused, never kept raw; a failed thumbnail re-encode or write leaves no file; `discardFiles` | 8 |
 | `test/services/material_writer_test.dart` | Clay/glaze/tag create-and-select, and a clay rename that queues the clay and every piece it renamed for its `clayType` alone, unless the piece is also queued for an edit of its own | 5 |
+| `test/services/photo_health_service_test.dart` | Privacy-safe photo visibility telemetry: aggregate snapshot counts (`allVisible`, `missingWithCloud`, `missingUnrecoverable`, relocated paths), Analytics `photo_health_check`, Firestore `users/{uid}/diagnostics/photo_health`, Crashlytics keys and once-per-session `photo.missing_unrecoverable` non-fatal, signed-out and offline Firebase-readiness guards, and best-effort error swallowing | 8 |
 | `test/services/photo_paths_test.dart` | `PhotoPaths` relative/legacy-container/empty/unrelated path resolution, thumbnail-to-main display fallback, and `repairStoredPhotoPaths` startup normalization and telemetry | 10 |
 | `test/services/piece_writer_test.dart` | `PieceWriter` piece-row and photo writes against a real Drift DB, each pinned to its `SyncTrigger` enqueue (`AGENTS.md`'s "every write path" rule for screens); photo files discarded when the database cannot adopt them, and deletions queued even when files will not delete | 23 |
 | `test/services/review_prompt_service_test.dart` | In-app-review gating (§6.12 mirrors this manually) | 9 |

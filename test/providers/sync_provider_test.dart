@@ -1,15 +1,24 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
+import 'package:pottery_tracker/providers/database_provider.dart';
+import 'package:pottery_tracker/providers/photo_paths_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/providers/telemetry_provider.dart';
+import 'package:pottery_tracker/services/photo_health_service.dart';
+import 'package:pottery_tracker/services/photo_paths.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:pottery_tracker/services/telemetry_service.dart';
@@ -2136,6 +2145,118 @@ void main() {
         await s.notifier.endForeignSession(() async {});
         expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
         expect(keys['sync_status'], SyncStatus.disabled.name);
+      },
+    );
+
+    test(
+      'syncStateProvider triggers post_sync photo health reporting after sync completes',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('post_sync_health_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        final photoPaths = PhotoPaths(docs.path);
+        final now = DateTime(2026, 11, 1);
+        await db.piecesDao.insertPiece(
+          PiecesCompanion.insert(
+            id: 'p1',
+            title: const Value('Cup'),
+            stage: const Value('glazed'),
+            clayType: const Value('Stoneware'),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await db.photosDao.insertPhoto(
+          PhotosCompanion.insert(
+            id: 'ph1',
+            pieceId: 'p1',
+            localPath: PhotoPaths.relativeMainPath('p1', 'ph1'),
+            dateTaken: now,
+            createdAt: now,
+          ),
+        );
+        final file = photoPaths.mainFile('p1', 'ph1');
+        file.parent.createSync(recursive: true);
+        file.writeAsBytesSync(const [0xFF, 0xD8, 0xFF, 0xD9]);
+
+        final firestore = FakeFirebaseFirestore();
+        final analyticsEvents = <Map<String, Object>>[];
+        final health = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: TelemetryService(isFirebaseReady: () => false),
+          logAnalyticsEvent: (_, params) => analyticsEvents.add(params),
+          firestore: firestore,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Potter Journal',
+            packageName: 'com.albertxu.potterytracker',
+            version: '1.2.4',
+            buildNumber: '29',
+          ),
+          platformResolver: () => 'ios',
+        );
+
+        final syncService = MockSyncService();
+        final queue = MockSyncQueue();
+        when(
+          () => syncService.getLocalDataOwner(),
+        ).thenAnswer((_) async => null);
+        when(
+          () => syncService.getDeviceContested(),
+        ).thenAnswer((_) async => false);
+        when(
+          () => syncService.setLocalDataOwner(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => syncService.checkServerReachability(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => syncService.getLastPulledAt(any()),
+        ).thenAnswer((_) async => now);
+        when(
+          () => syncService.pullChangedSince(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => syncService.pendingPhotoUploadIds(),
+        ).thenAnswer((_) async => const <String>{});
+        when(() => queue.getAll()).thenAnswer((_) async => const []);
+        when(() => queue.pendingCount).thenAnswer((_) async => 0);
+
+        final container = ProviderContainer(
+          overrides: [
+            databaseProvider.overrideWithValue(db),
+            photoPathsProvider.overrideWithValue(photoPaths),
+            photoHealthServiceProvider.overrideWithValue(health),
+            authProvider.overrideWith((_) => AuthNotifier.withState(_signedIn)),
+            syncQueueProvider.overrideWithValue(queue),
+            syncServiceProvider.overrideWithValue(syncService),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container.read(syncStateProvider);
+        await _settle();
+
+        expect(container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(analyticsEvents, isNotEmpty);
+        expect(analyticsEvents.last['trigger'], 'post_sync');
+        expect(analyticsEvents.last['repaired_count'], 0);
+        expect(analyticsEvents.last['total_photos'], 1);
+        expect(analyticsEvents.last['present_local'], 1);
+        expect(analyticsEvents.last['all_visible'], 1);
+
+        final doc = await firestore
+            .doc('users/user-1/diagnostics/photo_health')
+            .get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['trigger'], 'post_sync');
+        expect(doc.data()!['totalPhotos'], 1);
+        expect(doc.data()!['presentLocal'], 1);
+        expect(doc.data()!['allVisible'], isTrue);
       },
     );
   });

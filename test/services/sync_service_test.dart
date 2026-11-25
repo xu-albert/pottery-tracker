@@ -649,6 +649,29 @@ void main() {
       expect(scripted.storedDataMap.keys, ['users/other/photos/p/x.jpg']);
     });
 
+    test('account deletion removes users/{uid}/diagnostics/photo_health '
+        'and leaves other accounts untouched', () async {
+      await firestore.doc('users/$_uid/diagnostics/photo_health').set({
+        'totalPhotos': 4,
+        'allVisible': true,
+      });
+      await firestore.doc('users/other/diagnostics/photo_health').set({
+        'totalPhotos': 2,
+        'allVisible': true,
+      });
+
+      await service.deleteCloudData(_uid);
+
+      final deletedDoc = await firestore
+          .doc('users/$_uid/diagnostics/photo_health')
+          .get();
+      final otherDoc = await firestore
+          .doc('users/other/diagnostics/photo_health')
+          .get();
+      expect(deletedDoc.exists, isFalse);
+      expect(otherDoc.exists, isTrue);
+    });
+
     test('account deletion fails when Storage cleanup fails, rather than '
         'reporting the photos deleted', () async {
       scripted.listFailure = FirebaseException(

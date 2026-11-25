@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/main.dart';
 import 'package:pottery_tracker/providers/analytics_provider.dart';
@@ -11,6 +15,9 @@ import 'package:pottery_tracker/providers/database_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/router/app_router.dart';
 import 'package:pottery_tracker/services/auth_service.dart';
+import 'package:pottery_tracker/services/photo_health_service.dart';
+import 'package:pottery_tracker/services/photo_paths.dart';
+import 'package:pottery_tracker/services/sync_service.dart';
 import 'package:pottery_tracker/services/telemetry_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -252,4 +259,109 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     },
   );
+
+  group('reportStartupPhotoHealth', () {
+    test(
+      'writes startup photo health to Firestore when owner matches signed-in uid',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          SyncService.localDataOwnerKey: 'owner-1',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('startup_health_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        final firestore = FakeFirebaseFirestore();
+        final analyticsEvents = <Map<String, Object>>[];
+        final health = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: TelemetryService(isFirebaseReady: () => false),
+          logAnalyticsEvent: (_, params) => analyticsEvents.add(params),
+          firestore: firestore,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Potter Journal',
+            packageName: 'com.albertxu.potterytracker',
+            version: '1.2.4',
+            buildNumber: '29',
+          ),
+          platformResolver: () => 'ios',
+        );
+
+        await reportStartupPhotoHealth(
+          db: db,
+          photoPaths: PhotoPaths(docs.path),
+          repairedCount: 3,
+          prefs: prefs,
+          photoHealth: health,
+          currentUid: () => 'owner-1',
+        );
+
+        expect(analyticsEvents, hasLength(1));
+        expect(analyticsEvents.single['repaired_count'], 3);
+        final doc = await firestore
+            .doc('users/owner-1/diagnostics/photo_health')
+            .get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['trigger'], 'startup');
+        expect(doc.data()!['repairedCount'], 3);
+      },
+    );
+
+    test(
+      'skips Firestore write when device is locked to a foreign owner or wipe is owed',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('startup_lock_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        for (final prefsMap in [
+          <String, Object>{SyncService.localDataOwnerKey: 'other-owner'},
+          <String, Object>{
+            SyncService.localDataOwnerKey: 'signed-in-user',
+            SyncNotifier.pendingWipeKey: true,
+          },
+        ]) {
+          SharedPreferences.setMockInitialValues(prefsMap);
+          final prefs = await SharedPreferences.getInstance();
+          final firestore = FakeFirebaseFirestore();
+          final analyticsEvents = <Map<String, Object>>[];
+          final health = PhotoHealthService(
+            isFirebaseReady: () => true,
+            telemetry: TelemetryService(isFirebaseReady: () => false),
+            logAnalyticsEvent: (_, params) => analyticsEvents.add(params),
+            firestore: firestore,
+            packageInfoLoader: () async => PackageInfo(
+              appName: 'Potter Journal',
+              packageName: 'com.albertxu.potterytracker',
+              version: '1.2.4',
+              buildNumber: '29',
+            ),
+            platformResolver: () => 'ios',
+          );
+
+          await reportStartupPhotoHealth(
+            db: db,
+            photoPaths: PhotoPaths(docs.path),
+            repairedCount: 0,
+            prefs: prefs,
+            photoHealth: health,
+            currentUid: () => 'signed-in-user',
+          );
+
+          expect(analyticsEvents, hasLength(1));
+          final doc = await firestore
+              .doc('users/signed-in-user/diagnostics/photo_health')
+              .get();
+          expect(doc.exists, isFalse);
+        }
+      },
+    );
+  });
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/material_writer.dart';
+import '../services/photo_health_service.dart';
 import '../services/sync_queue.dart';
 import '../services/sync_service.dart';
 import '../services/sync_trigger.dart';
@@ -327,6 +328,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   final SyncClock _clock;
   final TelemetryService _telemetry;
+  final FutureOr<void> Function(String uid)? _onSyncCompleted;
   SyncStatus? _lastReportedSyncStatus;
 
   @override
@@ -345,9 +347,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
     Future<void> Function()? deleteAuthAccount,
     SyncClock? clock,
     TelemetryService? telemetry,
+    FutureOr<void> Function(String uid)? onSyncCompleted,
   }) : _deleteAuthAccount = deleteAuthAccount ?? _deleteFirebaseAccount,
        _clock = clock ?? const SyncClock(),
        _telemetry = telemetry ?? TelemetryService(),
+       _onSyncCompleted = onSyncCompleted,
        super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (prev?.uid != next.uid) {
@@ -763,6 +767,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
           },
         ),
       );
+      final onSyncCompleted = _onSyncCompleted;
+      if (onSyncCompleted != null && _canContinue(session)) {
+        unawaited(
+          Future<void>.sync(
+            () => onSyncCompleted(session.uid),
+          ).catchError((Object _) {}),
+        );
+      }
     } catch (e, st) {
       await _publishFailure(e, st, session: session, context: 'sync.pull');
     } finally {
@@ -2000,10 +2012,19 @@ final materialWriterProvider = Provider<MaterialWriter>((ref) {
 });
 
 final syncStateProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
+  final photoPaths = ref.watch(photoPathsProvider);
+  final photoHealth = ref.watch(photoHealthServiceProvider);
   return SyncNotifier(
     ref,
     ref.watch(syncQueueProvider),
     ref.watch(syncServiceProvider),
     telemetry: ref.watch(telemetryServiceProvider),
+    onSyncCompleted: (uid) => photoHealth.report(
+      db: ref.read(databaseProvider),
+      photoPaths: photoPaths,
+      trigger: PhotoHealthTrigger.postSync,
+      repairedCount: 0,
+      uid: uid,
+    ),
   );
 });

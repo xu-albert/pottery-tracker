@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -24,7 +25,9 @@ import 'providers/sync_provider.dart';
 import 'providers/pieces_provider.dart';
 import 'providers/transfer_provider.dart';
 import 'services/encryption_key_service.dart';
+import 'services/photo_health_service.dart';
 import 'services/photo_paths.dart';
+import 'services/sync_service.dart';
 import 'services/telemetry_service.dart';
 
 void main() async {
@@ -241,13 +244,54 @@ Future<void> _launch() async {
   }
 }
 
+/// Reports startup photo visibility telemetry best-effort without blocking
+/// launch. Guards Firestore writes so another account's locked library or a
+/// library pending wipe is never attributed to the signed-in user.
+@visibleForTesting
+Future<PhotoHealthSnapshot?> reportStartupPhotoHealth({
+  required AppDatabase db,
+  required PhotoPaths photoPaths,
+  required int repairedCount,
+  required SharedPreferences prefs,
+  PhotoHealthService? photoHealth,
+  String? Function()? currentUid,
+}) {
+  final service = photoHealth ?? PhotoHealthService.shared;
+  String? uid;
+  try {
+    uid = currentUid != null
+        ? currentUid()
+        : (Firebase.apps.isNotEmpty
+              ? FirebaseAuth.instance.currentUser?.uid
+              : null);
+  } catch (_) {
+    uid = null;
+  }
+
+  final localOwner = prefs.getString(SyncService.localDataOwnerKey);
+  final pendingWipe = prefs.getBool(SyncNotifier.pendingWipeKey) ?? false;
+  final eligibleUid =
+      uid != null && !pendingWipe && (localOwner == null || localOwner == uid)
+      ? uid
+      : null;
+
+  return service.report(
+    db: db,
+    photoPaths: photoPaths,
+    trigger: PhotoHealthTrigger.startup,
+    repairedCount: repairedCount,
+    uid: eligibleUid,
+  );
+}
+
 Future<void> _runPotteryApp(AppDatabase db) async {
   final photoPaths = PhotoPaths(_documentsDir.path);
+  var repaired = 0;
   // Normalize any legacy absolute photo paths left by earlier versions before
   // the first frame renders. Non-fatal on error because PhotoPaths also
   // resolves legacy absolute paths dynamically at runtime.
   try {
-    final repaired = await repairStoredPhotoPaths(
+    repaired = await repairStoredPhotoPaths(
       db,
       photoPaths,
       telemetry: TelemetryService.shared,
@@ -266,6 +310,14 @@ Future<void> _runPotteryApp(AppDatabase db) async {
   }
 
   final prefs = await SharedPreferences.getInstance();
+  unawaited(
+    reportStartupPhotoHealth(
+      db: db,
+      photoPaths: photoPaths,
+      repairedCount: repaired,
+      prefs: prefs,
+    ),
+  );
 
   // Review-prompt session tracking
   final sessions = prefs.getInt('review_prompt_session_count') ?? 0;

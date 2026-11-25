@@ -13,6 +13,7 @@ import '../database/database.dart';
 import '../database/transfer_key_backup.dart';
 import 'encryption_key_service.dart';
 import 'image_service.dart' show CompressFunction;
+import 'photo_health_service.dart';
 import 'photo_paths.dart';
 import 'sync_queue.dart';
 import 'sync_trigger.dart';
@@ -225,6 +226,7 @@ class SyncService {
       'pieceGlazes',
       'pieceTags',
       'meta',
+      PhotoHealthService.firestoreCollection,
     ]) {
       final snap = await _col(uid, collection).get();
       for (final doc in snap.docs) {
