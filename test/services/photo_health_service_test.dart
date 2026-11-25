@@ -573,6 +573,77 @@ void main() {
     );
 
     test(
+      'suppresses startup non-fatal and preserves latch when '
+      'emitUnrecoverableOnStartup is false even with uid == null',
+      () async {
+        await seedPiece('p1');
+        await seedPhoto(
+          id: 'ph-lost',
+          pieceId: 'p1',
+          localPath: PhotoPaths.relativeMainPath('p1', 'ph-lost'),
+          cloudUrl: null,
+        );
+
+        final firestore = FakeFirebaseFirestore();
+        final nonFatals = <(String reason, List<Object> info)>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) {},
+          setCustomKey: (_, _) {},
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) {
+                nonFatals.add((reason, information.toList()));
+              },
+        );
+
+        final service = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: telemetry,
+          logAnalyticsEvent: (_, _) {},
+          firestore: firestore,
+          packageInfoLoader: () async => fakePackageInfo(),
+          platformResolver: () => 'ios',
+        );
+
+        await service.report(
+          db: db,
+          photoPaths: photoPaths,
+          trigger: PhotoHealthTrigger.startup,
+          uid: null,
+          emitUnrecoverableOnStartup: false,
+        );
+
+        expect(nonFatals, isEmpty);
+        final usersSnap = await firestore.collection('users').get();
+        expect(usersSnap.docs, isEmpty);
+
+        await service.report(
+          db: db,
+          photoPaths: photoPaths,
+          trigger: PhotoHealthTrigger.postSync,
+          uid: 'user-after-erase',
+        );
+
+        expect(nonFatals, hasLength(1));
+        expect(nonFatals.single.$1, 'photo.missing_unrecoverable');
+        expect(
+          nonFatals.single.$2,
+          contains(
+            'photo.missing_unrecoverable trigger=post_sync '
+            'missing_unrecoverable=1 total=1 '
+            'error=PhotoMissingUnrecoverableException',
+          ),
+        );
+      },
+    );
+
+    test(
       'does not emit non-fatal when all photos are visible or only missingWithCloud',
       () async {
         await seedPiece('p1');

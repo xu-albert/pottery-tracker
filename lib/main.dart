@@ -269,11 +269,17 @@ Future<PhotoHealthSnapshot?> reportStartupPhotoHealth({
   }
 
   final localOwner = prefs.getString(SyncService.localDataOwnerKey);
+  final deviceContested =
+      prefs.getBool(SyncService.deviceContestedKey) ?? false;
   final pendingWipe = prefs.getBool(SyncNotifier.pendingWipeKey) ?? false;
+  final hasUid = uid != null && uid.isNotEmpty;
+  final hasLocalOwner = localOwner != null && localOwner.isNotEmpty;
   final eligibleUid =
-      uid != null && !pendingWipe && (localOwner == null || localOwner == uid)
+      hasUid && !pendingWipe && (!hasLocalOwner || localOwner == uid)
       ? uid
       : null;
+  final emitUnrecoverableOnStartup =
+      !hasUid && !hasLocalOwner && !deviceContested && !pendingWipe;
 
   return service.report(
     db: db,
@@ -281,6 +287,7 @@ Future<PhotoHealthSnapshot?> reportStartupPhotoHealth({
     trigger: PhotoHealthTrigger.startup,
     repairedCount: repairedCount,
     uid: eligibleUid,
+    emitUnrecoverableOnStartup: emitUnrecoverableOnStartup,
   );
 }
 

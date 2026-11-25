@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -361,6 +362,217 @@ void main() {
               .get();
           expect(doc.exists, isFalse);
         }
+      },
+    );
+
+    test(
+      'suppresses startup unrecoverable non-fatal and preserves session latch '
+      'on foreign-locked, pending-wipe, and cloud-owned signed-out launches',
+      () async {
+        final now = DateTime(2026, 11, 1, 12, 0);
+        final scenarios =
+            <({String label, String? uid, Map<String, Object> prefs})>[
+              (
+                label: 'foreign-owner locked device',
+                uid: 'signed-in-user',
+                prefs: {SyncService.localDataOwnerKey: 'other-owner'},
+              ),
+              (
+                label: 'signed-in pending owed wipe',
+                uid: 'signed-in-user',
+                prefs: {
+                  SyncService.localDataOwnerKey: 'signed-in-user',
+                  SyncNotifier.pendingWipeKey: true,
+                },
+              ),
+              (
+                label: 'signed-out pending owed wipe',
+                uid: null,
+                prefs: {SyncNotifier.pendingWipeKey: true},
+              ),
+              (
+                label: 'cloud-owned library relaunched signed out',
+                uid: null,
+                prefs: {SyncService.localDataOwnerKey: 'owner-1'},
+              ),
+              (
+                label: 'cloud-owned library relaunched contested',
+                uid: null,
+                prefs: {
+                  SyncService.localDataOwnerKey: 'owner-1',
+                  SyncService.deviceContestedKey: true,
+                },
+              ),
+            ];
+
+        for (final scenario in scenarios) {
+          final db = AppDatabase(NativeDatabase.memory());
+          final docs = Directory.systemTemp.createTempSync('startup_defer_');
+          final photoPaths = PhotoPaths(docs.path);
+          try {
+            await db.piecesDao.insertPiece(
+              PiecesCompanion.insert(
+                id: 'p1',
+                title: const Value('Piece'),
+                stage: const Value('greenware'),
+                clayType: const Value('Stoneware'),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+            await db.photosDao.insertPhoto(
+              PhotosCompanion.insert(
+                id: 'ph-missing',
+                pieceId: 'p1',
+                localPath: PhotoPaths.relativeMainPath('p1', 'ph-missing'),
+                cloudUrl: const Value(null),
+                dateTaken: now,
+                createdAt: now,
+              ),
+            );
+
+            SharedPreferences.setMockInitialValues(scenario.prefs);
+            final prefs = await SharedPreferences.getInstance();
+            final firestore = FakeFirebaseFirestore();
+            final nonFatals = <String>[];
+            final telemetry = TelemetryService(
+              isFirebaseReady: () => true,
+              log: (_) {},
+              setCustomKey: (_, _) {},
+              recordError:
+                  (
+                    _,
+                    _, {
+                    required String reason,
+                    required Iterable<Object> information,
+                    required bool fatal,
+                  }) {
+                    nonFatals.add(reason);
+                  },
+            );
+            final health = PhotoHealthService(
+              isFirebaseReady: () => true,
+              telemetry: telemetry,
+              logAnalyticsEvent: (_, _) {},
+              firestore: firestore,
+              packageInfoLoader: () async => PackageInfo(
+                appName: 'Potter Journal',
+                packageName: 'com.albertxu.potterytracker',
+                version: '1.2.4',
+                buildNumber: '29',
+              ),
+              platformResolver: () => 'ios',
+            );
+
+            await reportStartupPhotoHealth(
+              db: db,
+              photoPaths: photoPaths,
+              repairedCount: 0,
+              prefs: prefs,
+              photoHealth: health,
+              currentUid: () => scenario.uid,
+            );
+
+            expect(nonFatals, isEmpty, reason: scenario.label);
+            final usersSnap = await firestore.collection('users').get();
+            expect(usersSnap.docs, isEmpty, reason: scenario.label);
+
+            await health.report(
+              db: db,
+              photoPaths: photoPaths,
+              trigger: PhotoHealthTrigger.postSync,
+              uid: 'own-account',
+            );
+            expect(
+              nonFatals,
+              ['photo.missing_unrecoverable'],
+              reason: '${scenario.label} must not latch post_sync reporting',
+            );
+          } finally {
+            await db.close();
+            if (docs.existsSync()) docs.deleteSync(recursive: true);
+          }
+        }
+      },
+    );
+
+    test(
+      'emits startup unrecoverable non-fatal for genuine local-only library',
+      () async {
+        final now = DateTime(2026, 11, 1, 12, 0);
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('startup_local_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        await db.piecesDao.insertPiece(
+          PiecesCompanion.insert(
+            id: 'p1',
+            title: const Value('Piece'),
+            stage: const Value('greenware'),
+            clayType: const Value('Stoneware'),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await db.photosDao.insertPhoto(
+          PhotosCompanion.insert(
+            id: 'ph-missing',
+            pieceId: 'p1',
+            localPath: PhotoPaths.relativeMainPath('p1', 'ph-missing'),
+            cloudUrl: const Value(null),
+            dateTaken: now,
+            createdAt: now,
+          ),
+        );
+
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final firestore = FakeFirebaseFirestore();
+        final nonFatals = <String>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) {},
+          setCustomKey: (_, _) {},
+          recordError:
+              (
+                _,
+                _, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) {
+                nonFatals.add(reason);
+              },
+        );
+        final health = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: telemetry,
+          logAnalyticsEvent: (_, _) {},
+          firestore: firestore,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Potter Journal',
+            packageName: 'com.albertxu.potterytracker',
+            version: '1.2.4',
+            buildNumber: '29',
+          ),
+          platformResolver: () => 'ios',
+        );
+
+        await reportStartupPhotoHealth(
+          db: db,
+          photoPaths: PhotoPaths(docs.path),
+          repairedCount: 0,
+          prefs: prefs,
+          photoHealth: health,
+          currentUid: () => null,
+        );
+
+        expect(nonFatals, ['photo.missing_unrecoverable']);
+        final usersSnap = await firestore.collection('users').get();
+        expect(usersSnap.docs, isEmpty);
       },
     );
   });

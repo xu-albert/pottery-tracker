@@ -195,6 +195,7 @@ class PhotoHealthService {
     required PhotoHealthTrigger trigger,
     int repairedCount = 0,
     String? uid,
+    bool? emitUnrecoverableOnStartup,
   }) async {
     final PhotoHealthSnapshot snapshot;
     try {
@@ -211,7 +212,11 @@ class PhotoHealthService {
       return null;
     }
 
-    await reportSnapshot(snapshot, uid: uid);
+    await reportSnapshot(
+      snapshot,
+      uid: uid,
+      emitUnrecoverableOnStartup: emitUnrecoverableOnStartup,
+    );
     return snapshot;
   }
 
@@ -220,6 +225,7 @@ class PhotoHealthService {
   Future<void> reportSnapshot(
     PhotoHealthSnapshot snapshot, {
     String? uid,
+    bool? emitUnrecoverableOnStartup,
   }) async {
     unawaited(
       _telemetry.logBreadcrumb(
@@ -243,7 +249,11 @@ class PhotoHealthService {
     final platform = _resolvePlatform();
 
     await Future.wait([
-      _reportCrashlytics(snapshot, uid: uid),
+      _reportCrashlytics(
+        snapshot,
+        uid: uid,
+        emitUnrecoverableOnStartup: emitUnrecoverableOnStartup,
+      ),
       _reportAnalytics(snapshot, appVersion: appVersion),
       _reportFirestore(
         snapshot,
@@ -257,6 +267,7 @@ class PhotoHealthService {
   Future<void> _reportCrashlytics(
     PhotoHealthSnapshot snapshot, {
     required String? uid,
+    bool? emitUnrecoverableOnStartup,
   }) async {
     try {
       await _telemetry.setCustomKey(
@@ -270,9 +281,10 @@ class PhotoHealthService {
         snapshot.missingLocal,
       );
 
-      final isSignedIn = uid != null && uid.isNotEmpty;
+      final canEmitOnStartup =
+          emitUnrecoverableOnStartup ?? (uid == null || uid.isEmpty);
       final canEmitUnrecoverable =
-          !isSignedIn || snapshot.trigger == PhotoHealthTrigger.postSync;
+          snapshot.trigger == PhotoHealthTrigger.postSync || canEmitOnStartup;
       if (canEmitUnrecoverable &&
           snapshot.missingUnrecoverable > 0 &&
           !_unrecoverableReported) {
