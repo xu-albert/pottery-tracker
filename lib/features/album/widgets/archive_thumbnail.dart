@@ -1,20 +1,24 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/daos/pieces_dao.dart';
+import '../../../providers/photo_paths_provider.dart';
 
-class ArchiveThumbnail extends StatelessWidget {
+class ArchiveThumbnail extends ConsumerWidget {
   final PieceWithCover piece;
   final VoidCallback onTap;
 
   const ArchiveThumbnail({super.key, required this.piece, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final title = piece.piece.title ?? 'Untitled Piece';
-    final coverPath =
-        piece.coverPhoto?.thumbnailPath ?? piece.coverPhoto?.localPath;
+    final photoPaths = ref.watch(photoPathsProvider);
+    final coverPhoto = piece.coverPhoto;
+    final coverFile = coverPhoto != null
+        ? photoPaths.resolveDisplayFile(coverPhoto)
+        : null;
 
     return Semantics(
       label: title,
@@ -27,9 +31,10 @@ class ArchiveThumbnail extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              coverPath != null
+              coverFile != null && coverFile.existsSync()
                   ? Image.file(
-                      File(coverPath),
+                      coverFile,
+                      key: ValueKey(coverFile.path),
                       fit: BoxFit.cover,
                       cacheWidth: AppSizes.thumbnailSize.toInt(),
                       errorBuilder: (_, _, _) => _placeholder(),

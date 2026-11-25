@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,8 +12,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database.dart';
 import '../database/transfer_key_backup.dart';
 import 'encryption_key_service.dart';
+import 'image_service.dart' show CompressFunction;
+import 'photo_paths.dart';
 import 'sync_queue.dart';
 import 'sync_trigger.dart';
+
+/// Reports non-fatal photo upload/download/thumbnail failures to Crashlytics
+/// (or a test collector) instead of swallowing them behind `debugPrint`.
+typedef PhotoErrorReporter =
+    void Function(Object error, StackTrace stack, {String? reason});
 
 /// Raised by [SyncService.deleteLocalData] when everything but the photo
 /// files was destroyed.
@@ -81,6 +89,13 @@ class SyncService {
   /// use, which enqueues into [_queue].
   final SyncTrigger _trigger;
 
+  /// Current documents-directory photo path resolver, injected in production
+  /// and resolved lazily in tests that construct [SyncService] directly.
+  final PhotoPaths? _photoPaths;
+
+  final CompressFunction _compress;
+  final PhotoErrorReporter? _onPhotoError;
+
   SyncService(
     AppDatabase db,
     FirebaseFirestore firestore,
@@ -88,6 +103,9 @@ class SyncService {
     EncryptionKeyService? keys,
     SyncQueue? queue,
     SyncTrigger? trigger,
+    PhotoPaths? photoPaths,
+    CompressFunction? compress,
+    PhotoErrorReporter? onPhotoError,
   }) : this._(
          db,
          firestore,
@@ -95,6 +113,9 @@ class SyncService {
          keys ?? EncryptionKeyService(),
          queue ?? SyncQueue(),
          trigger,
+         photoPaths,
+         compress ?? FlutterImageCompress.compressWithList,
+         onPhotoError,
        );
 
   SyncService._(
@@ -104,7 +125,20 @@ class SyncService {
     this._keys,
     this._queue,
     SyncTrigger? trigger,
+    this._photoPaths,
+    this._compress,
+    this._onPhotoError,
   ) : _trigger = trigger ?? SyncTrigger(_queue);
+
+  Future<PhotoPaths> _resolvePhotoPaths() async {
+    if (_photoPaths != null) return _photoPaths;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      return PhotoPaths(dir.path);
+    } catch (_) {
+      return const PhotoPaths.passthrough();
+    }
+  }
 
   DocumentReference _userDoc(String uid) => _firestore.doc('users/$uid');
 
@@ -522,7 +556,8 @@ class SyncService {
   Future<void> uploadPhotoFile(String uid, String photoId) async {
     final photo = await _db.photosDao.getPhotoById(photoId);
     if (photo == null || photo.cloudUrl != null) return;
-    final file = File(photo.localPath);
+    final paths = await _resolvePhotoPaths();
+    final file = paths.resolveMainFile(photo);
     if (!file.existsSync()) return;
 
     final ref = _storage.ref(photoStoragePath(uid, photo.pieceId, photoId));
@@ -713,6 +748,7 @@ class SyncService {
   /// single-flight semantics.
   Future<List<SyncQueueEntry>> fullUploadEntries(String uid) async {
     final entries = <SyncQueueEntry>[];
+    final paths = await _resolvePhotoPaths();
     final allPieces = await _db.select(_db.pieces).get();
     final allPhotos = await _db.select(_db.photos).get();
     final clays = await _db.materialsDao.getAllClays();
@@ -731,7 +767,7 @@ class SyncService {
       entries.add(
         SyncQueueEntry(operation: SyncOperation.pushPhoto, entityId: photo.id),
       );
-      if (photo.cloudUrl == null && File(photo.localPath).existsSync()) {
+      if (photo.cloudUrl == null && paths.resolveMainFile(photo).existsSync()) {
         entries.add(
           SyncQueueEntry(
             operation: SyncOperation.pushPhotoFile,
@@ -1279,16 +1315,20 @@ class SyncService {
   Future<void> _insertPhotoFromRemote(QueryDocumentSnapshot doc) async {
     final d = doc.data() as Map<String, dynamic>;
     final cloudUrl = d['cloudUrl'] as String?;
-    // Use a placeholder path — actual file will be downloaded later
-    final appDir = await getApplicationDocumentsDirectory();
     final pieceId = d['pieceId'] as String;
-    final localPath = '${appDir.path}/photos/$pieceId/${doc.id}.jpg';
+    final localPath = PhotoPaths.relativeMainPath(pieceId, doc.id);
+    final paths = await _resolvePhotoPaths();
+    final thumbRel = PhotoPaths.relativeThumbnailPath(pieceId, doc.id);
+    final hasThumb =
+        paths.documentsPath != null &&
+        paths.thumbnailFile(pieceId, doc.id).existsSync();
 
     await _db.photosDao.insertPhoto(
       PhotosCompanion(
         id: Value(doc.id),
         pieceId: Value(pieceId),
         localPath: Value(localPath),
+        thumbnailPath: hasThumb ? Value(thumbRel) : const Value.absent(),
         cloudUrl: Value(cloudUrl),
         dateTaken: Value((d['dateTaken'] as Timestamp).toDate()),
         createdAt: Value((d['createdAt'] as Timestamp).toDate()),
@@ -1377,97 +1417,275 @@ class SyncService {
   /// Remote-only photos have no local file to upload, so they are excluded.
   /// `SyncNotifier.syncNow` retries each of these through its push lanes.
   Future<Set<String>> pendingPhotoUploadIds() async {
+    final paths = await _resolvePhotoPaths();
     final photos = await _db.select(_db.photos).get();
     return {
       for (final photo in photos)
-        if (photo.cloudUrl == null && File(photo.localPath).existsSync())
+        if (photo.cloudUrl == null && paths.resolveMainFile(photo).existsSync())
           photo.id,
     };
   }
 
   // ════════════════════════════════════════════
-  // Photo download
+  // Photo download & recovery
   // ════════════════════════════════════════════
 
   Future<void> _downloadMissingPhotos(String uid) async {
+    final paths = await _resolvePhotoPaths();
     final allPhotos = await _db.select(_db.photos).get();
-    final missingLocal = allPhotos
-        .where((p) => !File(p.localPath).existsSync())
-        .toList();
-    final downloadable = missingLocal.where((p) => p.cloudUrl != null).toList();
-    final unrecoverable = missingLocal
-        .where((p) => p.cloudUrl == null)
-        .toList();
+    final missingLocal = <Photo>[];
 
+    for (final photo in allPhotos) {
+      final mainFile = paths.resolveMainFile(photo);
+      if (mainFile.existsSync()) {
+        await _repairPresentLocalPhoto(photo, mainFile, paths);
+      } else {
+        missingLocal.add(photo);
+      }
+    }
+
+    final withUrl = missingLocal.where((p) => p.cloudUrl != null).length;
+    final withoutUrl = missingLocal.length - withUrl;
     debugPrint(
       'SyncService: ${missingLocal.length} photos missing locally '
-      '(${downloadable.length} downloadable, '
-      '${unrecoverable.length} have no cloudUrl — need upload from source device)',
+      '($withUrl with cloudUrl, $withoutUrl without cloudUrl to probe)',
     );
 
-    final missing = downloadable;
-
-    // Download in batches of 5
-    for (var i = 0; i < missing.length; i += 5) {
-      final batch = missing.sublist(
+    // Download (or probe Storage for orphaned objects) in batches of 5.
+    for (var i = 0; i < missingLocal.length; i += 5) {
+      final batch = missingLocal.sublist(
         i,
-        i + 5 > missing.length ? missing.length : i + 5,
+        i + 5 > missingLocal.length ? missingLocal.length : i + 5,
       );
-      await Future.wait(batch.map((photo) => _downloadPhoto(photo)));
+      await Future.wait(
+        batch.map((photo) => _downloadPhoto(uid, photo, paths)),
+      );
     }
   }
 
-  Future<void> _downloadPhoto(Photo photo) async {
-    try {
+  /// Normalizes a photo row whose full-size file is already present on disk
+  /// under the current documents directory, and regenerates its thumbnail
+  /// locally if missing — without hitting Cloud Storage.
+  Future<void> _repairPresentLocalPhoto(
+    Photo photo,
+    File mainFile,
+    PhotoPaths paths,
+  ) async {
+    if (paths.documentsPath == null) return;
+    final canonicalMainFile = paths.mainFile(photo.pieceId, photo.id);
+    if (mainFile.path != canonicalMainFile.path) return;
+
+    final thumbFile = paths.thumbnailFile(photo.pieceId, photo.id);
+    final relMain = PhotoPaths.relativeMainPath(photo.pieceId, photo.id);
+    final relThumb = PhotoPaths.relativeThumbnailPath(photo.pieceId, photo.id);
+
+    if (!thumbFile.existsSync()) {
+      try {
+        final mainBytes = await mainFile.readAsBytes();
+        final thumbBytes = await _compress(
+          mainBytes,
+          minWidth: 300,
+          minHeight: 300,
+          quality: 60,
+        );
+        if (thumbBytes.isNotEmpty) {
+          await thumbFile.parent.create(recursive: true);
+          await thumbFile.writeAsBytes(thumbBytes);
+        }
+      } catch (e, st) {
+        debugPrint(
+          'SyncService: local thumbnail regeneration failed for ${photo.id}: $e',
+        );
+        _onPhotoError?.call(
+          e,
+          st,
+          reason: 'regenerateLocalThumbnail ${photo.id}',
+        );
+      }
+    }
+
+    final nextThumb = thumbFile.existsSync() ? relThumb : null;
+    if (photo.localPath != relMain || photo.thumbnailPath != nextThumb) {
+      await _db.photosDao.updatePhoto(
+        PhotosCompanion(
+          id: Value(photo.id),
+          localPath: Value(relMain),
+          thumbnailPath: Value(nextThumb),
+        ),
+      );
+    }
+  }
+
+  Future<Uint8List?> _fetchStorageBytes(Reference ref, String photoId) {
+    return ref.getData().timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        debugPrint('SyncService: download timed out for $photoId');
+        throw TimeoutException('Photo download timed out for $photoId');
+      },
+    );
+  }
+
+  Future<void> _downloadPhoto(String uid, Photo photo, PhotoPaths paths) async {
+    if (paths.documentsPath == null) return;
+
+    final isProbe = photo.cloudUrl == null;
+    final canonicalPath = photoStoragePath(uid, photo.pieceId, photo.id);
+
+    Reference? resolvedRef;
+    Uint8List? data;
+    Object? primaryError;
+    StackTrace? primaryStack;
+    var usedCanonicalFallback = false;
+
+    if (photo.cloudUrl != null) {
       debugPrint(
         'SyncService: downloading photo ${photo.id} from ${photo.cloudUrl}',
       );
+      try {
+        final urlRef = _storage.refFromURL(photo.cloudUrl!);
+        resolvedRef = urlRef;
+        data = await _fetchStorageBytes(urlRef, photo.id);
+      } catch (e, st) {
+        primaryError = e;
+        primaryStack = st;
+        debugPrint(
+          'SyncService: download via cloudUrl failed for ${photo.id}: $e',
+        );
+      }
+    }
 
-      // Use current app directory (container UUID changes on reinstall)
-      final appDir = await getApplicationDocumentsDirectory();
-      final localPath =
-          '${appDir.path}/photos/${photo.pieceId}/${photo.id}.jpg';
-      final thumbnailPath =
-          '${appDir.path}/photos/${photo.pieceId}/${photo.id}_thumb.jpg';
+    // Fall back to the canonical Storage object path when cloudUrl is null
+    // (e.g. nulled by an earlier version's H3 bug, or a crash after putFile)
+    // or when downloading via cloudUrl did not yield bytes.
+    if (data == null) {
+      final canonicalRef = _storage.ref(canonicalPath);
+      final sameAsPrimary =
+          resolvedRef != null && resolvedRef.fullPath == canonicalRef.fullPath;
+      if (!sameAsPrimary) {
+        try {
+          data = await _fetchStorageBytes(canonicalRef, photo.id);
+          if (data != null) {
+            resolvedRef = canonicalRef;
+            usedCanonicalFallback = true;
+            primaryError = null;
+            primaryStack = null;
+          }
+        } on FirebaseException catch (e, st) {
+          if (e.code == 'object-not-found' && isProbe) {
+            // Genuinely never uploaded to Storage; not an error.
+            return;
+          }
+          primaryError ??= e;
+          primaryStack ??= st;
+          debugPrint(
+            'SyncService: canonical Storage fetch failed for ${photo.id}: $e',
+          );
+        } catch (e, st) {
+          primaryError ??= e;
+          primaryStack ??= st;
+          debugPrint(
+            'SyncService: canonical Storage fetch failed for ${photo.id}: $e',
+          );
+        }
+      }
+    }
 
-      final file = File(localPath);
-      await file.parent.create(recursive: true);
+    if (data == null) {
+      if (primaryError != null) {
+        _onPhotoError?.call(
+          primaryError,
+          primaryStack ?? StackTrace.current,
+          reason: 'downloadPhoto ${photo.id}',
+        );
+      }
+      return;
+    }
 
-      // Download from cloud URL with timeout
-      final ref = _storage.refFromURL(photo.cloudUrl!);
-      final data = await ref.getData().timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          debugPrint('SyncService: download timed out for ${photo.id}');
-          return null;
-        },
-      );
-      if (data == null) return;
+    // A photo deleted or wiped while its bytes were in flight must not leave
+    // orphaned files behind on disk.
+    if (await _db.photosDao.getPhotoById(photo.id) == null) return;
 
-      await file.writeAsBytes(data);
+    final mainFile = paths.mainFile(photo.pieceId, photo.id);
+    final thumbFile = paths.thumbnailFile(photo.pieceId, photo.id);
+    final relMain = PhotoPaths.relativeMainPath(photo.pieceId, photo.id);
+    final relThumb = PhotoPaths.relativeThumbnailPath(photo.pieceId, photo.id);
+
+    try {
+      await mainFile.parent.create(recursive: true);
+      await mainFile.writeAsBytes(data);
       debugPrint(
         'SyncService: downloaded photo ${photo.id} (${data.length} bytes)',
       );
+    } catch (e, st) {
+      debugPrint('SyncService: failed writing photo ${photo.id}: $e');
+      _onPhotoError?.call(e, st, reason: 'writeDownloadedPhoto ${photo.id}');
+      return;
+    }
 
-      // Regenerate thumbnail
-      final thumbBytes = await FlutterImageCompress.compressWithList(
+    // Regenerate thumbnail best-effort: a thumbnail failure must never discard
+    // the full-size photo we just downloaded.
+    String? storedThumbPath;
+    try {
+      final thumbBytes = await _compress(
         data,
         minWidth: 300,
         minHeight: 300,
         quality: 60,
       );
-      await File(thumbnailPath).writeAsBytes(thumbBytes);
-
-      // Update DB with current paths
-      await _db.photosDao.updatePhoto(
-        PhotosCompanion(
-          id: Value(photo.id),
-          localPath: Value(localPath),
-          thumbnailPath: Value(thumbnailPath),
-        ),
+      if (thumbBytes.isNotEmpty) {
+        await thumbFile.writeAsBytes(thumbBytes);
+        storedThumbPath = relThumb;
+      }
+    } catch (e, st) {
+      debugPrint(
+        'SyncService: thumbnail generation failed for ${photo.id}: $e',
       );
-    } catch (e) {
-      debugPrint('SyncService: download failed for ${photo.id}: $e');
+      _onPhotoError?.call(
+        e,
+        st,
+        reason: 'thumbnailDownloadedPhoto ${photo.id}',
+      );
+    }
+
+    // If this photo was recovered from Storage via the canonical path (because
+    // cloudUrl was null or broken), fetch its live download URL and queue a
+    // metadata push so Firestore (and every other device) heals too.
+    String? recoveredUrl;
+    if ((photo.cloudUrl == null || usedCanonicalFallback) &&
+        resolvedRef != null) {
+      try {
+        final liveUrl = await resolvedRef.getDownloadURL();
+        if (liveUrl != photo.cloudUrl) recoveredUrl = liveUrl;
+      } catch (e, st) {
+        debugPrint(
+          'SyncService: could not read download URL for recovered photo ${photo.id}: $e',
+        );
+        _onPhotoError?.call(e, st, reason: 'recoveredPhotoUrl ${photo.id}');
+      }
+    }
+
+    if (await _db.photosDao.getPhotoById(photo.id) == null) {
+      try {
+        if (mainFile.existsSync()) await mainFile.delete();
+        if (thumbFile.existsSync()) await thumbFile.delete();
+      } catch (_) {}
+      return;
+    }
+
+    await _db.photosDao.updatePhoto(
+      PhotosCompanion(
+        id: Value(photo.id),
+        localPath: Value(relMain),
+        thumbnailPath: Value(storedThumbPath),
+        cloudUrl: recoveredUrl != null
+            ? Value(recoveredUrl)
+            : const Value.absent(),
+      ),
+    );
+
+    if (recoveredUrl != null) {
+      await _trigger.afterPhotoWrite(photo.id);
     }
   }
 }

@@ -1,14 +1,15 @@
-import 'dart:io';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../database/database.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../providers/photo_paths_provider.dart';
 import 'photo_fullscreen.dart';
 
-class PhotoGallery extends StatelessWidget {
+class PhotoGallery extends ConsumerWidget {
   final List<Photo> photos;
   final ValueChanged<Photo>? onDelete;
   final ValueChanged<Photo>? onEditDate;
@@ -25,7 +26,8 @@ class PhotoGallery extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final photoPaths = ref.watch(photoPathsProvider);
     return Padding(
       padding: padding,
       child: GridView.builder(
@@ -61,7 +63,8 @@ class PhotoGallery extends StatelessWidget {
           }
 
           final photo = photos[index];
-          final path = photo.thumbnailPath ?? photo.localPath;
+          final displayFile = photoPaths.resolveDisplayFile(photo);
+          final fullFile = photoPaths.resolveMainFile(photo);
           return GestureDetector(
             onTap: () {
               FirebaseAnalytics.instance.logEvent(
@@ -70,7 +73,7 @@ class PhotoGallery extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PhotoFullscreen(photoPath: photo.localPath),
+                  builder: (_) => PhotoFullscreen(photoPath: fullFile.path),
                 ),
               );
             },
@@ -82,12 +85,16 @@ class PhotoGallery extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.file(
-                    File(path),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Center(child: Icon(Icons.broken_image, size: 32)),
-                  ),
+                  displayFile.existsSync()
+                      ? Image.file(
+                          displayFile,
+                          key: ValueKey(displayFile.path),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const Center(
+                            child: Icon(Icons.broken_image, size: 32),
+                          ),
+                        )
+                      : const Center(child: Icon(Icons.broken_image, size: 32)),
                   Positioned(
                     left: 0,
                     right: 0,

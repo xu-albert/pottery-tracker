@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -16,10 +18,12 @@ import 'features/recovery/screens/database_recovery_screen.dart';
 import 'features/recovery/screens/launch_failed_screen.dart';
 import 'firebase_options.dart';
 import 'providers/database_provider.dart';
+import 'providers/photo_paths_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/pieces_provider.dart';
 import 'providers/transfer_provider.dart';
 import 'services/encryption_key_service.dart';
+import 'services/photo_paths.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,17 +60,19 @@ void main() async {
   await _launch();
 }
 
-/// The transfer backup the bootstrap used, handed to the app's providers so
-/// Settings reads and writes the same file the launch decision looked at.
+/// The documents directory and transfer backup resolved during bootstrap,
+/// handed to the app's providers so every screen and service reads the same
+/// container path the launch decision used.
+late Directory _documentsDir;
 late TransferKeyBackup _transferBackup;
 
 Future<LocalDatabaseBootstrap> _bootstrap() async {
   AppDatabase.useSqlCipherLibrary();
-  final documentsDir = await getApplicationDocumentsDirectory();
-  _transferBackup = TransferKeyBackup(documentsDir: documentsDir);
+  _documentsDir = await getApplicationDocumentsDirectory();
+  _transferBackup = TransferKeyBackup(documentsDir: _documentsDir);
   return LocalDatabaseBootstrap(
     keys: EncryptionKeyService(),
-    documentsDir: documentsDir,
+    documentsDir: _documentsDir,
     temporaryDir: await getTemporaryDirectory(),
     prefs: await SharedPreferences.getInstance(),
     transferBackup: _transferBackup,
@@ -113,6 +119,22 @@ Future<void> _launch() async {
 }
 
 Future<void> _runPotteryApp(AppDatabase db) async {
+  final photoPaths = PhotoPaths(_documentsDir.path);
+  // Normalize any legacy absolute photo paths left by earlier versions before
+  // the first frame renders. Non-fatal on error because PhotoPaths also
+  // resolves legacy absolute paths dynamically at runtime.
+  try {
+    final repaired = await repairStoredPhotoPaths(db, photoPaths);
+    if (repaired > 0) {
+      debugPrint('Repaired $repaired stored photo path(s) to relative form');
+    }
+  } catch (error, stack) {
+    debugPrint('Repairing stored photo paths failed (non-fatal): $error');
+    try {
+      await FirebaseCrashlytics.instance.recordError(error, stack);
+    } catch (_) {}
+  }
+
   final prefs = await SharedPreferences.getInstance();
 
   // Review-prompt session tracking
@@ -132,6 +154,7 @@ Future<void> _runPotteryApp(AppDatabase db) async {
     ProviderScope(
       overrides: [
         databaseProvider.overrideWithValue(db),
+        photoPathsProvider.overrideWithValue(photoPaths),
         transferKeyBackupProvider.overrideWithValue(_transferBackup),
         // Read before runApp so the read-only lock is correct on the first
         // frame: a device belonging to another account must never render the

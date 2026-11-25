@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../services/sync_service.dart';
 import '../services/sync_trigger.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
+import 'photo_paths_provider.dart';
 import 'transfer_provider.dart';
 
 /// [SyncStatus.blocked] is a refusal, not a failure: this device is not
@@ -325,6 +327,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   final Future<void> Function() _deleteAuthAccount;
 
   final SyncClock _clock;
+  final PhotoErrorReporter? _onPhotoError;
 
   SyncNotifier(
     this._ref,
@@ -332,8 +335,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
     this._syncService, {
     Future<void> Function()? deleteAuthAccount,
     SyncClock? clock,
+    PhotoErrorReporter? onPhotoError,
   }) : _deleteAuthAccount = deleteAuthAccount ?? _deleteFirebaseAccount,
        _clock = clock ?? const SyncClock(),
+       _onPhotoError = onPhotoError,
        super(const SyncState()) {
     _ref.listen<AuthState>(authProvider, (prev, next) {
       if (prev?.uid != next.uid) {
@@ -868,9 +873,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final flight = _singleFlightPush(session, entry, revision, fields);
       try {
         await flight.acknowledgement;
-      } catch (e) {
+      } catch (e, st) {
         if (!_canContinue(session)) return skipped;
         debugPrint('SyncNotifier: photo file upload failed (best-effort): $e');
+        _onPhotoError?.call(e, st, reason: 'uploadPhotoFile ${entry.entityId}');
         return _PushOutcome(
           entry: entry,
           revision: revision,
@@ -1535,6 +1541,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 }
 
+void _recordPhotoError(Object error, StackTrace stack, {String? reason}) {
+  try {
+    unawaited(
+      FirebaseCrashlytics.instance
+          .recordError(error, stack, reason: reason)
+          .catchError((Object _) {}),
+    );
+  } catch (_) {}
+}
+
 final syncQueueProvider = Provider<SyncQueue>((ref) {
   return SyncQueue();
 });
@@ -1548,6 +1564,8 @@ final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
     keys: ref.watch(encryptionKeyServiceProvider),
     queue: ref.watch(syncQueueProvider),
     trigger: ref.watch(syncTriggerProvider),
+    photoPaths: ref.watch(photoPathsProvider),
+    onPhotoError: _recordPhotoError,
   );
 });
 
@@ -1828,5 +1846,6 @@ final syncStateProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
     ref,
     ref.watch(syncQueueProvider),
     ref.watch(syncServiceProvider),
+    onPhotoError: _recordPhotoError,
   );
 });

@@ -430,4 +430,71 @@ void main() {
       );
     });
   });
+
+  test(
+    'a best-effort photo upload failure is reported via onPhotoError',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        '${SyncService.lastPulledAtPrefix}user-1': DateTime(
+          2020,
+        ).millisecondsSinceEpoch,
+      });
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final dir = Directory.systemTemp.createTempSync('photo_report_');
+      final file = File('${dir.path}/photo.jpg')..writeAsBytesSync([1, 2, 3]);
+      final now = DateTime(2026);
+      await db.piecesDao.insertPiece(
+        PiecesCompanion.insert(id: 'piece', createdAt: now, updatedAt: now),
+      );
+      await db.photosDao.insertPhoto(
+        PhotosCompanion.insert(
+          id: 'photo',
+          pieceId: 'piece',
+          localPath: file.path,
+          dateTaken: now,
+          createdAt: now,
+        ),
+      );
+      final service = _Service(
+        db,
+        FakeFirebaseFirestore(),
+        MockFirebaseStorage(),
+      )..failUpload = true;
+      await service.pushPhoto('user-1', 'photo');
+
+      final reported = <(Object, String?)>[];
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (_) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated, uid: 'user-1'),
+            ),
+          ),
+          syncServiceProvider.overrideWithValue(service),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+          syncStateProvider.overrideWith(
+            (ref) => SyncNotifier(
+              ref,
+              ref.watch(syncQueueProvider),
+              ref.watch(syncServiceProvider),
+              onPhotoError: (e, _, {reason}) => reported.add((e, reason)),
+            ),
+          ),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+        dir.deleteSync(recursive: true);
+      });
+
+      final pulled = service.expectPull();
+      container.read(syncStateProvider.notifier);
+      await pulled.timeout(const Duration(seconds: 5));
+
+      expect(reported, hasLength(1));
+      expect(reported.single.$1.toString(), contains('storage unavailable'));
+      expect(reported.single.$2, 'uploadPhotoFile photo');
+    },
+  );
 }

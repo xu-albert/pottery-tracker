@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:exif/exif.dart';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:uuid/uuid.dart';
+import 'photo_paths.dart';
 
 typedef CompressFunction =
     Future<Uint8List> Function(
@@ -18,7 +19,14 @@ typedef CompressFunction =
 
 class ImageResult {
   final String photoId;
+
+  /// Path to the full-size image relative to the app documents directory
+  /// (e.g. `photos/<pieceId>/<photoId>.jpg`), so it stays valid across iOS
+  /// sandbox container UUID relocations.
   final String localPath;
+
+  /// Path to the thumbnail relative to the app documents directory
+  /// (e.g. `photos/<pieceId>/<photoId>_thumb.jpg`).
   final String thumbnailPath;
   final DateTime dateTaken;
 
@@ -77,8 +85,9 @@ class ImageService {
   }
 
   /// Writes a sanitised full-size image and thumbnail for [bytes] and returns
-  /// where they are. Throws [PhotoNotSanitizedException] when the photo
-  /// cannot be re-encoded; on any failure nothing is left on disk.
+  /// their relative paths under the app documents directory. Throws
+  /// [PhotoNotSanitizedException] when the photo cannot be re-encoded; on any
+  /// failure nothing is left on disk.
   Future<ImageResult> processImage({
     required Uint8List bytes,
     required String pieceId,
@@ -105,15 +114,17 @@ class ImageService {
     final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
     await photoDir.create(recursive: true);
 
+    final mainDiskPath = p.join(photoDir.path, '$photoId.jpg');
+    final thumbDiskPath = p.join(photoDir.path, '${photoId}_thumb.jpg');
     final result = ImageResult(
       photoId: photoId,
-      localPath: p.join(photoDir.path, '$photoId.jpg'),
-      thumbnailPath: p.join(photoDir.path, '${photoId}_thumb.jpg'),
+      localPath: PhotoPaths.relativeMainPath(pieceId, photoId),
+      thumbnailPath: PhotoPaths.relativeThumbnailPath(pieceId, photoId),
       dateTaken: dateTaken,
     );
     try {
-      await _writeFile(result.localPath, mainBytes);
-      await _writeFile(result.thumbnailPath, thumbBytes);
+      await _writeFile(mainDiskPath, mainBytes);
+      await _writeFile(thumbDiskPath, thumbBytes);
     } catch (_) {
       await discardFiles(result);
       rethrow;
@@ -125,9 +136,16 @@ class ImageService {
   /// Best effort: it runs while another error is already propagating, which
   /// is the one the caller needs to see.
   Future<void> discardFiles(ImageResult result) async {
+    String? docsPath;
+    Future<File> resolve(String storedPath) async {
+      if (p.isAbsolute(storedPath)) return File(storedPath);
+      docsPath ??= (await getApplicationDocumentsDirectory()).path;
+      return File(p.joinAll([docsPath!, ...storedPath.split('/')]));
+    }
+
     for (final path in [result.localPath, result.thumbnailPath]) {
       try {
-        final file = File(path);
+        final file = await resolve(path);
         if (await file.exists()) await file.delete();
       } catch (e) {
         debugPrint('ImageService: could not discard $path: $e');

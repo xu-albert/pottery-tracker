@@ -1,19 +1,23 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart'
-    show ListResult, Reference;
+    show ListResult, Reference, SettableMetadata, UploadTask;
 import 'package:firebase_storage_mocks/firebase_storage_mocks.dart';
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/database/transfer_key_backup.dart';
+import 'package:pottery_tracker/services/photo_paths.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:pottery_tracker/services/sync_trigger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_secure_storage.dart';
@@ -1330,6 +1334,429 @@ void main() {
       },
     );
   });
+
+  group('photo path relocation and cloud recovery', () {
+    Future<Uint8List> passthroughThumb(
+      Uint8List input, {
+      int quality = 60,
+      int minWidth = 300,
+      int minHeight = 300,
+    }) async => Uint8List.fromList([0xAA, ...input]);
+
+    test(
+      'container UUID change: unuploaded photo with stale absolute path is '
+      'still counted as pending, included in fullUploadEntries, and uploaded',
+      () async {
+        await insertPiece(id: 'p1');
+        // Actual file lives inside the current container (docsDir), while
+        // SQLite still holds the pre-update iOS container UUID.
+        final currentFile =
+            File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg'))
+              ..createSync(recursive: true)
+              ..writeAsBytesSync([1, 2, 3, 4]);
+        final now = DateTime(2026);
+        await db.photosDao.insertPhoto(
+          PhotosCompanion(
+            id: const Value('ph1'),
+            pieceId: const Value('p1'),
+            localPath: const Value(
+              '/var/mobile/Containers/Data/Application/OLD-UUID/Documents/photos/p1/ph1.jpg',
+            ),
+            thumbnailPath: const Value(
+              '/var/mobile/Containers/Data/Application/OLD-UUID/Documents/photos/p1/ph1_thumb.jpg',
+            ),
+            dateTaken: Value(now),
+            createdAt: Value(now),
+          ),
+        );
+        await col('photos').doc('ph1').set({'pieceId': 'p1'});
+
+        expect(await syncService.pendingPhotoUploadIds(), {'ph1'});
+        final fullEntries = await syncService.fullUploadEntries(_uid);
+        expect(
+          fullEntries,
+          contains(
+            const SyncQueueEntry(
+              operation: SyncOperation.pushPhotoFile,
+              entityId: 'ph1',
+            ),
+          ),
+        );
+
+        await syncService.uploadPhotoFile(_uid, 'ph1');
+
+        const storagePath = 'users/$_uid/photos/p1/ph1.jpg';
+        expect(storage.storedFilesMap[storagePath]?.path, currentFile.path);
+        expect((await db.photosDao.getPhotoById('ph1'))!.cloudUrl, isNotNull);
+        expect(
+          ((await col('photos').doc('ph1').get()).data() as Map)['cloudUrl'],
+          isNotNull,
+        );
+      },
+    );
+
+    test('container UUID change: pullChangedSince reuses the local file in the '
+        'new container, repairs stored paths to relative, and regenerates a '
+        'missing thumbnail without hitting Cloud Storage', () async {
+      final downloads = _DownloadCountingStorage();
+      final service = SyncService(
+        db,
+        firestore,
+        downloads,
+        photoPaths: PhotoPaths(docsDir.path),
+        compress: passthroughThumb,
+      );
+      await insertPiece(id: 'p1');
+      File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([9, 8, 7]);
+      final now = DateTime(2026);
+      await db.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: const Value(
+            '/var/mobile/Containers/Data/Application/OLD-UUID/Documents/photos/p1/ph1.jpg',
+          ),
+          thumbnailPath: const Value(
+            '/var/mobile/Containers/Data/Application/OLD-UUID/Documents/photos/p1/ph1_thumb.jpg',
+          ),
+          cloudUrl: const Value('https://example.test/ph1.jpg'),
+          dateTaken: Value(now),
+          createdAt: Value(now),
+        ),
+      );
+
+      await service.pullChangedSince(_uid);
+
+      expect(
+        downloads.lookups,
+        isEmpty,
+        reason: 'local file already exists in the current container',
+      );
+      final updated = (await db.photosDao.getPhotoById('ph1'))!;
+      expect(updated.localPath, 'photos/p1/ph1.jpg');
+      expect(updated.thumbnailPath, 'photos/p1/ph1_thumb.jpg');
+      final thumbFile = File(
+        p.join(docsDir.path, 'photos', 'p1', 'ph1_thumb.jpg'),
+      );
+      expect(thumbFile.existsSync(), isTrue);
+      expect(thumbFile.readAsBytesSync(), [0xAA, 9, 8, 7]);
+    });
+
+    test('recovers an orphaned Cloud Storage photo whose Firestore cloudUrl is '
+        'null, writes relative paths, restores cloudUrl locally, and queues '
+        'a metadata push to heal Firestore', () async {
+      final queue = SyncQueue();
+      final trigger = SyncTrigger(queue);
+      final storageWithFile = _ScriptedStorage();
+      final bytes = Uint8List.fromList([11, 22, 33]);
+      await storageWithFile
+          .ref(SyncService.photoStoragePath(_uid, 'p1', 'ph1'))
+          .putData(bytes);
+
+      final reported = <Object>[];
+      final service = SyncService(
+        db,
+        firestore,
+        storageWithFile,
+        queue: queue,
+        trigger: trigger,
+        photoPaths: PhotoPaths(docsDir.path),
+        compress: passthroughThumb,
+        onPhotoError: (e, _, {reason}) => reported.add(e),
+      );
+      await insertPiece(id: 'p1');
+      final now = DateTime(2026);
+      await db.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: const Value('photos/p1/ph1.jpg'),
+          cloudUrl: const Value(null),
+          dateTaken: Value(now),
+          createdAt: Value(now),
+        ),
+      );
+
+      await service.pullChangedSince(_uid);
+
+      expect(reported, isEmpty);
+      final mainFile = File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg'));
+      final thumbFile = File(
+        p.join(docsDir.path, 'photos', 'p1', 'ph1_thumb.jpg'),
+      );
+      expect(mainFile.existsSync(), isTrue);
+      expect(mainFile.readAsBytesSync(), bytes);
+      expect(thumbFile.existsSync(), isTrue);
+      expect(thumbFile.readAsBytesSync(), [0xAA, 11, 22, 33]);
+
+      final updated = (await db.photosDao.getPhotoById('ph1'))!;
+      expect(updated.localPath, 'photos/p1/ph1.jpg');
+      expect(updated.thumbnailPath, 'photos/p1/ph1_thumb.jpg');
+      expect(updated.cloudUrl, isNotNull);
+      expect(await queue.getAll(), [
+        const SyncQueueEntry(
+          operation: SyncOperation.pushPhoto,
+          entityId: 'ph1',
+        ),
+      ]);
+    });
+
+    test('probing Storage for a null-cloudUrl photo that is genuinely absent '
+        '(object-not-found) stays silent and reports no error', () async {
+      final scripted = _ScriptedStorage();
+      scripted.getDataFailures[SyncService.photoStoragePath(
+        _uid,
+        'p1',
+        'ph1',
+      )] = FirebaseException(
+        plugin: 'firebase_storage',
+        code: 'object-not-found',
+      );
+
+      final reported = <Object>[];
+      final service = SyncService(
+        db,
+        firestore,
+        scripted,
+        photoPaths: PhotoPaths(docsDir.path),
+        compress: passthroughThumb,
+        onPhotoError: (e, _, {reason}) => reported.add(e),
+      );
+      await insertPiece(id: 'p1');
+      final now = DateTime(2026);
+      await db.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: const Value('photos/p1/ph1.jpg'),
+          cloudUrl: const Value(null),
+          dateTaken: Value(now),
+          createdAt: Value(now),
+        ),
+      );
+
+      await service.pullChangedSince(_uid);
+
+      expect(reported, isEmpty);
+      expect((await db.photosDao.getPhotoById('ph1'))!.cloudUrl, isNull);
+    });
+
+    test(
+      'a real Storage download failure is reported to onPhotoError instead of '
+      'being silently swallowed',
+      () async {
+        final scripted = _ScriptedStorage();
+        final failure = FirebaseException(
+          plugin: 'firebase_storage',
+          code: 'unauthorized',
+          message: 'App Check token rejected',
+        );
+        final path = SyncService.photoStoragePath(_uid, 'p1', 'ph1');
+        scripted.getDataFailures[path] = failure;
+        final url = await scripted.ref(path).getDownloadURL();
+
+        final reported = <(Object, String?)>[];
+        final service = SyncService(
+          db,
+          firestore,
+          scripted,
+          photoPaths: PhotoPaths(docsDir.path),
+          compress: passthroughThumb,
+          onPhotoError: (e, _, {reason}) => reported.add((e, reason)),
+        );
+        await insertPiece(id: 'p1');
+        final now = DateTime(2026);
+        await db.photosDao.insertPhoto(
+          PhotosCompanion(
+            id: const Value('ph1'),
+            pieceId: const Value('p1'),
+            localPath: const Value('photos/p1/ph1.jpg'),
+            cloudUrl: Value(url),
+            dateTaken: Value(now),
+            createdAt: Value(now),
+          ),
+        );
+
+        await service.pullChangedSince(_uid);
+
+        expect(reported, hasLength(1));
+        expect(reported.single.$1, same(failure));
+        expect(reported.single.$2, contains('ph1'));
+      },
+    );
+
+    test(
+      'keeps the downloaded full-size photo when thumbnail generation fails, '
+      'leaving thumbnailPath null so the UI falls back to the main image',
+      () async {
+        final scripted = _ScriptedStorage();
+        final path = SyncService.photoStoragePath(_uid, 'p1', 'ph1');
+        final bytes = Uint8List.fromList([5, 6, 7]);
+        await scripted.ref(path).putData(bytes);
+        final url = await scripted.ref(path).getDownloadURL();
+
+        final reported = <String?>[];
+        final service = SyncService(
+          db,
+          firestore,
+          scripted,
+          photoPaths: PhotoPaths(docsDir.path),
+          compress: (input, {quality = 60, minWidth = 300, minHeight = 300}) =>
+              Future<Uint8List>.error(StateError('decoder failed')),
+          onPhotoError: (_, _, {reason}) => reported.add(reason),
+        );
+        await insertPiece(id: 'p1');
+        final now = DateTime(2026);
+        await db.photosDao.insertPhoto(
+          PhotosCompanion(
+            id: const Value('ph1'),
+            pieceId: const Value('p1'),
+            localPath: const Value(
+              '/var/mobile/Containers/Data/Application/OLD-UUID/Documents/photos/p1/ph1.jpg',
+            ),
+            thumbnailPath: const Value(
+              '/var/mobile/Containers/Data/Application/OLD-UUID/Documents/photos/p1/ph1_thumb.jpg',
+            ),
+            cloudUrl: Value(url),
+            dateTaken: Value(now),
+            createdAt: Value(now),
+          ),
+        );
+
+        await service.pullChangedSince(_uid);
+
+        final mainFile = File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg'));
+        expect(mainFile.existsSync(), isTrue);
+        expect(mainFile.readAsBytesSync(), bytes);
+
+        final updated = (await db.photosDao.getPhotoById('ph1'))!;
+        expect(updated.localPath, 'photos/p1/ph1.jpg');
+        expect(updated.thumbnailPath, isNull);
+        expect(reported, contains('thumbnailDownloadedPhoto ph1'));
+      },
+    );
+
+    test(
+      'does not write downloaded bytes to disk if the photo was deleted while '
+      'its download was in flight',
+      () async {
+        final scripted = _ScriptedStorage();
+        final path = SyncService.photoStoragePath(_uid, 'p1', 'ph1');
+        await scripted.ref(path).putData(Uint8List.fromList([1, 2, 3]));
+        final gate = Completer<void>();
+        scripted.getDataGates[path] = gate;
+        final url = await scripted.ref(path).getDownloadURL();
+
+        final service = SyncService(
+          db,
+          firestore,
+          scripted,
+          photoPaths: PhotoPaths(docsDir.path),
+          compress: passthroughThumb,
+        );
+        await insertPiece(id: 'p1');
+        final now = DateTime(2026);
+        await db.photosDao.insertPhoto(
+          PhotosCompanion(
+            id: const Value('ph1'),
+            pieceId: const Value('p1'),
+            localPath: const Value('photos/p1/ph1.jpg'),
+            cloudUrl: Value(url),
+            dateTaken: Value(now),
+            createdAt: Value(now),
+          ),
+        );
+
+        final pull = service.pullChangedSince(_uid);
+        await scripted.getDataStarted[path]!.future;
+        await db.photosDao.deletePhoto('ph1');
+        gate.complete();
+        await pull;
+
+        expect(
+          File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg')).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test('_insertPhotoFromRemote stores relative localPath and wires up a '
+        'pre-existing thumbnail kept across database recovery', () async {
+      await insertPiece(id: 'p1');
+      File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([1]);
+      File(
+        p.join(docsDir.path, 'photos', 'p1', 'ph1_thumb.jpg'),
+      ).writeAsBytesSync([2]);
+      await col('photos').doc('ph1').set({
+        'pieceId': 'p1',
+        'cloudUrl': 'https://example.test/ph1.jpg',
+        'dateTaken': Timestamp.fromDate(DateTime(2025)),
+        'createdAt': Timestamp.fromDate(DateTime(2025)),
+        'sortOrder': 0,
+        'updatedAt': Timestamp.fromDate(DateTime(2025)),
+      });
+
+      await syncService.pullAll(_uid);
+
+      final photo = (await db.photosDao.getPhotoById('ph1'))!;
+      expect(photo.localPath, 'photos/p1/ph1.jpg');
+      expect(photo.thumbnailPath, 'photos/p1/ph1_thumb.jpg');
+    });
+
+    test('malformed cloudUrl falls back to canonical Storage path and heals '
+        'cloudUrl locally and in Firestore', () async {
+      final queue = SyncQueue();
+      final trigger = SyncTrigger(queue);
+      final scripted = _ScriptedStorage();
+      final canonicalPath = SyncService.photoStoragePath(_uid, 'p1', 'ph1');
+      final bytes = Uint8List.fromList([42, 43, 44]);
+      await scripted.ref(canonicalPath).putData(bytes);
+      final liveUrl = await scripted.ref(canonicalPath).getDownloadURL();
+
+      final reported = <Object>[];
+      final service = SyncService(
+        db,
+        firestore,
+        scripted,
+        queue: queue,
+        trigger: trigger,
+        photoPaths: PhotoPaths(docsDir.path),
+        compress: passthroughThumb,
+        onPhotoError: (e, _, {reason}) => reported.add(e),
+      );
+      await insertPiece(id: 'p1');
+      final now = DateTime(2026);
+      await db.photosDao.insertPhoto(
+        PhotosCompanion(
+          id: const Value('ph1'),
+          pieceId: const Value('p1'),
+          localPath: const Value('photos/p1/ph1.jpg'),
+          cloudUrl: const Value('https://example.test/broken-url.jpg'),
+          dateTaken: Value(now),
+          createdAt: Value(now),
+        ),
+      );
+
+      await service.pullChangedSince(_uid);
+
+      expect(reported, isEmpty);
+      final mainFile = File(p.join(docsDir.path, 'photos', 'p1', 'ph1.jpg'));
+      expect(mainFile.existsSync(), isTrue);
+      expect(mainFile.readAsBytesSync(), bytes);
+      final updated = (await db.photosDao.getPhotoById('ph1'))!;
+      expect(updated.cloudUrl, liveUrl);
+      expect(await queue.getAll(), [
+        const SyncQueueEntry(
+          operation: SyncOperation.pushPhoto,
+          entityId: 'ph1',
+        ),
+      ]);
+    });
+  });
 }
 
 /// Records every photo download the sync starts, by the URL it resolves.
@@ -1369,15 +1796,26 @@ class _RekeyLog extends QueryInterceptor {
   }
 }
 
-/// Storage whose deletes and listings can be made to fail by path, the way
-/// the real service fails: `object-not-found` for an object already gone,
-/// anything else for a transient fault.
+/// Storage whose deletes, listings, and downloads can be scripted by path, the
+/// way the real service behaves: `object-not-found` for an absent object,
+/// `unauthorized` for a rejected read, or a gate for mid-flight races.
 class _ScriptedStorage extends MockFirebaseStorage {
   final deleteFailures = <String, FirebaseException>{};
+  final getDataFailures = <String, Object>{};
+  final getDataGates = <String, Completer<void>>{};
+  final getDataStarted = <String, Completer<void>>{};
   FirebaseException? listFailure;
 
   @override
-  Reference ref([String? path]) => _ScriptedReference(this, super.ref(path));
+  Reference ref([String? path]) {
+    final normalized = path != null && path.startsWith('/')
+        ? path.substring(1)
+        : path;
+    if (normalized != null) {
+      getDataStarted.putIfAbsent(normalized, Completer<void>.new);
+    }
+    return _ScriptedReference(this, super.ref(normalized));
+  }
 }
 
 class _ScriptedReference implements Reference {
@@ -1388,6 +1826,27 @@ class _ScriptedReference implements Reference {
 
   String get _path =>
       _inner.fullPath.replaceFirst('gs://${_storage.bucket}', '');
+
+  @override
+  String get fullPath => _inner.fullPath;
+
+  @override
+  Future<String> getDownloadURL() => _inner.getDownloadURL();
+
+  @override
+  UploadTask putData(Uint8List data, [SettableMetadata? metadata]) =>
+      _inner.putData(data, metadata);
+
+  @override
+  Future<Uint8List?> getData([int maxSize = 10485760]) async {
+    final started = _storage.getDataStarted[_path];
+    if (started != null && !started.isCompleted) started.complete();
+    final gate = _storage.getDataGates[_path];
+    if (gate != null) await gate.future;
+    final failure = _storage.getDataFailures[_path];
+    if (failure != null) throw failure;
+    return _inner.getData(maxSize);
+  }
 
   @override
   Future<void> delete() async {

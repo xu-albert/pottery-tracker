@@ -8,6 +8,9 @@ class PhotoFullscreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final file = File(photoPath);
+    const fallback = Icon(Icons.broken_image, color: Colors.white54, size: 48);
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -18,7 +21,14 @@ class PhotoFullscreen extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 4.0,
-          child: Image.file(File(photoPath), fit: BoxFit.contain),
+          child: file.existsSync()
+              ? Image.file(
+                  file,
+                  key: ValueKey(file.path),
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => fallback,
+                )
+              : fallback,
         ),
       ),
     );
