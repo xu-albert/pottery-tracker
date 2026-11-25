@@ -305,5 +305,79 @@ void main() {
         expect(logs.single, contains('operation=deletePhoto'));
       }
     });
+
+    test(
+      'logBreadcrumb preserves structured describeError summaries while stripping PII',
+      () async {
+        final logs = <String>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: logs.add,
+        );
+
+        final cases = <(Object, String)>[
+          (
+            FirebaseException(
+              plugin: 'firebase_auth',
+              code: 'network-request-failed',
+              message: 'uid=user-secret-99 potter@example.com',
+            ),
+            'FirebaseException(plugin=firebase_auth, code=network-request-failed)',
+          ),
+          (
+            PlatformException(
+              code: 'sign_in_failed',
+              message: 'Bearer eyJhbGciOi.secret',
+              details: '/Users/alice/keychain.db',
+            ),
+            'PlatformException(code=sign_in_failed)',
+          ),
+          (
+            const FileSystemException(
+              'Cannot open /var/mobile/Documents/photos/p1/mug.jpg',
+              '/var/mobile/Documents/photos/p1/mug.jpg',
+              OSError('Permission denied', 13),
+            ),
+            'FileSystemException(errno=13)',
+          ),
+          (
+            LocalPhotoWipeException(
+              const FileSystemException(
+                'Cannot delete /var/mobile/mug.jpg',
+                '/var/mobile/mug.jpg',
+                OSError('EACCES', 13),
+              ),
+            ),
+            'LocalPhotoWipeException(FileSystemException(errno=13))',
+          ),
+        ];
+
+        for (final (err, expectedSummary) in cases) {
+          logs.clear();
+          await telemetry.logBreadcrumb(
+            'sync.rekey_step_failed',
+            attributes: {'step': 'rekey', 'unsafe': 'potter@example.com'},
+            error: err,
+          );
+
+          expect(logs, hasLength(1));
+          expect(
+            logs.single,
+            'sync.rekey_step_failed step=rekey unsafe=redacted error=$expectedSummary',
+          );
+          expect(telemetry.recentBreadcrumbs.last, logs.single);
+          for (final forbidden in [
+            'user-secret-99',
+            'potter@example.com',
+            'eyJhbGciOi',
+            'keychain.db',
+            '/var/mobile',
+            'mug.jpg',
+          ]) {
+            expect(logs.single, isNot(contains(forbidden)));
+          }
+        }
+      },
+    );
   });
 }

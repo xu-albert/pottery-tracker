@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1712,8 +1710,8 @@ final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
   return SyncService(
     db,
-    FirebaseFirestore.instance,
-    FirebaseStorage.instance,
+    null,
+    null,
     keys: ref.watch(encryptionKeyServiceProvider),
     queue: ref.watch(syncQueueProvider),
     trigger: ref.watch(syncTriggerProvider),

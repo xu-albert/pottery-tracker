@@ -61,21 +61,13 @@ Future<bool> initializeFirebaseServices({
         ))();
     firebaseReady = true;
     debugPrint('Firebase initialized successfully');
-    (configureFirestore ??
-        () {
-          FirebaseFirestore.instance.settings = const Settings(
-            persistenceEnabled: false,
-          );
-        })();
   } catch (e) {
     debugPrint('Firebase init failed: $e');
     unawaited(
       reporter.logBreadcrumb(
         'startup.firebase_init',
-        attributes: {
-          'ready': 'false',
-          'error': TelemetryService.describeError(e),
-        },
+        attributes: {'ready': 'false'},
+        error: e,
       ),
     );
   }
@@ -91,6 +83,25 @@ Future<bool> initializeFirebaseServices({
       attributes: {'ready': 'true'},
     ),
   );
+
+  try {
+    (configureFirestore ??
+        () {
+          FirebaseFirestore.instance.settings = const Settings(
+            persistenceEnabled: false,
+          );
+        })();
+  } catch (e, st) {
+    debugPrint('Firestore settings configuration failed (non-fatal): $e');
+    unawaited(
+      reporter.recordNonFatal(
+        e,
+        st,
+        context: 'startup.firestore_settings',
+        skipIfOffline: false,
+      ),
+    );
+  }
 
   try {
     await (activateAppCheck ??
@@ -138,10 +149,7 @@ Future<bool> initializeFirebaseServices({
   } catch (e) {
     debugPrint('Crashlytics setup failed (non-fatal): $e');
     unawaited(
-      reporter.logBreadcrumb(
-        'startup.crashlytics_setup_failed',
-        attributes: {'error': TelemetryService.describeError(e)},
-      ),
+      reporter.logBreadcrumb('startup.crashlytics_setup_failed', error: e),
     );
   }
 

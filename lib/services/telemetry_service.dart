@@ -213,8 +213,13 @@ class TelemetryService {
   Future<void> logBreadcrumb(
     String context, {
     Map<String, String> attributes = const {},
+    Object? error,
   }) async {
-    final message = _formatBreadcrumb(context, attributes);
+    final message = _formatBreadcrumb(
+      context,
+      attributes,
+      errorSummary: error != null ? describeError(error) : null,
+    );
     _appendToRingBuffer(message);
     if (!_isFirebaseReady()) return;
     try {

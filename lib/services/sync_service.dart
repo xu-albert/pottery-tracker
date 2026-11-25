@@ -77,9 +77,13 @@ class LocalDeviceNotSecuredException
 
 class SyncService {
   final AppDatabase _db;
-  final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
+  final FirebaseFirestore? _firestoreOverride;
+  final FirebaseStorage? _storageOverride;
   final EncryptionKeyService _keys;
+
+  FirebaseFirestore get _firestore =>
+      _firestoreOverride ?? FirebaseFirestore.instance;
+  FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
 
   /// The queue a pull consults before writing over a local row. The app must
   /// pass the instance its `SyncTrigger` enqueues into, because an edit made
@@ -101,8 +105,8 @@ class SyncService {
 
   SyncService(
     AppDatabase db,
-    FirebaseFirestore firestore,
-    FirebaseStorage storage, {
+    FirebaseFirestore? firestore,
+    FirebaseStorage? storage, {
     EncryptionKeyService? keys,
     SyncQueue? queue,
     SyncTrigger? trigger,
@@ -123,8 +127,8 @@ class SyncService {
 
   SyncService._(
     this._db,
-    this._firestore,
-    this._storage,
+    this._firestoreOverride,
+    this._storageOverride,
     this._keys,
     this._queue,
     SyncTrigger? trigger,
@@ -351,7 +355,7 @@ class SyncService {
       unawaited(
         _telemetry.logBreadcrumb(
           'sync.delete_transfer_backup_failed',
-          attributes: {'error': TelemetryService.describeError(e)},
+          error: e,
         ),
       );
       return e;
@@ -388,10 +392,8 @@ class SyncService {
       unawaited(
         _telemetry.logBreadcrumb(
           'sync.rekey_step_failed',
-          attributes: {
-            'step': 'read_key',
-            'error': TelemetryService.describeError(e),
-          },
+          attributes: {'step': 'read_key'},
+          error: e,
         ),
       );
       return e;
@@ -405,10 +407,8 @@ class SyncService {
       unawaited(
         _telemetry.logBreadcrumb(
           'sync.rekey_step_failed',
-          attributes: {
-            'step': 'rekey',
-            'error': TelemetryService.describeError(e),
-          },
+          attributes: {'step': 'rekey'},
+          error: e,
         ),
       );
       return e;
@@ -422,10 +422,8 @@ class SyncService {
       unawaited(
         _telemetry.logBreadcrumb(
           'sync.rekey_step_failed',
-          attributes: {
-            'step': 'store_key',
-            'error': TelemetryService.describeError(e),
-          },
+          attributes: {'step': 'store_key'},
+          error: e,
         ),
       );
       try {
@@ -435,10 +433,8 @@ class SyncService {
         unawaited(
           _telemetry.logBreadcrumb(
             'sync.rekey_step_failed',
-            attributes: {
-              'step': 'key_back',
-              'error': TelemetryService.describeError(keyBack),
-            },
+            attributes: {'step': 'key_back'},
+            error: keyBack,
           ),
         );
         return keyBack;
@@ -480,10 +476,7 @@ class SyncService {
           } catch (e) {
             // A single undeletable cache entry must not abort the wipe.
             unawaited(
-              _telemetry.logBreadcrumb(
-                'sync.wipe_temp_entry_failed',
-                attributes: {'error': TelemetryService.describeError(e)},
-              ),
+              _telemetry.logBreadcrumb('sync.wipe_temp_entry_failed', error: e),
             );
           }
         }

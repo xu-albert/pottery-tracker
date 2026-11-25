@@ -232,10 +232,7 @@ class ImageService {
       }
     } catch (e) {
       unawaited(
-        _telemetry.logBreadcrumb(
-          'photo.exif_parse_fallback',
-          attributes: {'error': TelemetryService.describeError(e)},
-        ),
+        _telemetry.logBreadcrumb('photo.exif_parse_fallback', error: e),
       );
     }
     return DateTime.now();

@@ -187,7 +187,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           unawaited(
             _telemetry.logBreadcrumb(
               'auth.reload_transient_preserved',
-              attributes: {'error': TelemetryService.describeError(e)},
+              error: e,
             ),
           );
           unawaited(_telemetry.recordNonFatal(e, st, context: 'auth.reload'));
