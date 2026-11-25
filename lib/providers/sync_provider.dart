@@ -12,6 +12,7 @@ import '../services/sync_trigger.dart';
 import '../services/telemetry_service.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
+import 'photo_paths_provider.dart';
 import 'telemetry_provider.dart';
 import 'transfer_provider.dart';
 
@@ -587,6 +588,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
       return;
     }
     _syncing = true;
+    unawaited(
+      _telemetry.logBreadcrumb(
+        'sync.trigger',
+        attributes: {'mode': forceFullSync ? 'full' : 'incremental'},
+      ),
+    );
+    unawaited(_telemetry.setCustomKey('sync_status', SyncStatus.syncing.name));
 
     final uid = auth.uid!;
     final _Session session = (uid: uid, generation: _generation);
@@ -734,6 +742,21 @@ class SyncNotifier extends StateNotifier<SyncState> {
           lastSyncedAt: state.lastSyncedAt,
         );
       }
+      unawaited(_telemetry.setCustomKey('sync_status', state.status.name));
+      unawaited(_telemetry.setCustomKey('sync_pending_count', pendingCount));
+      unawaited(
+        _telemetry.setCustomKey('sync_pending_photos', pendingPhotos.length),
+      );
+      unawaited(
+        _telemetry.logBreadcrumb(
+          'sync.outcome',
+          attributes: {
+            'status': state.status.name,
+            'pending': '$pendingCount',
+            'pending_photos': '${pendingPhotos.length}',
+          },
+        ),
+      );
     } catch (e, st) {
       await _publishFailure(e, st, session: session, context: 'sync.pull');
     } finally {
@@ -898,7 +921,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           _telemetry.recordNonFatal(
             e,
             st,
-            context: 'sync.photo_upload',
+            context: 'photo.upload',
             attributes: {'operation': entry.operation.name},
           ),
         );
@@ -1358,6 +1381,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
       return (blocked: false, owner: owner);
     }
     debugPrint('SyncNotifier: sync blocked, local data belongs to $owner');
+    unawaited(_telemetry.setCustomKey('sync_status', SyncStatus.blocked.name));
+    unawaited(
+      _telemetry.logBreadcrumb(
+        'sync.blocked',
+        attributes: {'reason': 'foreign_local_data'},
+      ),
+    );
     state = state.copyWith(status: SyncStatus.blocked);
     return (blocked: true, owner: owner);
   }
@@ -1380,6 +1410,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
     if (!_canContinue(session)) return true;
     if (prefs.getBool(pendingWipeKey) != true) return false;
     debugPrint('SyncNotifier: sync blocked, a local data wipe is still owed');
+    unawaited(_telemetry.setCustomKey('sync_status', SyncStatus.blocked.name));
+    unawaited(
+      _telemetry.logBreadcrumb(
+        'sync.blocked',
+        attributes: {'reason': 'pending_wipe'},
+      ),
+    );
     state = state.copyWith(status: SyncStatus.blocked);
     return true;
   }
@@ -1680,6 +1717,7 @@ final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
     keys: ref.watch(encryptionKeyServiceProvider),
     queue: ref.watch(syncQueueProvider),
     trigger: ref.watch(syncTriggerProvider),
+    photoPaths: ref.watch(photoPathsProvider),
     telemetry: ref.watch(telemetryServiceProvider),
   );
 });

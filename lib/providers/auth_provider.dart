@@ -80,6 +80,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _endFirebaseSession() =>
       (_endFirebaseSessionOverride ?? _signOutOfFirebase)();
 
+  /// Firebase Auth error codes that prove the persisted session is permanently
+  /// invalid and must be signed out. Transient offline, timeout, rate-limit,
+  /// or backend errors are deliberately excluded so offline-first sync keeps
+  /// the cached session and resumes automatically once connectivity returns.
+  static const _permanentAuthInvalidationCodes = <String>{
+    'user-disabled',
+    'user-not-found',
+    'user-token-expired',
+    'invalid-user-token',
+    'user-mismatch',
+    'invalid-credential',
+  };
+
   /// Set once the user has signed in or chosen to skip; a launch that finds
   /// it goes to the album rather than the sign-in screen. Public because the
   /// database bootstrap clears it when it discards a restored database, so
@@ -90,6 +103,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return user.providerData.map((info) => info.providerId).toSet();
   }
 
+  void _recordAuthMode(AuthState next) {
+    final mode = next.isSignedIn
+        ? 'signed_in'
+        : next.isLocalOnly
+        ? 'local_only'
+        : 'signed_out';
+    unawaited(_telemetry.setCustomKey('auth_mode', mode));
+    unawaited(
+      _telemetry.logBreadcrumb('auth.state', attributes: {'mode': mode}),
+    );
+  }
+
   Future<void> _init() async {
     try {
       // Check Firebase first — persisted session survives app restart
@@ -98,40 +123,97 @@ class AuthNotifier extends StateNotifier<AuthState> {
         firebaseUser = _auth.currentUser;
       } catch (e) {
         debugPrint('AuthNotifier: Firebase not ready: $e');
+        unawaited(_telemetry.logBreadcrumb('auth.firebase_not_ready'));
       }
 
       if (firebaseUser != null) {
-        // Verify the token is still valid
+        // Verify the token is still valid. Only sign out on permanent Firebase
+        // Auth invalidation; preserve the cached session across transient
+        // offline/timeout/network failures so sync resumes once online.
         try {
           await firebaseUser.reload().timeout(const Duration(seconds: 3));
         } catch (e, st) {
-          debugPrint('Firebase user reload failed, signing out: $e');
-          unawaited(_telemetry.recordNonFatal(e, st, context: 'auth.reload'));
-          try {
-            await _auth.signOut().timeout(const Duration(seconds: 3));
-          } catch (signOutError, signOutStack) {
+          final isPermanentInvalidation =
+              e is FirebaseAuthException &&
+              _permanentAuthInvalidationCodes.contains(e.code);
+          if (isPermanentInvalidation) {
+            debugPrint(
+              'Firebase user permanently invalidated (${e.code}), signing out',
+            );
             unawaited(
-              _telemetry.recordNonFatal(
-                signOutError,
-                signOutStack,
-                context: 'auth.reload_sign_out',
+              _telemetry.setCustomKey(
+                'auth_reload_outcome',
+                'permanent_sign_out',
               ),
             );
+            unawaited(
+              _telemetry.recordNonFatal(
+                e,
+                st,
+                context: 'auth.reload',
+                attributes: {'code': e.code, 'outcome': 'permanent_sign_out'},
+                skipIfOffline: false,
+              ),
+            );
+            try {
+              await _auth.signOut().timeout(const Duration(seconds: 3));
+            } catch (signOutError, signOutStack) {
+              unawaited(
+                _telemetry.recordNonFatal(
+                  signOutError,
+                  signOutStack,
+                  context: 'auth.reload_sign_out',
+                ),
+              );
+            }
+            final prefs = await SharedPreferences.getInstance();
+            final completed = prefs.getBool(onboardingKey) ?? false;
+            final next = completed
+                ? const AuthState(status: AuthStatus.authenticated)
+                : const AuthState(status: AuthStatus.unauthenticated);
+            state = next;
+            _recordAuthMode(next);
+            return;
           }
+          debugPrint(
+            'Firebase user reload failed transiently, preserving cached session: $e',
+          );
+          unawaited(
+            _telemetry.setCustomKey(
+              'auth_reload_outcome',
+              'transient_preserved',
+            ),
+          );
+          unawaited(
+            _telemetry.logBreadcrumb(
+              'auth.reload_transient_preserved',
+              attributes: {'error': TelemetryService.describeError(e)},
+            ),
+          );
+          unawaited(_telemetry.recordNonFatal(e, st, context: 'auth.reload'));
+          final cachedUser = _auth.currentUser ?? firebaseUser;
+          final next = AuthState(
+            status: AuthStatus.authenticated,
+            displayName: cachedUser.displayName,
+            uid: cachedUser.uid,
+            linkedProviders: _providerIds(cachedUser),
+          );
+          state = next;
+          _recordAuthMode(next);
           final prefs = await SharedPreferences.getInstance();
-          final completed = prefs.getBool(onboardingKey) ?? false;
-          state = completed
-              ? const AuthState(status: AuthStatus.authenticated)
-              : const AuthState(status: AuthStatus.unauthenticated);
+          await prefs.setBool(onboardingKey, true);
           return;
         }
+        unawaited(_telemetry.setCustomKey('auth_reload_outcome', 'ok'));
         final currentUser = _auth.currentUser!;
-        state = AuthState(
+        final next = AuthState(
           status: AuthStatus.authenticated,
           displayName: currentUser.displayName,
           uid: currentUser.uid,
           linkedProviders: _providerIds(currentUser),
         );
+        state = next;
+        _recordAuthMode(next);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(onboardingKey, true);
         return;
@@ -140,33 +222,39 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // No Firebase user — check if they skipped sign-in previously
       final prefs = await SharedPreferences.getInstance();
       final completed = prefs.getBool(onboardingKey) ?? false;
-      if (completed) {
-        state = const AuthState(status: AuthStatus.authenticated);
-      } else {
-        state = const AuthState(status: AuthStatus.unauthenticated);
-      }
+      final next = completed
+          ? const AuthState(status: AuthStatus.authenticated)
+          : const AuthState(status: AuthStatus.unauthenticated);
+      state = next;
+      _recordAuthMode(next);
     } catch (e, st) {
       debugPrint('Auth init failed: $e');
       unawaited(_telemetry.recordNonFatal(e, st, context: 'auth.init'));
-      state = const AuthState(status: AuthStatus.unauthenticated);
+      const next = AuthState(status: AuthStatus.unauthenticated);
+      state = next;
+      _recordAuthMode(next);
     }
   }
 
   Future<void> signIn(User user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(onboardingKey, true);
-    state = AuthState(
+    final next = AuthState(
       status: AuthStatus.authenticated,
       displayName: user.displayName,
       uid: user.uid,
       linkedProviders: _providerIds(user),
     );
+    state = next;
+    _recordAuthMode(next);
   }
 
   Future<void> skip() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(onboardingKey, true);
-    state = const AuthState(status: AuthStatus.authenticated);
+    const next = AuthState(status: AuthStatus.authenticated);
+    state = next;
+    _recordAuthMode(next);
   }
 
   /// Signs out explicitly. Publishes unauthenticated only once Firebase no
@@ -177,7 +265,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _endFirebaseSession();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(onboardingKey, false);
-    state = const AuthState(status: AuthStatus.unauthenticated);
+    const next = AuthState(status: AuthStatus.unauthenticated);
+    state = next;
+    _recordAuthMode(next);
   }
 
   Future<void> _signOutOfFirebase() async {

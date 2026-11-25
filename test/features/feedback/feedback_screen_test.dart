@@ -133,6 +133,7 @@ void main() {
               error,
               stack, {
               required String reason,
+              required Iterable<Object> information,
               required bool fatal,
             }) async {
               recorded.add((error, reason, fatal));
@@ -171,7 +172,7 @@ void main() {
         recorded.single.$1.toString(),
         'feedback.submit: FirebaseException(plugin=cloud_firestore, code=permission-denied)',
       );
-      final combined = '${logs.single} ${recorded.single.$1}';
+      final combined = '${logs.join(' ')} ${recorded.single.$1}';
       expect(combined, contains('category=other'));
       expect(combined, isNot(contains('private potter feedback text')));
       expect(combined, isNot(contains('potter@example.com')));
@@ -188,7 +189,13 @@ void main() {
       isFirebaseReady: () => true,
       log: (_) async {},
       recordError:
-          (error, stack, {required String reason, required bool fatal}) async {
+          (
+            error,
+            stack, {
+            required String reason,
+            required Iterable<Object> information,
+            required bool fatal,
+          }) async {
             recordedCount++;
           },
     );

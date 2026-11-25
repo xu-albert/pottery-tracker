@@ -1,23 +1,24 @@
-import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../database/database.dart';
+import '../../../providers/photo_paths_provider.dart';
 
 typedef PhotoReorderResult = ({List<Photo> reordered, List<String> deletedIds});
 
-class PhotoReorderScreen extends StatefulWidget {
+class PhotoReorderScreen extends ConsumerStatefulWidget {
   final List<Photo> photos;
 
   const PhotoReorderScreen({super.key, required this.photos});
 
   @override
-  State<PhotoReorderScreen> createState() => _PhotoReorderScreenState();
+  ConsumerState<PhotoReorderScreen> createState() => _PhotoReorderScreenState();
 }
 
-class _PhotoReorderScreenState extends State<PhotoReorderScreen> {
+class _PhotoReorderScreenState extends ConsumerState<PhotoReorderScreen> {
   late List<Photo> _photos;
   final List<String> _deletedPhotoIds = [];
   bool _hasChanges = false;
@@ -62,6 +63,7 @@ class _PhotoReorderScreenState extends State<PhotoReorderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final photoPaths = ref.watch(photoPathsProvider);
     return PopScope(
       canPop: !_hasChanges,
       onPopInvokedWithResult: (didPop, _) async {
@@ -119,7 +121,11 @@ class _PhotoReorderScreenState extends State<PhotoReorderScreen> {
             },
             itemBuilder: (context, index) {
               final photo = _photos[index];
-              final path = photo.thumbnailPath ?? photo.localPath;
+              final file = photoPaths.resolveDisplayFile(photo);
+              Widget brokenTile() => Container(
+                color: AppColors.peach.withValues(alpha: 0.3),
+                child: const Icon(Icons.broken_image, size: 24),
+              );
               return Dismissible(
                 key: ValueKey(photo.id),
                 direction: _photos.length > 1
@@ -164,14 +170,14 @@ class _PhotoReorderScreenState extends State<PhotoReorderScreen> {
                           child: SizedBox(
                             width: 64,
                             height: 64,
-                            child: Image.file(
-                              File(path),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => Container(
-                                color: AppColors.peach.withValues(alpha: 0.3),
-                                child: const Icon(Icons.broken_image, size: 24),
-                              ),
-                            ),
+                            child: file.existsSync()
+                                ? Image.file(
+                                    file,
+                                    key: ValueKey(file.path),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => brokenTile(),
+                                  )
+                                : brokenTile(),
                           ),
                         ),
                         const SizedBox(width: AppSizes.md),

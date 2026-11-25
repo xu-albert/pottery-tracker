@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -7,6 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:exif/exif.dart';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:uuid/uuid.dart';
+import 'photo_paths.dart';
+import 'telemetry_service.dart';
 
 typedef CompressFunction =
     Future<Uint8List> Function(
@@ -18,7 +21,14 @@ typedef CompressFunction =
 
 class ImageResult {
   final String photoId;
+
+  /// Path to the full-size image relative to the app documents directory
+  /// (e.g. `photos/<pieceId>/<photoId>.jpg`), so it stays valid across iOS
+  /// sandbox container UUID relocations.
   final String localPath;
+
+  /// Path to the thumbnail relative to the app documents directory
+  /// (e.g. `photos/<pieceId>/<photoId>_thumb.jpg`).
   final String thumbnailPath;
   final DateTime dateTaken;
 
@@ -35,10 +45,13 @@ typedef WriteFileFunction = Future<void> Function(String path, Uint8List bytes);
 /// A photo neither re-encode could process. Its original bytes are never
 /// kept instead: they carry the EXIF block, GPS position included, that the
 /// re-encode exists to strip, and may not even be a JPEG.
-class PhotoNotSanitizedException implements Exception {
+class PhotoNotSanitizedException implements Exception, TelemetryCauseCarrier {
   final Object cause;
 
   PhotoNotSanitizedException(this.cause);
+
+  @override
+  Iterable<Object> get telemetryCauses => [cause];
 
   @override
   String toString() => 'PhotoNotSanitizedException: $cause';
@@ -49,12 +62,15 @@ class ImageService {
   final _uuid = const Uuid();
   final CompressFunction _compress;
   final WriteFileFunction _writeFile;
+  final TelemetryService _telemetry;
 
   ImageService({
     CompressFunction? compress,
     @visibleForTesting WriteFileFunction? writeFile,
+    TelemetryService? telemetry,
   }) : _compress = compress ?? FlutterImageCompress.compressWithList,
-       _writeFile = writeFile ?? _writeBytes;
+       _writeFile = writeFile ?? _writeBytes,
+       _telemetry = telemetry ?? TelemetryService();
 
   static Future<void> _writeBytes(String path, Uint8List bytes) =>
       File(path).writeAsBytes(bytes);
@@ -77,8 +93,9 @@ class ImageService {
   }
 
   /// Writes a sanitised full-size image and thumbnail for [bytes] and returns
-  /// where they are. Throws [PhotoNotSanitizedException] when the photo
-  /// cannot be re-encoded; on any failure nothing is left on disk.
+  /// their relative paths under the app documents directory. Throws
+  /// [PhotoNotSanitizedException] when the photo cannot be re-encoded; on any
+  /// failure nothing is left on disk.
   Future<ImageResult> processImage({
     required Uint8List bytes,
     required String pieceId,
@@ -105,16 +122,26 @@ class ImageService {
     final photoDir = Directory(p.join(appDir.path, 'photos', pieceId));
     await photoDir.create(recursive: true);
 
+    final mainDiskPath = p.join(photoDir.path, '$photoId.jpg');
+    final thumbDiskPath = p.join(photoDir.path, '${photoId}_thumb.jpg');
     final result = ImageResult(
       photoId: photoId,
-      localPath: p.join(photoDir.path, '$photoId.jpg'),
-      thumbnailPath: p.join(photoDir.path, '${photoId}_thumb.jpg'),
+      localPath: PhotoPaths.relativeMainPath(pieceId, photoId),
+      thumbnailPath: PhotoPaths.relativeThumbnailPath(pieceId, photoId),
       dateTaken: dateTaken,
     );
     try {
-      await _writeFile(result.localPath, mainBytes);
-      await _writeFile(result.thumbnailPath, thumbBytes);
-    } catch (_) {
+      await _writeFile(mainDiskPath, mainBytes);
+      await _writeFile(thumbDiskPath, thumbBytes);
+    } catch (e, st) {
+      unawaited(
+        _telemetry.recordNonFatal(
+          e,
+          st,
+          context: 'photo.image_write',
+          skipIfOffline: false,
+        ),
+      );
       await discardFiles(result);
       rethrow;
     }
@@ -125,12 +152,27 @@ class ImageService {
   /// Best effort: it runs while another error is already propagating, which
   /// is the one the caller needs to see.
   Future<void> discardFiles(ImageResult result) async {
+    String? docsPath;
+    Future<File> resolve(String storedPath) async {
+      if (p.isAbsolute(storedPath)) return File(storedPath);
+      docsPath ??= (await getApplicationDocumentsDirectory()).path;
+      return File(p.joinAll([docsPath!, ...storedPath.split('/')]));
+    }
+
     for (final path in [result.localPath, result.thumbnailPath]) {
       try {
-        final file = File(path);
+        final file = await resolve(path);
         if (await file.exists()) await file.delete();
-      } catch (e) {
+      } catch (e, st) {
         debugPrint('ImageService: could not discard $path: $e');
+        unawaited(
+          _telemetry.recordNonFatal(
+            e,
+            st,
+            context: 'photo.discard_file',
+            skipIfOffline: false,
+          ),
+        );
       }
     }
   }
@@ -159,7 +201,15 @@ class ImageService {
 
     try {
       return _nonEmpty(await _compress(bytes, quality: 100));
-    } catch (e) {
+    } catch (e, st) {
+      unawaited(
+        _telemetry.recordNonFatal(
+          e,
+          st,
+          context: 'photo.reencode_failed',
+          skipIfOffline: false,
+        ),
+      );
       throw PhotoNotSanitizedException(e);
     }
   }
@@ -180,7 +230,14 @@ class ImageService {
         final timePart = dateTag.substring(10);
         return DateTime.parse('$datePart$timePart');
       }
-    } catch (_) {}
+    } catch (e) {
+      unawaited(
+        _telemetry.logBreadcrumb(
+          'photo.exif_parse_fallback',
+          attributes: {'error': TelemetryService.describeError(e)},
+        ),
+      );
+    }
     return DateTime.now();
   }
 

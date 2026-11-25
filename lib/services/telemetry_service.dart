@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io' show FileSystemException, SocketException;
 
 import 'package:firebase_core/firebase_core.dart';
@@ -26,24 +27,37 @@ class SanitizedTelemetryError implements Exception {
   String toString() => summary;
 }
 
-/// Guarded, sanitized Crashlytics non-fatal and breadcrumb reporter.
+/// Guarded, sanitized Crashlytics breadcrumb, custom-key, ring-buffer, and
+/// non-fatal error reporter.
 ///
 /// Every call checks Firebase readiness first and swallows reporting failures so
 /// telemetry never breaks offline-first operation or tests without Firebase.
 class TelemetryService {
+  /// Process-wide instance shared between pre-`ProviderScope` startup code
+  /// (`main.dart`, `LocalDatabaseBootstrap`) and Riverpod providers so runtime
+  /// non-fatal reports carry startup diagnostic breadcrumbs in the ring buffer.
+  static final TelemetryService shared = TelemetryService();
+
+  static const int defaultMaxBufferSize = 100;
+
   TelemetryService({
     bool Function()? isFirebaseReady,
     FutureOr<void> Function(String message)? log,
+    FutureOr<void> Function(String key, Object value)? setCustomKey,
     FutureOr<void> Function(
       Object error,
       StackTrace stackTrace, {
       required String reason,
+      required Iterable<Object> information,
       required bool fatal,
     })?
     recordError,
+    int maxBufferSize = defaultMaxBufferSize,
   }) : _isFirebaseReady = isFirebaseReady ?? _defaultIsFirebaseReady,
        _log = log ?? _defaultLog,
-       _recordError = recordError ?? _defaultRecordError;
+       _setCustomKey = setCustomKey ?? _defaultSetCustomKey,
+       _recordError = recordError ?? _defaultRecordError,
+       _maxBufferSize = maxBufferSize < 1 ? 1 : maxBufferSize;
 
   static const _offlineFirebaseCodes = <String>{
     'unavailable',
@@ -55,13 +69,21 @@ class TelemetryService {
 
   final bool Function() _isFirebaseReady;
   final FutureOr<void> Function(String message) _log;
+  final FutureOr<void> Function(String key, Object value) _setCustomKey;
   final FutureOr<void> Function(
     Object error,
     StackTrace stackTrace, {
     required String reason,
+    required Iterable<Object> information,
     required bool fatal,
   })
   _recordError;
+  final int _maxBufferSize;
+  final Queue<String> _ringBuffer = Queue<String>();
+
+  /// Snapshot of the most recent sanitized diagnostic breadcrumbs in
+  /// chronological order (capped at [_maxBufferSize]).
+  List<String> get recentBreadcrumbs => List<String>.unmodifiable(_ringBuffer);
 
   static bool _defaultIsFirebaseReady() {
     try {
@@ -74,15 +96,20 @@ class TelemetryService {
   static Future<void> _defaultLog(String message) =>
       FirebaseCrashlytics.instance.log(message);
 
+  static Future<void> _defaultSetCustomKey(String key, Object value) =>
+      FirebaseCrashlytics.instance.setCustomKey(key, value);
+
   static Future<void> _defaultRecordError(
     Object error,
     StackTrace stackTrace, {
     required String reason,
+    required Iterable<Object> information,
     required bool fatal,
   }) => FirebaseCrashlytics.instance.recordError(
     error,
     stackTrace,
     reason: reason,
+    information: information,
     fatal: fatal,
   );
 
@@ -133,6 +160,11 @@ class TelemetryService {
   static String _sanitizeToken(String raw) =>
       _safeTokenPattern.hasMatch(raw) ? raw : 'redacted';
 
+  static Object _sanitizeKeyValue(Object value) {
+    if (value is bool || value is int || value is double) return value;
+    return _sanitizeToken(value.toString());
+  }
+
   static String _formatBreadcrumb(
     String context,
     Map<String, String> attributes, {
@@ -154,19 +186,45 @@ class TelemetryService {
     return buffer.toString();
   }
 
-  /// Logs a sanitized Crashlytics breadcrumb when Firebase is ready.
+  void _appendToRingBuffer(String entry) {
+    if (_ringBuffer.length >= _maxBufferSize) {
+      _ringBuffer.removeFirst();
+    }
+    _ringBuffer.addLast(entry);
+  }
+
+  /// Records a sanitized Crashlytics state custom key when Firebase is ready.
+  ///
+  /// Primitives (`bool`, `int`, `double`) pass through as-is; string values
+  /// and keys are strictly allowlist-sanitized so PII, paths, UIDs, or tokens
+  /// can never reach Crashlytics.
+  Future<void> setCustomKey(String key, Object value) async {
+    final safeKey = _sanitizeToken(key);
+    final safeValue = _sanitizeKeyValue(value);
+    if (!_isFirebaseReady()) return;
+    try {
+      await _setCustomKey(safeKey, safeValue);
+    } catch (_) {}
+  }
+
+  /// Logs a sanitized Crashlytics breadcrumb and appends it to the in-memory
+  /// diagnostic ring buffer (always buffered so pre-Firebase startup events
+  /// remain attached to later non-fatal reports).
   Future<void> logBreadcrumb(
     String context, {
     Map<String, String> attributes = const {},
   }) async {
+    final message = _formatBreadcrumb(context, attributes);
+    _appendToRingBuffer(message);
     if (!_isFirebaseReady()) return;
     try {
-      await _log(_formatBreadcrumb(context, attributes));
+      await _log(message);
     } catch (_) {}
   }
 
-  /// Records a sanitized non-fatal error and matching breadcrumb when Firebase
-  /// is ready. Routine offline errors are skipped by default.
+  /// Records a sanitized non-fatal error, matching breadcrumb, and recent
+  /// ring-buffer context when Firebase is ready. Routine offline errors are
+  /// skipped by default.
   Future<void> recordNonFatal(
     Object error,
     StackTrace? stackTrace, {
@@ -175,7 +233,6 @@ class TelemetryService {
     bool skipIfOffline = true,
   }) async {
     if (skipIfOffline && isExpectedOfflineError(error)) return;
-    if (!_isFirebaseReady()) return;
 
     final safeContext = _sanitizeToken(context);
     final summary = describeError(error);
@@ -184,12 +241,17 @@ class TelemetryService {
       attributes,
       errorSummary: summary,
     );
+    _appendToRingBuffer(breadcrumb);
+    if (!_isFirebaseReady()) return;
+
+    final recentContext = List<String>.unmodifiable(_ringBuffer);
     try {
       await _log(breadcrumb);
       await _recordError(
         SanitizedTelemetryError('$safeContext: $summary'),
         stackTrace ?? StackTrace.current,
         reason: safeContext,
+        information: recentContext,
         fatal: false,
       );
     } catch (_) {}

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +8,9 @@ import '../../../database/daos/pieces_dao.dart';
 import '../../../models/display_date.dart';
 import '../../../models/piece_stage.dart';
 import '../../../providers/materials_provider.dart';
+import '../../../providers/photo_paths_provider.dart';
 import '../../../providers/photos_provider.dart';
+import '../../../services/photo_paths.dart';
 import '../../../widgets/stage_badge.dart';
 import '../../../widgets/tag_chip.dart';
 
@@ -23,6 +24,7 @@ class PieceRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final photosAsync = ref.watch(photosForPieceProvider(piece.piece.id));
     final tagColorMap = ref.watch(tagColorMapProvider);
+    final photoPaths = ref.watch(photoPathsProvider);
     final title = piece.piece.title ?? 'Untitled Piece';
     final stage = piece.piece.stage != null
         ? PieceStage.values.byName(piece.piece.stage!)
@@ -82,7 +84,7 @@ class PieceRow extends ConsumerWidget {
               photosAsync.when(
                 loading: () => _buildPhotoRowPlaceholder(context),
                 error: (_, _) => _buildPhotoRowPlaceholder(context),
-                data: (photos) => _buildPhotoRow(context, photos),
+                data: (photos) => _buildPhotoRow(context, photos, photoPaths),
               ),
               if (metadataChips.isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -152,7 +154,11 @@ class PieceRow extends ConsumerWidget {
     return lines;
   }
 
-  Widget _buildPhotoRow(BuildContext context, List<Photo> photos) {
+  Widget _buildPhotoRow(
+    BuildContext context,
+    List<Photo> photos,
+    PhotoPaths photoPaths,
+  ) {
     if (photos.isEmpty) {
       return _buildPhotoRowPlaceholder(context);
     }
@@ -163,6 +169,7 @@ class PieceRow extends ConsumerWidget {
 
     return _ScrollablePhotoRow(
       photos: photos,
+      photoPaths: photoPaths,
       thumbSize: thumbSize,
       placeholderBuilder: _placeholderTile,
     );
@@ -196,11 +203,13 @@ class PieceRow extends ConsumerWidget {
 
 class _ScrollablePhotoRow extends StatefulWidget {
   final List<Photo> photos;
+  final PhotoPaths photoPaths;
   final double thumbSize;
   final Widget Function() placeholderBuilder;
 
   const _ScrollablePhotoRow({
     required this.photos,
+    required this.photoPaths,
     required this.thumbSize,
     required this.placeholderBuilder,
   });
@@ -265,18 +274,22 @@ class _ScrollablePhotoRowState extends State<_ScrollablePhotoRow> {
             separatorBuilder: (_, _) => const SizedBox(width: AppSizes.sm),
             itemBuilder: (context, index) {
               final photo = widget.photos[index];
-              final path = photo.thumbnailPath ?? photo.localPath;
+              final file = widget.photoPaths.resolveDisplayFile(photo);
               return ClipRRect(
                 borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                 child: SizedBox(
                   width: widget.thumbSize,
                   height: widget.thumbSize,
-                  child: Image.file(
-                    File(path),
-                    fit: BoxFit.cover,
-                    cacheWidth: AppSizes.thumbnailSize.toInt(),
-                    errorBuilder: (_, _, _) => widget.placeholderBuilder(),
-                  ),
+                  child: file.existsSync()
+                      ? Image.file(
+                          file,
+                          key: ValueKey(file.path),
+                          fit: BoxFit.cover,
+                          cacheWidth: AppSizes.thumbnailSize.toInt(),
+                          errorBuilder: (_, _, _) =>
+                              widget.placeholderBuilder(),
+                        )
+                      : widget.placeholderBuilder(),
                 ),
               );
             },

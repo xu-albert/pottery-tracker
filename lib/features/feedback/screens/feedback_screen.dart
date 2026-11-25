@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,7 +34,13 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
     String email = '';
     try {
       email = FirebaseAuth.instance.currentUser?.email ?? '';
-    } catch (_) {}
+    } catch (_) {
+      unawaited(
+        ref
+            .read(telemetryServiceProvider)
+            .logBreadcrumb('feedback.auth_not_ready'),
+      );
+    }
     _emailController = TextEditingController(text: email);
     _messageController.addListener(() => setState(() {}));
   }
@@ -58,6 +66,14 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
                 : _emailController.text.trim(),
           );
       await ref.read(reviewPromptServiceProvider).recordCompleted();
+      unawaited(
+        ref
+            .read(telemetryServiceProvider)
+            .logBreadcrumb(
+              'feedback.submit_ok',
+              attributes: {'category': _category.value},
+            ),
+      );
       if (!mounted) return;
       AppSnackbar.show(context, message: l10n.feedbackSentSuccess);
       context.pop();

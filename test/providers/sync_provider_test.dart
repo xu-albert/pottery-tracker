@@ -1858,6 +1858,7 @@ void main() {
                 error,
                 stack, {
                 required String reason,
+                required Iterable<Object> information,
                 required bool fatal,
               }) async {
                 recorded.add((error, reason, fatal));
@@ -1909,6 +1910,7 @@ void main() {
                 error,
                 stack, {
                 required String reason,
+                required Iterable<Object> information,
                 required bool fatal,
               }) async {
                 recorded.add((error, reason, fatal));
@@ -1947,7 +1949,7 @@ void main() {
         expect(recorded, hasLength(1));
         expect(recorded.single.$2, 'sync.cloud_photo_delete');
         expect(recorded.single.$3, isFalse);
-        final combined = '${logs.single} ${recorded.single.$1}';
+        final combined = '${logs.join(' ')} ${recorded.single.$1}';
         expect(combined, contains('operation=deletePhoto'));
         expect(combined, contains('code=unauthorized'));
         expect(combined, isNot(contains('photo-secret-id')));
@@ -1972,6 +1974,7 @@ void main() {
                 error,
                 stack, {
                 required String reason,
+                required Iterable<Object> information,
                 required bool fatal,
               }) async {
                 recorded.add((error, reason, fatal));
@@ -2019,6 +2022,7 @@ void main() {
                 error,
                 stack, {
                 required String reason,
+                required Iterable<Object> information,
                 required bool fatal,
               }) async {
                 recorded.add((error, reason, fatal));
