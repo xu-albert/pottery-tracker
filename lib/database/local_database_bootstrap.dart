@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,7 @@ import '../providers/sync_provider.dart' show SyncNotifier;
 import '../services/encryption_key_service.dart';
 import '../services/sync_queue.dart';
 import '../services/sync_service.dart';
+import '../services/telemetry_service.dart';
 import 'database.dart';
 import 'transfer_key_backup.dart';
 
@@ -118,12 +120,14 @@ class LocalDatabaseBootstrap {
     required SharedPreferences prefs,
     required TransferKeyBackup transferBackup,
     Future<AppDatabase> Function(File file, String key)? openEncrypted,
+    TelemetryService? telemetry,
   }) : _keys = keys,
        _documentsDir = documentsDir,
        _temporaryDir = temporaryDir,
        _prefs = prefs,
        _transferBackup = transferBackup,
-       _openEncrypted = openEncrypted ?? AppDatabase.open;
+       _openEncrypted = openEncrypted ?? AppDatabase.open,
+       _telemetry = telemetry ?? TelemetryService();
 
   final EncryptionKeyService _keys;
   final Directory _documentsDir;
@@ -131,6 +135,7 @@ class LocalDatabaseBootstrap {
   final SharedPreferences _prefs;
   final TransferKeyBackup _transferBackup;
   final Future<AppDatabase> Function(File file, String key) _openEncrypted;
+  final TelemetryService _telemetry;
 
   File get databaseFile =>
       File(p.join(_documentsDir.path, AppDatabase.fileName));
@@ -151,8 +156,15 @@ class LocalDatabaseBootstrap {
     if (key == null) {
       if (!_databaseExists) {
         final fresh = await _keys.createKey();
+        unawaited(_telemetry.logBreadcrumb('db.bootstrap_first_launch'));
         return LocalDatabaseReady(await _openAndProbe(fresh));
       }
+      unawaited(
+        _telemetry.logBreadcrumb(
+          'db.bootstrap_unreadable',
+          attributes: {'cause': UnreadableDatabaseCause.keyMissing.name},
+        ),
+      );
       return LocalDatabaseUnreadable(
         _Recovery(this, UnreadableDatabaseCause.keyMissing),
       );
@@ -161,10 +173,13 @@ class LocalDatabaseBootstrap {
     await _keys.hardenStoredKey(key);
 
     if (!_databaseExists) {
+      unawaited(_telemetry.logBreadcrumb('db.bootstrap_reinstall'));
       return LocalDatabaseReady(await _openAndProbe(key));
     }
     try {
-      return LocalDatabaseReady(await _openAndProbe(key));
+      final db = await _openAndProbe(key);
+      unawaited(_telemetry.logBreadcrumb('db.bootstrap_ready'));
+      return LocalDatabaseReady(db);
     } on _NotADatabaseException {
       final staged = await _keys.readMigratingCopy();
       if (staged != null && staged != key) {
@@ -174,11 +189,21 @@ class LocalDatabaseBootstrap {
         // copy; opening with it and finishing the store is that launch's
         // ordinary continuation.
         try {
-          return LocalDatabaseReady(await _openAndAdoptKey(staged));
+          final db = await _openAndAdoptKey(staged);
+          unawaited(
+            _telemetry.logBreadcrumb('db.bootstrap_adopted_migrating_key'),
+          );
+          return LocalDatabaseReady(db);
         } on _NotADatabaseException {
           // Not the rotation's key either.
         }
       }
+      unawaited(
+        _telemetry.logBreadcrumb(
+          'db.bootstrap_unreadable',
+          attributes: {'cause': UnreadableDatabaseCause.keyMismatch.name},
+        ),
+      );
       return LocalDatabaseUnreadable(
         _Recovery(this, UnreadableDatabaseCause.keyMismatch),
       );
@@ -216,11 +241,26 @@ class LocalDatabaseBootstrap {
   }
 
   Future<AppDatabase> _unlockWithPassphrase(String passphrase) async {
+    unawaited(
+      _telemetry.logBreadcrumb(
+        'db.recovery_action',
+        attributes: {'action': 'unlock_with_passphrase'},
+      ),
+    );
     final key = await _transferBackup.read(passphrase);
     final AppDatabase db;
     try {
       db = await _openAndAdoptKey(key);
     } on _NotADatabaseException {
+      unawaited(
+        _telemetry.logBreadcrumb(
+          'db.recovery_failed',
+          attributes: {
+            'action': 'unlock_with_passphrase',
+            'reason': 'mismatch',
+          },
+        ),
+      );
       throw const TransferKeyMismatchException();
     }
     await _clearOwedWipe();
@@ -239,6 +279,14 @@ class LocalDatabaseBootstrap {
   }
 
   Future<AppDatabase> _discard({required bool deletePhotoFiles}) async {
+    unawaited(
+      _telemetry.logBreadcrumb(
+        'db.recovery_action',
+        attributes: {
+          'action': deletePhotoFiles ? 'start_fresh' : 'redownload_from_cloud',
+        },
+      ),
+    );
     for (final file in [databaseFile, ..._databaseSidecars]) {
       if (file.existsSync()) await file.delete();
     }
@@ -252,8 +300,16 @@ class LocalDatabaseBootstrap {
         for (final entity in _temporaryDir.listSync()) {
           try {
             await entity.delete(recursive: true);
-          } catch (_) {
+          } catch (e, st) {
             // A cache entry the platform holds on to is not the erase failing.
+            unawaited(
+              _telemetry.recordNonFatal(
+                e,
+                st,
+                context: 'db.temp_cleanup',
+                skipIfOffline: false,
+              ),
+            );
           }
         }
       }

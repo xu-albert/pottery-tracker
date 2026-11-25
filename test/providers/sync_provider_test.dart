@@ -1,15 +1,27 @@
 import 'dart:async';
+import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pottery_tracker/database/database.dart';
 import 'package:pottery_tracker/providers/auth_provider.dart';
+import 'package:pottery_tracker/providers/database_provider.dart';
+import 'package:pottery_tracker/providers/photo_paths_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
+import 'package:pottery_tracker/providers/telemetry_provider.dart';
+import 'package:pottery_tracker/services/photo_health_service.dart';
+import 'package:pottery_tracker/services/photo_paths.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:pottery_tracker/services/telemetry_service.dart';
 
 // ── Mocks ──────────────────────────────────────────────
 
@@ -40,6 +52,7 @@ _setup({
   AuthState auth = _signedOut,
   SyncClock? clock,
   Future<void> Function()? deleteAuthAccount,
+  TelemetryService? telemetry,
 }) {
   final syncService = MockSyncService();
   final queue = MockSyncQueue();
@@ -106,7 +119,9 @@ _setup({
       authProvider.overrideWith((_) => AuthNotifier.withState(auth)),
       syncQueueProvider.overrideWithValue(queue),
       syncServiceProvider.overrideWithValue(syncService),
-      if (clock != null || deleteAuthAccount != null)
+      if (telemetry != null)
+        telemetryServiceProvider.overrideWithValue(telemetry),
+      if (clock != null || deleteAuthAccount != null || telemetry != null)
         syncStateProvider.overrideWith(
           (ref) => SyncNotifier(
             ref,
@@ -114,6 +129,7 @@ _setup({
             syncService,
             clock: clock,
             deleteAuthAccount: deleteAuthAccount,
+            telemetry: telemetry,
           ),
         ),
     ],
@@ -1833,6 +1849,414 @@ void main() {
             SyncStatus.disabled,
           );
         });
+      },
+    );
+  });
+
+  group('Crashlytics non-fatal telemetry', () {
+    test(
+      'records unexpected non-offline sync failures without UID and skips offline unavailable errors',
+      () async {
+        final logs = <String>[];
+        final recorded = <(Object, String, bool)>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: logs.add,
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) async {
+                recorded.add((error, reason, fatal));
+              },
+        );
+
+        final s = _setup(auth: _signedIn, telemetry: telemetry);
+        addTearDown(s.container.dispose);
+        await _settle();
+
+        when(() => s.syncService.checkServerReachability(any())).thenThrow(
+          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+        );
+        await s.notifier.syncNow();
+        await _settle();
+        expect(recorded, isEmpty);
+
+        when(() => s.syncService.checkServerReachability(any())).thenThrow(
+          FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+            message: 'Missing permissions for users/user-1/meta',
+          ),
+        );
+        await s.notifier.syncNow();
+        await _settle();
+
+        expect(recorded, hasLength(1));
+        expect(recorded.single.$2, 'sync.sync_now');
+        expect(recorded.single.$3, isFalse);
+        expect(
+          recorded.single.$1.toString(),
+          'sync.sync_now: FirebaseException(plugin=cloud_firestore, code=permission-denied)',
+        );
+        expect(recorded.single.$1.toString(), isNot(contains('user-1')));
+      },
+    );
+
+    test(
+      'records sanitized cloud photo deletion failures when retries exhaust',
+      () async {
+        final logs = <String>[];
+        final recorded = <(Object, String, bool)>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: logs.add,
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) async {
+                recorded.add((error, reason, fatal));
+              },
+        );
+        final clock = _StubSyncClock();
+        final s = _setup(auth: _signedIn, clock: clock, telemetry: telemetry);
+        addTearDown(s.container.dispose);
+        await _settle();
+
+        final entries = [
+          const SyncQueueEntry(
+            operation: SyncOperation.deletePhoto,
+            entityId: 'photo-secret-id',
+            pieceId: 'piece-secret-id',
+          ),
+        ];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.pushPhotoDeletion(
+            any(),
+            any(),
+            pieceId: any(named: 'pieceId'),
+          ),
+        ).thenThrow(
+          FirebaseException(
+            plugin: 'firebase_storage',
+            code: 'unauthorized',
+            message: 'users/user-1/photos/piece-secret-id/photo-secret-id.jpg',
+          ),
+        );
+
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+
+        expect(recorded, hasLength(1));
+        expect(recorded.single.$2, 'sync.cloud_photo_delete');
+        expect(recorded.single.$3, isFalse);
+        final combined = '${logs.join(' ')} ${recorded.single.$1}';
+        expect(combined, contains('operation=deletePhoto'));
+        expect(combined, contains('code=unauthorized'));
+        expect(combined, isNot(contains('photo-secret-id')));
+        expect(combined, isNot(contains('piece-secret-id')));
+        expect(combined, isNot(contains('user-1')));
+      },
+    );
+
+    test(
+      'logs interrupted wipe breadcrumb and sanitizes failed resumed wipe paths',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          SyncNotifier.pendingWipeKey: true,
+        });
+        final logs = <String>[];
+        final recorded = <(Object, String, bool)>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: logs.add,
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) async {
+                recorded.add((error, reason, fatal));
+              },
+        );
+
+        final s = _setup(auth: _signedOut, telemetry: telemetry);
+        addTearDown(s.container.dispose);
+        when(() => s.syncService.deleteLocalData()).thenThrow(
+          LocalPhotoWipeException(
+            const FileSystemException(
+              'Cannot remove /var/mobile/Documents/photos/p1/img.jpg',
+              '/var/mobile/Documents/photos/p1/img.jpg',
+              OSError('EACCES', 13),
+            ),
+          ),
+        );
+
+        final result = await s.notifier.retryOwedWipe();
+        await _settle();
+
+        expect(result, EraseLocalDataResult.photosSurvived);
+        expect(logs, contains('sync.interrupted_wipe_resumed'));
+        expect(recorded, isNotEmpty);
+        expect(recorded.last.$2, 'sync.interrupted_wipe_failed');
+        expect(recorded.last.$3, isFalse);
+        expect(
+          recorded.last.$1.toString(),
+          'sync.interrupted_wipe_failed: LocalPhotoWipeException(FileSystemException(errno=13))',
+        );
+        expect(recorded.last.$1.toString(), isNot(contains('img.jpg')));
+        expect(recorded.last.$1.toString(), isNot(contains('/var/mobile')));
+      },
+    );
+
+    test(
+      'records cloud deletion failures and skips expected requires-recent-login on account delete',
+      () async {
+        final recorded = <(Object, String, bool)>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) async {},
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) async {
+                recorded.add((error, reason, fatal));
+              },
+        );
+
+        final s = _setup(
+          auth: _signedIn,
+          telemetry: telemetry,
+          deleteAuthAccount: () async =>
+              throw FirebaseAuthException(code: 'requires-recent-login'),
+        );
+        addTearDown(s.container.dispose);
+        await _settle();
+
+        when(() => s.syncService.deleteCloudData(any())).thenThrow(
+          FirebaseException(
+            plugin: 'firebase_storage',
+            code: 'unauthorized',
+            message: 'users/user-1/photos/p1/a.jpg',
+          ),
+        );
+        expect(
+          await s.notifier.deleteAllData(),
+          DeleteAllDataResult.cloudDeleteIncomplete,
+        );
+        await _settle();
+        expect(recorded, hasLength(1));
+        expect(recorded.single.$2, 'sync.delete_cloud_data');
+        expect(recorded.single.$1.toString(), isNot(contains('a.jpg')));
+
+        recorded.clear();
+        when(
+          () => s.syncService.deleteCloudData(any()),
+        ).thenAnswer((_) async {});
+        expect(
+          await s.notifier.deleteAllData(),
+          DeleteAllDataResult.accountSurvived,
+        );
+        await _settle();
+        expect(recorded, isEmpty);
+      },
+    );
+
+    test(
+      'keeps sync_status custom key aligned across syncNow failure, drain transitions, and sign-out',
+      () async {
+        final keys = <String, Object>{};
+        Object? statusAtRecordError;
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) async {},
+          setCustomKey: (k, v) => keys[k] = v,
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) async {
+                statusAtRecordError = keys['sync_status'];
+              },
+        );
+        final clock = _StubSyncClock();
+        final s = _setup(auth: _signedIn, clock: clock, telemetry: telemetry);
+        addTearDown(s.container.dispose);
+        await _settle();
+        expect(keys['sync_status'], SyncStatus.idle.name);
+
+        when(
+          () => s.syncService.getLastPulledAt('user-1'),
+        ).thenAnswer((_) async => DateTime.utc(2026, 9, 1));
+        when(() => s.syncService.pullChangedSince(any())).thenThrow(
+          FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'permission-denied',
+          ),
+        );
+
+        await s.notifier.syncNow();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.error);
+        expect(statusAtRecordError, SyncStatus.error.name);
+        expect(keys['sync_status'], SyncStatus.error.name);
+
+        const entry = SyncQueueEntry(
+          operation: SyncOperation.pushPiece,
+          entityId: 'piece-1',
+        );
+        final entries = <SyncQueueEntry>[entry];
+        _persistInto(s.queue, entries);
+        when(
+          () => s.syncService.pushPiece('user-1', 'piece-1'),
+        ).thenAnswer((_) async {});
+
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(keys['sync_status'], SyncStatus.idle.name);
+
+        when(
+          () => s.syncService.pushPiece('user-1', 'piece-1'),
+        ).thenThrow(Exception('push failed'));
+        entries.add(entry);
+        s.notifier.scheduleProcessQueue();
+        await _settle();
+        expect(s.container.read(syncStateProvider).status, SyncStatus.error);
+        expect(keys['sync_status'], SyncStatus.error.name);
+
+        await s.notifier.endForeignSession(() async {});
+        expect(s.container.read(syncStateProvider).status, SyncStatus.disabled);
+        expect(keys['sync_status'], SyncStatus.disabled.name);
+      },
+    );
+
+    test(
+      'syncStateProvider triggers post_sync photo health reporting after sync completes',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('post_sync_health_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        final photoPaths = PhotoPaths(docs.path);
+        final now = DateTime(2026, 11, 1);
+        await db.piecesDao.insertPiece(
+          PiecesCompanion.insert(
+            id: 'p1',
+            title: const Value('Cup'),
+            stage: const Value('glazed'),
+            clayType: const Value('Stoneware'),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await db.photosDao.insertPhoto(
+          PhotosCompanion.insert(
+            id: 'ph1',
+            pieceId: 'p1',
+            localPath: PhotoPaths.relativeMainPath('p1', 'ph1'),
+            dateTaken: now,
+            createdAt: now,
+          ),
+        );
+        final file = photoPaths.mainFile('p1', 'ph1');
+        file.parent.createSync(recursive: true);
+        file.writeAsBytesSync(const [0xFF, 0xD8, 0xFF, 0xD9]);
+
+        final firestore = FakeFirebaseFirestore();
+        final analyticsEvents = <Map<String, Object>>[];
+        final health = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: TelemetryService(isFirebaseReady: () => false),
+          logAnalyticsEvent: (_, params) => analyticsEvents.add(params),
+          firestore: firestore,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Potter Journal',
+            packageName: 'com.albertxu.potterytracker',
+            version: '1.2.4',
+            buildNumber: '29',
+          ),
+          platformResolver: () => 'ios',
+        );
+
+        final syncService = MockSyncService();
+        final queue = MockSyncQueue();
+        when(
+          () => syncService.getLocalDataOwner(),
+        ).thenAnswer((_) async => null);
+        when(
+          () => syncService.getDeviceContested(),
+        ).thenAnswer((_) async => false);
+        when(
+          () => syncService.setLocalDataOwner(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => syncService.checkServerReachability(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => syncService.getLastPulledAt(any()),
+        ).thenAnswer((_) async => now);
+        when(
+          () => syncService.pullChangedSince(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => syncService.pendingPhotoUploadIds(),
+        ).thenAnswer((_) async => const <String>{});
+        when(() => queue.getAll()).thenAnswer((_) async => const []);
+        when(() => queue.pendingCount).thenAnswer((_) async => 0);
+
+        final container = ProviderContainer(
+          overrides: [
+            databaseProvider.overrideWithValue(db),
+            photoPathsProvider.overrideWithValue(photoPaths),
+            photoHealthServiceProvider.overrideWithValue(health),
+            authProvider.overrideWith((_) => AuthNotifier.withState(_signedIn)),
+            syncQueueProvider.overrideWithValue(queue),
+            syncServiceProvider.overrideWithValue(syncService),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container.read(syncStateProvider);
+        await _settle();
+
+        expect(container.read(syncStateProvider).status, SyncStatus.idle);
+        expect(analyticsEvents, isNotEmpty);
+        expect(analyticsEvents.last['trigger'], 'post_sync');
+        expect(analyticsEvents.last['repaired_count'], 0);
+        expect(analyticsEvents.last['total_photos'], 1);
+        expect(analyticsEvents.last['present_local'], 1);
+        expect(analyticsEvents.last['all_visible'], 1);
+
+        final doc = await firestore
+            .doc('users/user-1/diagnostics/photo_health')
+            .get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['trigger'], 'post_sync');
+        expect(doc.data()!['totalPhotos'], 1);
+        expect(doc.data()!['presentLocal'], 1);
+        expect(doc.data()!['allVisible'], isTrue);
       },
     );
   });

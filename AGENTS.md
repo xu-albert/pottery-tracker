@@ -134,9 +134,9 @@ signed in. Captain decisions
   then deletes the local database, the photo and cache files, the sync queue and every pull
   watermark. A new local store must be added to `SyncService.deleteLocalData` or it becomes a
   cross-account leak, and the confirmation must keep saying plainly that local data is deleted.
-- **Involuntary session loss destroys nothing.** `AuthNotifier._init` signs out when `reload()`
-  fails or times out — which includes an ordinary offline launch — so it wipes nothing and relies on
-  the `localDataOwnerUid` stamp instead.
+- **Involuntary session loss destroys nothing.** `AuthNotifier._init` signs out only on permanent
+  Firebase Auth invalidation (preserving the cached session across transient offline/timeout reload
+  failures), so it wipes nothing and relies on the `localDataOwnerUid` stamp instead.
 - **A locked device is locked read-only at the router** (`deviceLockedProvider` → `/device-locked`),
   not screen by screen, so a refused account never reaches the album, the create flow, the piece
   editor or the material screens and cannot write at all. `deviceLockReasonProvider` says which of

@@ -1,4 +1,5 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -91,7 +92,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     observers: [
-      FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
+      if (Firebase.apps.isNotEmpty)
+        FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
     ],
     redirect: (context, state) {
       final loc = state.matchedLocation;

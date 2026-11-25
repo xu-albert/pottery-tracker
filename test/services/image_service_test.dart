@@ -69,12 +69,15 @@ void main() {
         pieceId: 'test-piece',
       );
 
+      expect(p.isAbsolute(result.localPath), isFalse);
+      expect(p.isAbsolute(result.thumbnailPath), isFalse);
+
       // Verify the main image file contains compressed bytes
-      final mainFile = File(result.localPath);
+      final mainFile = File(p.join(tempDir.path, result.localPath));
       expect(await mainFile.readAsBytes(), equals(compressedBytes));
 
       // Verify the thumbnail file contains compressed bytes
-      final thumbFile = File(result.thumbnailPath);
+      final thumbFile = File(p.join(tempDir.path, result.thumbnailPath));
       expect(await thumbFile.readAsBytes(), equals(compressedBytes));
     });
 
@@ -106,10 +109,10 @@ void main() {
       );
 
       // Both main and thumb should have the stripped bytes from the fallback
-      final mainFile = File(result.localPath);
+      final mainFile = File(p.join(tempDir.path, result.localPath));
       expect(await mainFile.readAsBytes(), equals(strippedBytes));
 
-      final thumbFile = File(result.thumbnailPath);
+      final thumbFile = File(p.join(tempDir.path, result.thumbnailPath));
       expect(await thumbFile.readAsBytes(), equals(strippedBytes));
 
       // Should have called compress 4 times: 2 per image (fail + fallback) x 2 images
@@ -219,7 +222,8 @@ void main() {
       expect(photoFiles(), isEmpty);
     });
 
-    test('processImage creates files in correct directory structure', () async {
+    test('processImage creates files in correct directory structure and '
+        'returns container-independent relative paths', () async {
       final inputBytes = Uint8List.fromList([1, 2, 3]);
 
       final service = ImageService(
@@ -239,33 +243,49 @@ void main() {
         pieceId: 'my-piece-id',
       );
 
-      // Verify paths are under photos/my-piece-id/
-      expect(result.localPath, contains(p.join('photos', 'my-piece-id')));
-      expect(result.thumbnailPath, contains(p.join('photos', 'my-piece-id')));
-      expect(result.thumbnailPath, contains('_thumb.jpg'));
+      // Paths stored in SQLite must be relative so iOS container UUID changes
+      // never strand photo files on disk.
+      expect(result.localPath, 'photos/my-piece-id/${result.photoId}.jpg');
+      expect(
+        result.thumbnailPath,
+        'photos/my-piece-id/${result.photoId}_thumb.jpg',
+      );
+      expect(result.localPath, isNot(contains(tempDir.path)));
 
-      // Verify files actually exist
-      expect(File(result.localPath).existsSync(), isTrue);
-      expect(File(result.thumbnailPath).existsSync(), isTrue);
+      // Verify files actually exist under the documents directory
+      expect(File(p.join(tempDir.path, result.localPath)).existsSync(), isTrue);
+      expect(
+        File(p.join(tempDir.path, result.thumbnailPath)).existsSync(),
+        isTrue,
+      );
     });
   });
 
-  test(
-    'discardFiles removes both files and tolerates one already gone',
-    () async {
-      final dir = Directory(p.join(tempDir.path, 'photos', 'p'))
-        ..createSync(recursive: true);
-      final main = File(p.join(dir.path, 'x.jpg'))..writeAsBytesSync([1]);
-      final result = ImageResult(
-        photoId: 'x',
-        localPath: main.path,
-        thumbnailPath: p.join(dir.path, 'x_thumb.jpg'),
-        dateTaken: DateTime(2024),
-      );
+  test('discardFiles removes both files for relative and absolute paths and '
+      'tolerates one already gone', () async {
+    final dir = Directory(p.join(tempDir.path, 'photos', 'p'))
+      ..createSync(recursive: true);
+    final main = File(p.join(dir.path, 'x.jpg'))..writeAsBytesSync([1]);
+    final absoluteResult = ImageResult(
+      photoId: 'x',
+      localPath: main.path,
+      thumbnailPath: p.join(dir.path, 'x_thumb.jpg'),
+      dateTaken: DateTime(2024),
+    );
 
-      await ImageService().discardFiles(result);
+    await ImageService().discardFiles(absoluteResult);
+    expect(photoFiles(), isEmpty);
 
-      expect(photoFiles(), isEmpty);
-    },
-  );
+    File(p.join(dir.path, 'y.jpg')).writeAsBytesSync([2]);
+    File(p.join(dir.path, 'y_thumb.jpg')).writeAsBytesSync([3]);
+    final relativeResult = ImageResult(
+      photoId: 'y',
+      localPath: 'photos/p/y.jpg',
+      thumbnailPath: 'photos/p/y_thumb.jpg',
+      dateTaken: DateTime(2024),
+    );
+
+    await ImageService().discardFiles(relativeResult);
+    expect(photoFiles(), isEmpty);
+  });
 }

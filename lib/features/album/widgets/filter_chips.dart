@@ -30,7 +30,7 @@ class FilterChips extends ConsumerWidget {
               AppSnackbar.hide();
               ref
                   .read(analyticsProvider)
-                  .logEvent(
+                  ?.logEvent(
                     name: 'filter_changed',
                     parameters: {'filter': 'active'},
                   );
@@ -46,7 +46,7 @@ class FilterChips extends ConsumerWidget {
               AppSnackbar.hide();
               ref
                   .read(analyticsProvider)
-                  .logEvent(
+                  ?.logEvent(
                     name: 'filter_changed',
                     parameters: {'filter': 'archived'},
                   );

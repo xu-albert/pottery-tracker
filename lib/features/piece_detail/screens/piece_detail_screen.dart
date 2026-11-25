@@ -119,7 +119,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       HapticFeedback.lightImpact();
       ref
           .read(analyticsProvider)
-          .logEvent(name: 'photo_added', parameters: {'source': source.name});
+          ?.logEvent(name: 'photo_added', parameters: {'source': source.name});
       _loadPiece();
     } catch (e) {
       if (mounted) {
@@ -150,7 +150,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     HapticFeedback.lightImpact();
     ref
         .read(analyticsProvider)
-        .logEvent(name: wasArchived ? 'piece_unarchived' : 'piece_archived');
+        ?.logEvent(name: wasArchived ? 'piece_unarchived' : 'piece_archived');
     if (mounted) {
       AppSnackbar.show(
         context,
@@ -167,7 +167,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
 
     await ref.read(pieceWriterProvider).deletePiece(widget.pieceId);
     HapticFeedback.mediumImpact();
-    ref.read(analyticsProvider).logEvent(name: 'piece_deleted');
+    ref.read(analyticsProvider)?.logEvent(name: 'piece_deleted');
 
     if (mounted) context.go('/');
   }
@@ -326,7 +326,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
       HapticFeedback.lightImpact();
       ref
           .read(analyticsProvider)
-          .logEvent(
+          ?.logEvent(
             name: 'photo_added',
             parameters: {
               'source': 'gallery',
@@ -379,7 +379,7 @@ class _PieceDetailScreenState extends ConsumerState<PieceDetailScreen> {
     if (result.reordered.isNotEmpty) {
       ref
           .read(analyticsProvider)
-          .logEvent(
+          ?.logEvent(
             name: 'photo_reorder_saved',
             parameters: {'photo_count': result.reordered.length},
           );

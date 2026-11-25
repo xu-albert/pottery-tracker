@@ -23,8 +23,8 @@
       "ios": {
         "default": {
           "projectId": "pottery-tracker-31b1f",
-          "appId": "1:22629038852:ios:f3cd8152c04934a70fae51",
-          "uploadDebugSymbols": false,
+          "appId": "1:22629038852:ios:21037012b59e03d00fae51",
+          "uploadDebugSymbols": true,
           "fileOutput": "ios/Runner/GoogleService-Info.plist"
         }
       },
@@ -33,7 +33,7 @@
           "projectId": "pottery-tracker-31b1f",
           "configurations": {
             "android": "1:22629038852:android:fc0f7acedf9b618b0fae51",
-            "ios": "1:22629038852:ios:f3cd8152c04934a70fae51"
+            "ios": "1:22629038852:ios:21037012b59e03d00fae51"
           }
         }
       }

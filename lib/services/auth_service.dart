@@ -11,7 +11,7 @@ class SignInCancelledException implements Exception {}
 class AccountAlreadyLinkedException implements Exception {}
 
 class AuthService {
-  final _firebaseAuth = FirebaseAuth.instance;
+  FirebaseAuth get _firebaseAuth => FirebaseAuth.instance;
   final _googleSignIn = GoogleSignIn();
 
   User? get currentUser => _firebaseAuth.currentUser;

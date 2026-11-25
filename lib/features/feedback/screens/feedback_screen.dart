@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/feedback_provider.dart';
 import '../../../providers/review_prompt_provider.dart';
+import '../../../providers/telemetry_provider.dart';
 import '../../../services/feedback_service.dart';
 import '../../../widgets/app_snackbar.dart';
 
@@ -31,7 +34,13 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
     String email = '';
     try {
       email = FirebaseAuth.instance.currentUser?.email ?? '';
-    } catch (_) {}
+    } catch (_) {
+      unawaited(
+        ref
+            .read(telemetryServiceProvider)
+            .logBreadcrumb('feedback.auth_not_ready'),
+      );
+    }
     _emailController = TextEditingController(text: email);
     _messageController.addListener(() => setState(() {}));
   }
@@ -57,10 +66,27 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
                 : _emailController.text.trim(),
           );
       await ref.read(reviewPromptServiceProvider).recordCompleted();
+      unawaited(
+        ref
+            .read(telemetryServiceProvider)
+            .logBreadcrumb(
+              'feedback.submit_ok',
+              attributes: {'category': _category.value},
+            ),
+      );
       if (!mounted) return;
       AppSnackbar.show(context, message: l10n.feedbackSentSuccess);
       context.pop();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('FeedbackScreen: submit failed: ${error.runtimeType}');
+      await ref
+          .read(telemetryServiceProvider)
+          .recordNonFatal(
+            error,
+            stackTrace,
+            context: 'feedback.submit',
+            attributes: {'category': _category.value},
+          );
       if (!mounted) return;
       AppSnackbar.show(context, message: l10n.feedbackSendFailed);
     } finally {

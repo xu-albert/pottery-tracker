@@ -1,0 +1,579 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' hide isNotNull, isNull;
+import 'package:drift/native.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:pottery_tracker/database/database.dart';
+import 'package:pottery_tracker/main.dart';
+import 'package:pottery_tracker/providers/analytics_provider.dart';
+import 'package:pottery_tracker/providers/auth_provider.dart';
+import 'package:pottery_tracker/providers/database_provider.dart';
+import 'package:pottery_tracker/providers/sync_provider.dart';
+import 'package:pottery_tracker/router/app_router.dart';
+import 'package:pottery_tracker/services/auth_service.dart';
+import 'package:pottery_tracker/services/photo_health_service.dart';
+import 'package:pottery_tracker/services/photo_paths.dart';
+import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:pottery_tracker/services/telemetry_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  group('initializeFirebaseServices', () {
+    test(
+      'falls back cleanly to offline mode when Firebase.initializeApp fails',
+      () async {
+        var firestoreConfigured = false;
+        var appCheckActivated = false;
+        var flutterHandlerSet = false;
+        var platformHandlerSet = false;
+        final telemetry = TelemetryService(isFirebaseReady: () => false);
+
+        final ready = await initializeFirebaseServices(
+          initializeApp: () async => throw FirebaseException(
+            plugin: 'firebase_core',
+            code: 'invalid-app-id',
+            message: 'secret-config',
+          ),
+          configureFirestore: () => firestoreConfigured = true,
+          activateAppCheck: () async => appCheckActivated = true,
+          setFlutterErrorHandler: (_) => flutterHandlerSet = true,
+          setPlatformErrorHandler: (_) => platformHandlerSet = true,
+          telemetry: telemetry,
+        );
+
+        expect(ready, isFalse);
+        expect(firestoreConfigured, isFalse);
+        expect(appCheckActivated, isFalse);
+        expect(flutterHandlerSet, isFalse);
+        expect(platformHandlerSet, isFalse);
+        expect(telemetry.recentBreadcrumbs, [
+          'startup.firebase_init ready=false error=FirebaseException(plugin=firebase_core, code=invalid-app-id)',
+        ]);
+      },
+    );
+
+    test(
+      'reports configureFirestore failure as non-fatal without logging ready=false',
+      () async {
+        var appCheckActivated = false;
+        var flutterHandlerSet = false;
+        var platformHandlerSet = false;
+        final customKeys = <String, Object>{};
+        final nonFatals = <(Object, String, bool)>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) {},
+          setCustomKey: (k, v) => customKeys[k] = v,
+          recordError:
+              (
+                error,
+                stack, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) {
+                nonFatals.add((error, reason, fatal));
+              },
+        );
+
+        final ready = await initializeFirebaseServices(
+          initializeApp: () async {},
+          configureFirestore: () => throw StateError('settings locked'),
+          activateAppCheck: () async => appCheckActivated = true,
+          setFlutterErrorHandler: (_) => flutterHandlerSet = true,
+          setPlatformErrorHandler: (_) => platformHandlerSet = true,
+          recordFlutterFatalError: (_) {},
+          recordError: (error, stack, {bool fatal = false}) async {},
+          telemetry: telemetry,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(ready, isTrue);
+        expect(appCheckActivated, isTrue);
+        expect(flutterHandlerSet, isTrue);
+        expect(platformHandlerSet, isTrue);
+        expect(customKeys['firebase_ready'], isTrue);
+        expect(
+          telemetry.recentBreadcrumbs,
+          contains('startup.firebase_init ready=true'),
+        );
+        expect(
+          telemetry.recentBreadcrumbs.any((b) => b.contains('ready=false')),
+          isFalse,
+        );
+        expect(nonFatals, hasLength(1));
+        expect(
+          nonFatals.single.$1.toString(),
+          'startup.firestore_settings: StateError',
+        );
+        expect(nonFatals.single.$2, 'startup.firestore_settings');
+        expect(nonFatals.single.$3, isFalse);
+      },
+    );
+
+    test(
+      'wires App Check and fatal Crashlytics handlers when Firebase initializes',
+      () async {
+        var firestoreConfigured = false;
+        var appCheckActivated = false;
+        FlutterExceptionHandler? installedFlutterHandler;
+        bool Function(Object error, StackTrace stack)? installedPlatformHandler;
+        final recordedErrors = <(Object, StackTrace, bool)>[];
+
+        void fakeFlutterFatal(FlutterErrorDetails details) {}
+
+        final ready = await initializeFirebaseServices(
+          initializeApp: () async {},
+          configureFirestore: () => firestoreConfigured = true,
+          activateAppCheck: () async => appCheckActivated = true,
+          setFlutterErrorHandler: (handler) =>
+              installedFlutterHandler = handler,
+          setPlatformErrorHandler: (handler) =>
+              installedPlatformHandler = handler,
+          recordFlutterFatalError: fakeFlutterFatal,
+          recordError: (error, stack, {bool fatal = false}) async {
+            recordedErrors.add((error, stack, fatal));
+          },
+        );
+
+        expect(ready, isTrue);
+        expect(firestoreConfigured, isTrue);
+        expect(appCheckActivated, isTrue);
+        expect(installedFlutterHandler, same(fakeFlutterFatal));
+        expect(installedPlatformHandler, isNotNull);
+
+        final error = StateError('uncaught async failure');
+        final stack = StackTrace.current;
+        final handled = installedPlatformHandler!(error, stack);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(handled, isTrue);
+        expect(recordedErrors, hasLength(1));
+        expect(recordedErrors.single.$1, same(error));
+        expect(recordedErrors.single.$2, same(stack));
+        expect(recordedErrors.single.$3, isTrue);
+      },
+    );
+
+    test(
+      'still wires Crashlytics handlers when App Check activation fails',
+      () async {
+        bool Function(Object error, StackTrace stack)? installedPlatformHandler;
+        var recordedFatal = false;
+
+        final ready = await initializeFirebaseServices(
+          initializeApp: () async {},
+          configureFirestore: () {},
+          activateAppCheck: () async => throw Exception('app check failed'),
+          setFlutterErrorHandler: (_) {},
+          setPlatformErrorHandler: (handler) =>
+              installedPlatformHandler = handler,
+          recordFlutterFatalError: (_) {},
+          recordError: (error, stack, {bool fatal = false}) async {
+            recordedFatal = fatal;
+          },
+        );
+
+        expect(ready, isTrue);
+        expect(installedPlatformHandler, isNotNull);
+        expect(
+          installedPlatformHandler!(Exception('boom'), StackTrace.current),
+          isTrue,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(recordedFatal, isTrue);
+      },
+    );
+
+    test(
+      'platform error handler swallows Crashlytics recording failures',
+      () async {
+        bool Function(Object error, StackTrace stack)? installedPlatformHandler;
+
+        await initializeFirebaseServices(
+          initializeApp: () async {},
+          configureFirestore: () {},
+          activateAppCheck: () async {},
+          setFlutterErrorHandler: (_) {},
+          setPlatformErrorHandler: (handler) =>
+              installedPlatformHandler = handler,
+          recordFlutterFatalError: (_) {},
+          recordError: (error, stack, {bool fatal = false}) async {
+            throw StateError('crashlytics unavailable');
+          },
+        );
+
+        expect(
+          installedPlatformHandler!(Exception('boom'), StackTrace.current),
+          isTrue,
+        );
+        await Future<void>.delayed(Duration.zero);
+      },
+    );
+  });
+
+  test('routerProvider builds offline without Firebase initialized', () {
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(
+          (_) => AuthNotifier.withState(
+            const AuthState(status: AuthStatus.authenticated),
+          ),
+        ),
+        deviceLockedProvider.overrideWithValue(false),
+        deviceStampedProvider.overrideWithValue(false),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(() => container.read(routerProvider), returnsNormally);
+  });
+
+  test(
+    'syncStateProvider and AuthService construct offline without Firebase initialized',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          authProvider.overrideWith(
+            (_) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(syncStateProvider).status, SyncStatus.disabled);
+      expect(container.read(analyticsProvider), isNull);
+      expect(() => AuthService(), returnsNormally);
+      expect(() => container.read(authServiceProvider), returnsNormally);
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  group('reportStartupPhotoHealth', () {
+    test(
+      'writes startup photo health to Firestore when owner matches signed-in uid',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          SyncService.localDataOwnerKey: 'owner-1',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('startup_health_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        final firestore = FakeFirebaseFirestore();
+        final analyticsEvents = <Map<String, Object>>[];
+        final health = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: TelemetryService(isFirebaseReady: () => false),
+          logAnalyticsEvent: (_, params) => analyticsEvents.add(params),
+          firestore: firestore,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Potter Journal',
+            packageName: 'com.albertxu.potterytracker',
+            version: '1.2.4',
+            buildNumber: '29',
+          ),
+          platformResolver: () => 'ios',
+        );
+
+        await reportStartupPhotoHealth(
+          db: db,
+          photoPaths: PhotoPaths(docs.path),
+          repairedCount: 3,
+          prefs: prefs,
+          photoHealth: health,
+          currentUid: () => 'owner-1',
+        );
+
+        expect(analyticsEvents, hasLength(1));
+        expect(analyticsEvents.single['repaired_count'], 3);
+        final doc = await firestore
+            .doc('users/owner-1/diagnostics/photo_health')
+            .get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['trigger'], 'startup');
+        expect(doc.data()!['repairedCount'], 3);
+      },
+    );
+
+    test(
+      'skips Firestore write when device is locked to a foreign owner or wipe is owed',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('startup_lock_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        for (final prefsMap in [
+          <String, Object>{SyncService.localDataOwnerKey: 'other-owner'},
+          <String, Object>{
+            SyncService.localDataOwnerKey: 'signed-in-user',
+            SyncNotifier.pendingWipeKey: true,
+          },
+        ]) {
+          SharedPreferences.setMockInitialValues(prefsMap);
+          final prefs = await SharedPreferences.getInstance();
+          final firestore = FakeFirebaseFirestore();
+          final analyticsEvents = <Map<String, Object>>[];
+          final health = PhotoHealthService(
+            isFirebaseReady: () => true,
+            telemetry: TelemetryService(isFirebaseReady: () => false),
+            logAnalyticsEvent: (_, params) => analyticsEvents.add(params),
+            firestore: firestore,
+            packageInfoLoader: () async => PackageInfo(
+              appName: 'Potter Journal',
+              packageName: 'com.albertxu.potterytracker',
+              version: '1.2.4',
+              buildNumber: '29',
+            ),
+            platformResolver: () => 'ios',
+          );
+
+          await reportStartupPhotoHealth(
+            db: db,
+            photoPaths: PhotoPaths(docs.path),
+            repairedCount: 0,
+            prefs: prefs,
+            photoHealth: health,
+            currentUid: () => 'signed-in-user',
+          );
+
+          expect(analyticsEvents, hasLength(1));
+          final doc = await firestore
+              .doc('users/signed-in-user/diagnostics/photo_health')
+              .get();
+          expect(doc.exists, isFalse);
+        }
+      },
+    );
+
+    test(
+      'suppresses startup unrecoverable non-fatal and preserves session latch '
+      'on foreign-locked, pending-wipe, and cloud-owned signed-out launches',
+      () async {
+        final now = DateTime(2026, 11, 1, 12, 0);
+        final scenarios =
+            <({String label, String? uid, Map<String, Object> prefs})>[
+              (
+                label: 'foreign-owner locked device',
+                uid: 'signed-in-user',
+                prefs: {SyncService.localDataOwnerKey: 'other-owner'},
+              ),
+              (
+                label: 'signed-in pending owed wipe',
+                uid: 'signed-in-user',
+                prefs: {
+                  SyncService.localDataOwnerKey: 'signed-in-user',
+                  SyncNotifier.pendingWipeKey: true,
+                },
+              ),
+              (
+                label: 'signed-out pending owed wipe',
+                uid: null,
+                prefs: {SyncNotifier.pendingWipeKey: true},
+              ),
+              (
+                label: 'cloud-owned library relaunched signed out',
+                uid: null,
+                prefs: {SyncService.localDataOwnerKey: 'owner-1'},
+              ),
+              (
+                label: 'cloud-owned library relaunched contested',
+                uid: null,
+                prefs: {
+                  SyncService.localDataOwnerKey: 'owner-1',
+                  SyncService.deviceContestedKey: true,
+                },
+              ),
+            ];
+
+        for (final scenario in scenarios) {
+          final db = AppDatabase(NativeDatabase.memory());
+          final docs = Directory.systemTemp.createTempSync('startup_defer_');
+          final photoPaths = PhotoPaths(docs.path);
+          try {
+            await db.piecesDao.insertPiece(
+              PiecesCompanion.insert(
+                id: 'p1',
+                title: const Value('Piece'),
+                stage: const Value('greenware'),
+                clayType: const Value('Stoneware'),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+            await db.photosDao.insertPhoto(
+              PhotosCompanion.insert(
+                id: 'ph-missing',
+                pieceId: 'p1',
+                localPath: PhotoPaths.relativeMainPath('p1', 'ph-missing'),
+                cloudUrl: const Value(null),
+                dateTaken: now,
+                createdAt: now,
+              ),
+            );
+
+            SharedPreferences.setMockInitialValues(scenario.prefs);
+            final prefs = await SharedPreferences.getInstance();
+            final firestore = FakeFirebaseFirestore();
+            final nonFatals = <String>[];
+            final telemetry = TelemetryService(
+              isFirebaseReady: () => true,
+              log: (_) {},
+              setCustomKey: (_, _) {},
+              recordError:
+                  (
+                    _,
+                    _, {
+                    required String reason,
+                    required Iterable<Object> information,
+                    required bool fatal,
+                  }) {
+                    nonFatals.add(reason);
+                  },
+            );
+            final health = PhotoHealthService(
+              isFirebaseReady: () => true,
+              telemetry: telemetry,
+              logAnalyticsEvent: (_, _) {},
+              firestore: firestore,
+              packageInfoLoader: () async => PackageInfo(
+                appName: 'Potter Journal',
+                packageName: 'com.albertxu.potterytracker',
+                version: '1.2.4',
+                buildNumber: '29',
+              ),
+              platformResolver: () => 'ios',
+            );
+
+            await reportStartupPhotoHealth(
+              db: db,
+              photoPaths: photoPaths,
+              repairedCount: 0,
+              prefs: prefs,
+              photoHealth: health,
+              currentUid: () => scenario.uid,
+            );
+
+            expect(nonFatals, isEmpty, reason: scenario.label);
+            final usersSnap = await firestore.collection('users').get();
+            expect(usersSnap.docs, isEmpty, reason: scenario.label);
+
+            await health.report(
+              db: db,
+              photoPaths: photoPaths,
+              trigger: PhotoHealthTrigger.postSync,
+              uid: 'own-account',
+            );
+            expect(
+              nonFatals,
+              ['photo.missing_unrecoverable'],
+              reason: '${scenario.label} must not latch post_sync reporting',
+            );
+          } finally {
+            await db.close();
+            if (docs.existsSync()) docs.deleteSync(recursive: true);
+          }
+        }
+      },
+    );
+
+    test(
+      'emits startup unrecoverable non-fatal for genuine local-only library',
+      () async {
+        final now = DateTime(2026, 11, 1, 12, 0);
+        final db = AppDatabase(NativeDatabase.memory());
+        final docs = Directory.systemTemp.createTempSync('startup_local_');
+        addTearDown(() async {
+          await db.close();
+          if (docs.existsSync()) docs.deleteSync(recursive: true);
+        });
+
+        await db.piecesDao.insertPiece(
+          PiecesCompanion.insert(
+            id: 'p1',
+            title: const Value('Piece'),
+            stage: const Value('greenware'),
+            clayType: const Value('Stoneware'),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await db.photosDao.insertPhoto(
+          PhotosCompanion.insert(
+            id: 'ph-missing',
+            pieceId: 'p1',
+            localPath: PhotoPaths.relativeMainPath('p1', 'ph-missing'),
+            cloudUrl: const Value(null),
+            dateTaken: now,
+            createdAt: now,
+          ),
+        );
+
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final firestore = FakeFirebaseFirestore();
+        final nonFatals = <String>[];
+        final telemetry = TelemetryService(
+          isFirebaseReady: () => true,
+          log: (_) {},
+          setCustomKey: (_, _) {},
+          recordError:
+              (
+                _,
+                _, {
+                required String reason,
+                required Iterable<Object> information,
+                required bool fatal,
+              }) {
+                nonFatals.add(reason);
+              },
+        );
+        final health = PhotoHealthService(
+          isFirebaseReady: () => true,
+          telemetry: telemetry,
+          logAnalyticsEvent: (_, _) {},
+          firestore: firestore,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Potter Journal',
+            packageName: 'com.albertxu.potterytracker',
+            version: '1.2.4',
+            buildNumber: '29',
+          ),
+          platformResolver: () => 'ios',
+        );
+
+        await reportStartupPhotoHealth(
+          db: db,
+          photoPaths: PhotoPaths(docs.path),
+          repairedCount: 0,
+          prefs: prefs,
+          photoHealth: health,
+          currentUid: () => null,
+        );
+
+        expect(nonFatals, ['photo.missing_unrecoverable']);
+        final usersSnap = await firestore.collection('users').get();
+        expect(usersSnap.docs, isEmpty);
+      },
+    );
+  });
+}

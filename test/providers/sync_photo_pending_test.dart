@@ -13,6 +13,7 @@ import 'package:pottery_tracker/providers/auth_provider.dart';
 import 'package:pottery_tracker/providers/sync_provider.dart';
 import 'package:pottery_tracker/services/sync_queue.dart';
 import 'package:pottery_tracker/services/sync_service.dart';
+import 'package:pottery_tracker/services/telemetry_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Service extends SyncService {
@@ -430,4 +431,86 @@ void main() {
       );
     });
   });
+
+  test(
+    'a best-effort photo upload failure is reported via TelemetryService with '
+    'sanitized low-cardinality context',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        '${SyncService.lastPulledAtPrefix}user-1': DateTime(
+          2020,
+        ).millisecondsSinceEpoch,
+      });
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final dir = Directory.systemTemp.createTempSync('photo_report_');
+      final file = File('${dir.path}/photo.jpg')..writeAsBytesSync([1, 2, 3]);
+      final now = DateTime(2026);
+      await db.piecesDao.insertPiece(
+        PiecesCompanion.insert(id: 'piece', createdAt: now, updatedAt: now),
+      );
+      await db.photosDao.insertPhoto(
+        PhotosCompanion.insert(
+          id: 'photo',
+          pieceId: 'piece',
+          localPath: file.path,
+          dateTaken: now,
+          createdAt: now,
+        ),
+      );
+      final service = _Service(
+        db,
+        FakeFirebaseFirestore(),
+        MockFirebaseStorage(),
+      )..failUpload = true;
+      await service.pushPhoto('user-1', 'photo');
+
+      final reported = <(Object, String)>[];
+      final telemetry = TelemetryService(
+        isFirebaseReady: () => true,
+        log: (_) {},
+        recordError:
+            (
+              error,
+              stack, {
+              required String reason,
+              required Iterable<Object> information,
+              required bool fatal,
+            }) => reported.add((error, reason)),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            (_) => AuthNotifier.withState(
+              const AuthState(status: AuthStatus.authenticated, uid: 'user-1'),
+            ),
+          ),
+          syncServiceProvider.overrideWithValue(service),
+          syncQueueProvider.overrideWithValue(SyncQueue()),
+          syncStateProvider.overrideWith(
+            (ref) => SyncNotifier(
+              ref,
+              ref.watch(syncQueueProvider),
+              ref.watch(syncServiceProvider),
+              telemetry: telemetry,
+            ),
+          ),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+        dir.deleteSync(recursive: true);
+      });
+
+      final pulled = service.expectPull();
+      container.read(syncStateProvider.notifier);
+      await pulled.timeout(const Duration(seconds: 5));
+
+      expect(reported, hasLength(1));
+      expect(reported.single.$2, 'photo.upload');
+      expect(reported.single.$1.toString(), 'photo.upload: _Exception');
+      expect(reported.single.$1.toString(), isNot(contains('photo.jpg')));
+      expect(reported.single.$1.toString(), isNot(contains('user-1')));
+    },
+  );
 }

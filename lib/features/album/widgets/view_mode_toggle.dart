@@ -114,7 +114,7 @@ class ViewModeToggle extends ConsumerWidget {
     ref.read(viewModeProvider.notifier).state = mode;
     ref
         .read(analyticsProvider)
-        .logEvent(name: 'view_mode_changed', parameters: {'mode': mode.name});
+        ?.logEvent(name: 'view_mode_changed', parameters: {'mode': mode.name});
     SharedPreferences.getInstance().then((prefs) {
       prefs.setString('view_mode', mode.name);
     });

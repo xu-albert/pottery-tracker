@@ -223,18 +223,12 @@ Android cannot produce a usable credential.
 > **Forgetting the Play App Signing fingerprint is the classic failure.** Sign-in works in internal
 > testing (upload key) and breaks the moment the app is promoted (app signing key). Add both.
 
-> **Before you run `flutterfire configure`, read this.** `firebase.json` records the iOS app as
-> `1:22629038852:ios:f3cd8152c04934a70fae51`, but `lib/firebase_options.dart` uses
-> `1:22629038852:ios:21037012b59e03d00fae51` — two different iOS app IDs. iOS ships fine today, so
-> `firebase.json` is presumably the stale one, but a `flutterfire configure` run would rewrite
-> `firebase_options.dart` to whichever the tool decides is authoritative and could point iOS at the
-> wrong Firebase app. Reconcile the two against the Firebase console *first*. The Android IDs are
-> already consistent across `firebase.json`, `google-services.json` and `firebase_options.dart`, and
-> Android is now listed in `firebase.json`'s `dart.configurations` so a future re-run regenerates it
-> instead of dropping it.
-
-Downloading a fresh `google-services.json` by hand (step 4 above) does **not** require running
-`flutterfire configure` and does not carry this risk. Prefer the hand download.
+> Downloading a fresh `google-services.json` by hand (step 4 above) does **not** require running
+> `flutterfire configure`. Both Android and iOS app IDs are aligned across `firebase.json`,
+> `google-services.json`, `ios/Runner/GoogleService-Info.plist`, and `lib/firebase_options.dart`
+> (with iOS consistency pinned by `test/ios/crashlytics_dsym_config_test.dart`), and Android is
+> listed in `firebase.json`'s `dart.configurations`, but preferring the hand download avoids
+> unnecessary churn.
 
 **One thing that still needs a device to confirm:** the applied `google-services` Gradle plugin
 generates a `default_web_client_id` string resource from the regenerated JSON, and `google_sign_in`
@@ -283,7 +277,8 @@ accurately:
 
 - **Account identifiers** — Firebase Auth uid, email, display name.
 - **Photos and user content** — piece photos and metadata, in Firestore + Cloud Storage.
-- **Diagnostics** — Crashlytics and Performance.
+- **Diagnostics** — Crashlytics, Performance, and aggregate zero-PII photo-visibility counts stored
+  under `users/{uid}/diagnostics/photo_health` in Firestore (deleted with account data).
 - **Analytics** — Firebase Analytics, **without the advertising ID**. `firebase_analytics` (via
   `play-services-measurement-api`) merges `com.google.android.gms.permission.AD_ID`,
   `android.permission.ACCESS_ADSERVICES_AD_ID` and `android.permission.ACCESS_ADSERVICES_ATTRIBUTION`

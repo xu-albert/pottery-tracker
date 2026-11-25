@@ -46,6 +46,25 @@ class PhotosDao extends DatabaseAccessor<AppDatabase> with _$PhotosDaoMixin {
   Future<void> deletePhotosForPiece(String pieceId) =>
       (delete(photos)..where((p) => p.pieceId.equals(pieceId))).go();
 
+  Future<List<Photo>> getAllPhotos() => select(photos).get();
+
+  Future<void> updatePaths(
+    List<({String id, String localPath, Value<String?> thumbnailPath})> updates,
+  ) {
+    return batch((b) {
+      for (final entry in updates) {
+        b.update(
+          photos,
+          PhotosCompanion(
+            localPath: Value(entry.localPath),
+            thumbnailPath: entry.thumbnailPath,
+          ),
+          where: (p) => p.id.equals(entry.id),
+        );
+      }
+    });
+  }
+
   Future<void> updateSortOrders(List<({String id, int sortOrder})> updates) {
     return batch((b) {
       for (final entry in updates) {
