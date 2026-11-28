@@ -26,8 +26,19 @@ const categoryEmoji = new Map<string, string>([
 ]);
 
 // Maps Apple device identifiers to friendly model names.
-// Identifier format: see https://gist.github.com/adamawolf/3048717
+// Identifier format: see https://gist.github.com/adamawolf/3048717 and https://appledb.dev
 const friendlyDeviceNames = new Map<string, string>(Object.entries({
+  // iPhone 18 family
+  "iPhone19,2": "iPhone 18 Pro",
+  "iPhone19,3": "iPhone 18 Pro Max",
+  "iPhone19,7": "iPhone 18 Pro Max",
+  "iPhone19,4": "iPhone Duo",
+  // iPhone 17 / iPhone Air family
+  "iPhone18,1": "iPhone 17 Pro",
+  "iPhone18,2": "iPhone 17 Pro Max",
+  "iPhone18,3": "iPhone 17",
+  "iPhone18,4": "iPhone Air",
+  "iPhone18,5": "iPhone 17e",
   // iPhone 16 family
   "iPhone17,1": "iPhone 16 Pro",
   "iPhone17,2": "iPhone 16 Pro Max",
@@ -61,17 +72,49 @@ const friendlyDeviceNames = new Map<string, string>(Object.entries({
   // iPhone SE
   "iPhone14,6": "iPhone SE (3rd gen)",
   "iPhone12,8": "iPhone SE (2nd gen)",
+  // iPad Pro (M5)
+  "iPad17,1": "iPad Pro 11\" M5",
+  "iPad17,2": "iPad Pro 11\" M5 (cellular)",
+  "iPad17,3": "iPad Pro 13\" M5",
+  "iPad17,4": "iPad Pro 13\" M5 (cellular)",
   // iPad Pro (M4)
   "iPad16,3": "iPad Pro 11\" M4",
   "iPad16,4": "iPad Pro 11\" M4 (cellular)",
   "iPad16,5": "iPad Pro 13\" M4",
   "iPad16,6": "iPad Pro 13\" M4 (cellular)",
+  // iPad Air (M4)
+  "iPad16,8": "iPad Air 11\" M4",
+  "iPad16,9": "iPad Air 11\" M4 (cellular)",
+  "iPad16,10": "iPad Air 13\" M4",
+  "iPad16,11": "iPad Air 13\" M4 (cellular)",
+  // iPad Air (M3)
+  "iPad15,3": "iPad Air 11\" M3",
+  "iPad15,4": "iPad Air 11\" M3 (cellular)",
+  "iPad15,5": "iPad Air 13\" M3",
+  "iPad15,6": "iPad Air 13\" M3 (cellular)",
   // iPad Air (M2)
   "iPad14,8": "iPad Air 11\" M2",
   "iPad14,9": "iPad Air 11\" M2 (cellular)",
   "iPad14,10": "iPad Air 13\" M2",
   "iPad14,11": "iPad Air 13\" M2 (cellular)",
+  // iPad (A16)
+  "iPad15,7": "iPad A16",
+  "iPad15,8": "iPad A16 (cellular)",
+  // iPad mini (A17 Pro)
+  "iPad16,1": "iPad mini A17 Pro",
+  "iPad16,2": "iPad mini A17 Pro (cellular)",
 }));
+
+/**
+ * Formats a client-supplied device identifier for Discord embeds, appending the
+ * friendly model name when known while escaping the raw identifier.
+ */
+export function formatDeviceLabel(rawDeviceModel: string): string {
+  const deviceModel = safeText(rawDeviceModel, 64);
+  // Only the lookup uses the raw identifier; the label is the escaped one.
+  const friendlyName = friendlyDeviceNames.get(rawDeviceModel);
+  return friendlyName ? `${deviceModel} (${friendlyName})` : deviceModel;
+}
 
 
 export const notifyDiscordOnFeedback = onDocumentCreated(
@@ -104,7 +147,6 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
     const appVersion = safeText(String(data.appVersion ?? "?"), 64);
     const osVersion = safeText(String(data.osVersion ?? "?"), 64);
     const rawDeviceModel = String(data.deviceModel ?? "?");
-    const deviceModel = safeText(rawDeviceModel, 64);
     const locale = safeText(String(data.locale ?? "?"), 64);
 
     const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
@@ -124,11 +166,7 @@ export const notifyDiscordOnFeedback = onDocumentCreated(
       value: `v${appVersion} · ${locale}`,
       inline: true,
     });
-    // Only the lookup uses the raw identifier; the label is the escaped one.
-    const friendlyName = friendlyDeviceNames.get(rawDeviceModel);
-    const deviceLabel = friendlyName
-      ? `${deviceModel} (${friendlyName})`
-      : deviceModel;
+    const deviceLabel = formatDeviceLabel(rawDeviceModel);
     fields.push({
       name: "Device",
       value: `${deviceLabel} · ${osVersion}`,

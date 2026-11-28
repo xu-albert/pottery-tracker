@@ -252,6 +252,11 @@ and `AndroidProvider.debug` in debug). **No code change is needed.** The console
 4. For pre-Play device testing, register a **debug token**: run a debug build on the device, find the
    token Firebase logs on first launch, and add it under App Check → the Android app → Manage debug
    tokens.
+5. **Before promoting Android to a public Play track**, raise Play Integrity
+   `minDeviceRecognitionLevel` from `NO_INTEGRITY` to `MEETS_BASIC_INTEGRITY` (or
+   `MEETS_DEVICE_INTEGRITY`) under Firebase console → Build → **App Check** → Apps → the Android
+   app → **Play Integrity** config. Leaving it at `NO_INTEGRITY` accepts tokens from any device
+   without integrity verification.
 
 If App Check enforcement is enabled for Firestore or Storage and this is misconfigured, the app will
 not crash — `activate()` is wrapped in try/catch and logged as non-fatal — but server-side requests

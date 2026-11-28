@@ -5,7 +5,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 process.env.DISCORD_WEBHOOK_URL = "https://discord.test/api/webhooks/1/abc";
-const { notifyDiscordOnFeedback } = require("../lib/index");
+const { notifyDiscordOnFeedback, formatDeviceLabel } = require("../lib/index");
 
 /** Runs the handler for one feedback doc and returns every POST it made. */
 async function runWith(data, { docId = "doc-1", respond } = {}) {
@@ -101,6 +101,41 @@ test("a known device id still gets its friendly name, looked up by the raw id", 
   });
   assert.equal(payload.embeds[0].title, "💚 PRAISE");
   assert.equal(field(payload, "Device"), "iPhone17,1 (iPhone 16 Pro) · 17.5");
+});
+
+test("newer iPhone 17/18 and 2025-2026 iPad ids resolve to friendly names", async () => {
+  const payload = await postedPayload({
+    category: "other",
+    message: "photo feedback",
+    deviceModel: "iPhone18,4",
+    osVersion: "iOS 26.6.2",
+  });
+  assert.equal(field(payload, "Device"), "iPhone18,4 (iPhone Air) · iOS 26.6.2");
+
+  assert.equal(formatDeviceLabel("iPhone18,1"), "iPhone18,1 (iPhone 17 Pro)");
+  assert.equal(formatDeviceLabel("iPhone18,2"), "iPhone18,2 (iPhone 17 Pro Max)");
+  assert.equal(formatDeviceLabel("iPhone18,3"), "iPhone18,3 (iPhone 17)");
+  assert.equal(formatDeviceLabel("iPhone18,4"), "iPhone18,4 (iPhone Air)");
+  assert.equal(formatDeviceLabel("iPhone18,5"), "iPhone18,5 (iPhone 17e)");
+  assert.equal(formatDeviceLabel("iPhone19,2"), "iPhone19,2 (iPhone 18 Pro)");
+  assert.equal(formatDeviceLabel("iPhone19,3"), "iPhone19,3 (iPhone 18 Pro Max)");
+  assert.equal(formatDeviceLabel("iPhone19,4"), "iPhone19,4 (iPhone Duo)");
+  assert.equal(formatDeviceLabel("iPhone19,7"), "iPhone19,7 (iPhone 18 Pro Max)");
+
+  assert.equal(formatDeviceLabel("iPad15,3"), 'iPad15,3 (iPad Air 11" M3)');
+  assert.equal(formatDeviceLabel("iPad15,6"), 'iPad15,6 (iPad Air 13" M3 (cellular))');
+  assert.equal(formatDeviceLabel("iPad15,7"), "iPad15,7 (iPad A16)");
+  assert.equal(formatDeviceLabel("iPad16,1"), "iPad16,1 (iPad mini A17 Pro)");
+  assert.equal(formatDeviceLabel("iPad16,8"), 'iPad16,8 (iPad Air 11" M4)');
+  assert.equal(formatDeviceLabel("iPad17,1"), 'iPad17,1 (iPad Pro 11" M5)');
+  assert.equal(formatDeviceLabel("iPad17,4"), 'iPad17,4 (iPad Pro 13" M5 (cellular))');
+});
+
+test("unknown and prototype-like device ids fall back to the escaped raw id", () => {
+  assert.equal(formatDeviceLabel("iPhone99,9"), "iPhone99,9");
+  assert.equal(formatDeviceLabel("Pixel 9 Pro"), "Pixel 9 Pro");
+  assert.equal(formatDeviceLabel("__proto__"), "\\_\\_proto\\_\\_");
+  assert.equal(formatDeviceLabel("constructor"), "constructor");
 });
 
 test("an oversized message is cut to the embed's budget", async () => {
