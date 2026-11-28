@@ -129,6 +129,8 @@ test("newer iPhone 17/18 and 2025-2026 iPad ids resolve to friendly names", asyn
   assert.equal(formatDeviceLabel("iPad16,8"), 'iPad16,8 (iPad Air 11" M4)');
   assert.equal(formatDeviceLabel("iPad17,1"), 'iPad17,1 (iPad Pro 11" M5)');
   assert.equal(formatDeviceLabel("iPad17,4"), 'iPad17,4 (iPad Pro 13" M5 (cellular))');
+  assert.equal(formatDeviceLabel("iPad19,1"), "iPad19,1 (iPad mini A20 Pro)");
+  assert.equal(formatDeviceLabel("iPad19,2"), "iPad19,2 (iPad mini A20 Pro (cellular))");
 });
 
 test("unknown and prototype-like device ids fall back to the escaped raw id", () => {

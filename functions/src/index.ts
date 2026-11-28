@@ -100,6 +100,9 @@ const friendlyDeviceNames = new Map<string, string>(Object.entries({
   // iPad (A16)
   "iPad15,7": "iPad A16",
   "iPad15,8": "iPad A16 (cellular)",
+  // iPad mini (A20 Pro)
+  "iPad19,1": "iPad mini A20 Pro",
+  "iPad19,2": "iPad mini A20 Pro (cellular)",
   // iPad mini (A17 Pro)
   "iPad16,1": "iPad mini A17 Pro",
   "iPad16,2": "iPad mini A17 Pro (cellular)",
